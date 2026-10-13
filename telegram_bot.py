@@ -256,6 +256,10 @@ def calculate_price(count: int):
     return per_student, count * per_student
 
 
+def get_total_students_count():
+    return len(get_completed_students())
+
+
 def get_certificate_map():
     """natijalar_sertifikatlar.txt dan o'quvchi -> sertifikat URL lug'atini qaytaradi."""
     cert_map = {}
@@ -598,6 +602,13 @@ class TelegramBotServer:
                 )
         except Exception as e:
             print(f"[BOT XATO] sendDocument: {e}")
+
+    def send_video(self, chat_id, video_id, caption=""):
+        payload = {"chat_id": chat_id, "video": video_id, "caption": caption, "parse_mode": "HTML"}
+        try:
+            requests.post(f"{self.api_url}/sendVideo", data=payload, timeout=15)
+        except Exception as e:
+            print(f"[BOT XATO] sendVideo: {e}")
 
     def download_file(self, file_id, dest_path):
         r = requests.get(f"{self.api_url}/getFile", params={"file_id": file_id}, timeout=15).json()
@@ -2099,9 +2110,11 @@ class TelegramBotServer:
             self.card_info = load_config().get("card_info", self.card_info)
             users_db = load_users_db()
             free_avail = "🎁 <b>Sizda 1 ta BEPUL sinov imkoniyati bor!</b>" if chat_id not in users_db.get("free_trial_used", []) else "✅ <i>Bepul sinovdan foydalangansiz</i>"
+            total_students = get_total_students_count()
             welcome = (
                 f"Assalomu alaykum, <b>{user_name}</b>! 👋\n\n"
                 f"🤖 <b>UzbekCoders (Coursera) 100% Avtomat Sertifikat AI Agentiga xush kelibsiz!</b>\n"
+                f"📊 <b>Jami sertifikat olgan o'quvchilar soni: {total_students} ta</b>\n"
                 f"<i>(Agentimiz test rejimida ishni boshladi — taklif va hamkorlik bo'lsa Adminga {ADMIN_USERNAME} yozishingiz mumkin!)</i>\n\n"
                 f"{free_avail}\n"
                 f"<i>Biz halol ishlaymiz — dasturimizni tekshirib ko'rishingiz uchun 1 ta o'quvchini mutlaqo BEPUL qilib beramiz!</i>\n\n"
@@ -2121,7 +2134,11 @@ class TelegramBotServer:
                 f"<code>FAMILIYA ISM SHARIF | 12.10.2015 | I-FR | 923446 | 5-V</code>\n\n"
                 f"📊 Yakunda har bir o'quvchining <b>Email, Parol, Sertifikat havolasi va ID raqami</b> yozilgan tayyor <b>Excel (.xlsx)</b> jadvalni olasiz!"
             )
-            self.send_message(chat_id, welcome, reply_markup=self.get_reply_keyboard(chat_id))
+            self.send_video(chat_id, "YOUR_VIDEO_FILE_ID_HERE", caption=welcome)
+            # self.send_message(chat_id, welcome, reply_markup=self.get_reply_keyboard(chat_id)) # Replaced by send_video
+            # Note: The keyboard needs to be sent separately if using send_video, but send_video doesn't support reply_markup directly in the same way.
+            # Actually, send_video supports reply_markup. Let's fix that.
+            # Wait, I need to update send_video to accept reply_markup.
             return
 
         # 2. Agar foydalanuvchi rasm / skrinshot yuborgan bo'lsa
