@@ -30,6 +30,7 @@ import queue
 import socket
 import threading
 import requests
+import subprocess
 from datetime import datetime
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -767,7 +768,7 @@ class TelegramBotServer:
             try:
                 requests.get(f"{self.api_url}/getMe", timeout=10)
                 if sys.platform != "win32":
-                                        subprocess.run("tmux refresh-client 2>/dev/null || true; touch ~/.cloudshell_keepalive 2>/dev/null || true", shell=True, timeout=5)
+                    subprocess.run("tmux refresh-client 2>/dev/null || true; touch ~/.cloudshell_keepalive 2>/dev/null || true", shell=True, timeout=5)
             except Exception:
                 pass
             # Har 30 daqiqada (15 * 120s = 1800s) Adminga avtomatik tahlil yuboramiz
