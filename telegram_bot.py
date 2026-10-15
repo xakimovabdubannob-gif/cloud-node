@@ -720,7 +720,7 @@ class TelegramBotServer:
 
         import socket
         pc1_name = socket.gethostname()
-        active_lines = [f"💻 <b>1-Kompyuter [{pc1_name}]</b> (8 GB | {MAX_PARALLEL_WORKERS} Agent) — 🟢 FAOL"]
+        active_lines = [f"💻 <b>☁️ GitHub Bulut Serveri [{pc1_name}]</b> (16 GB | {MAX_PARALLEL_WORKERS} Agent) — 🟢 FAOL"]
         has_pc1 = False
         for wid, st_text in sorted(self.active_worker_status.items()):
             if st_text:
@@ -780,7 +780,7 @@ class TelegramBotServer:
             f"📊 <b>JONLI TAHLIL VA KOMPYUTERLAR HOLATI ({now_str})</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{ord_block}"
-            f"⚡ <b>BARCHA 13 TA KOMPYUTER VA AI AGENTLAR:</b>\n"
+            f"⚡ <b>☁️ GITHUB VIRTUAL SERVERLAR VA AI AGENTLAR:</b>\n"
             f"{active_block}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🌐 <b>UMUMIY BAZA:</b> Jami <b>{current_total_certs} ta</b> sertifikat (Oxirgi soatda: <b>+{certs_last_hour} ta</b>)\n"
@@ -1440,13 +1440,7 @@ class TelegramBotServer:
             except Exception:
                 st_nodes = {}
         if not st_nodes:
-            st_nodes = {
-                "DESKTOP-EKA9GM2-60DD": {
-                    "pc_name": "DESKTOP-EKA9GM2-60DD",
-                    "ram_gb": 16,
-                    "workers": 6,
-                }
-            }
+            st_nodes = {}
 
         now_ts = time.time()
         online_list = []
@@ -1465,7 +1459,7 @@ class TelegramBotServer:
                 offline_list.append(f"• 🔴 <b>{pc_idx}-Kompyuter [{pc_name}]</b> ({ram_gb} GB) — UZILGAN / O'CHIQ ({ago_s // 60} daqiqa oldin!)")
 
         summary_msg = (
-            f"📡 <b>BARCHA KOMPYUTERLAR ALOQA VA FAOLLIK XULOSASI:</b>\n"
+            f"📡 <b>☁️ GITHUB VIRTUAL KLASTER HOLATI (FAQAT BULUT):</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🟢 <b>Faol ishlayotganlar ({len(online_list) + 1} ta):</b>\n"
             f"• 🟢 <b>1-Kompyuter [Asosiy Server]</b> (8 GB | 3 Agent) — Ishlayapti\n"
