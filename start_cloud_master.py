@@ -19,19 +19,21 @@ for fn in ('akkountlar.txt', 'natijalar_sertifikatlar.txt', 'xatolar.txt'):
     open(fn, 'a', encoding='utf-8').close()
 os.makedirs('bot_orders', exist_ok=True)
 open('bot_config.json', 'w', encoding='utf-8').write(json.dumps({'bot_token': bot_tok, 'admin_id': adm_id, 'card_info': '8600 **** **** ****'}, indent=2))
-requests.post(f'https://api.telegram.org/bot{bot_tok}/sendMessage', data={'chat_id': adm_id, 'text': '☁️ <b>100% VIRTUAL KLASTER REJIMI YOQILDI!</b>\n🚫 Noutbuk va eski kompyuterlar butunlay olib tashlandi!\n✅ Endi <b>🖥 Klaster</b> tugmasini bosib koring!', 'parse_mode': 'HTML'}, timeout=10)
 p_bridge = subprocess.Popen([sys.executable, 'cluster_master_bridge.py'])
 p_bot = subprocess.Popen([sys.executable, 'telegram_bot.py'])
+requests.post(f'https://api.telegram.org/bot{bot_tok}/sendMessage', data={'chat_id': adm_id, 'text': '🟢 <b>SERVER 100% BARQAROR ISHGA TUSHDI!</b>\nEndi /start yoki <b>🖥 Klaster</b> tugmasini bosing — darhol javob beradi!', 'parse_mode': 'HTML'}, timeout=10)
 start_ts = time.time()
 known_orders = set(os.listdir('bot_orders'))
-while p_bot.poll() is None:
-    time.sleep(15)
+while time.time() - start_ts < 19500:
+    time.sleep(10)
+    if p_bot.poll() is not None:
+        p_bot = subprocess.Popen([sys.executable, 'telegram_bot.py'])
+    if p_bridge.poll() is not None:
+        p_bridge = subprocess.Popen([sys.executable, 'cluster_master_bridge.py'])
     cur_orders = set(f for f in os.listdir('bot_orders') if f.startswith('in_') and f.endswith('.xlsx'))
     if (cur_orders - known_orders) and os.path.exists('cluster_url.txt'):
         known_orders = cur_orders
         t_url = open('cluster_url.txt','r',encoding='utf-8').read().strip()
         if t_url.startswith('https://'):
             requests.post(f'https://api.github.com/repos/{gh_own}/{gh_wrepo}/actions/workflows/ai_cluster.yml/dispatches', headers={'Authorization': f'token {gh_tok}', 'Accept': 'application/vnd.github+json'}, json={'ref': 'main', 'inputs': {'tunnel_url': t_url, 'nodes_count': '5'}}, timeout=15)
-    if time.time() - start_ts > 19500:
-        requests.post(f'https://api.github.com/repos/{gh_own}/{gh_wrepo}/actions/workflows/master_bot_server.yml/dispatches', headers={'Authorization': f'token {gh_tok}', 'Accept': 'application/vnd.github+json'}, json={'ref': 'main'}, timeout=15)
-        break
+requests.post(f'https://api.github.com/repos/{gh_own}/{gh_wrepo}/actions/workflows/master_bot_server.yml/dispatches', headers={'Authorization': f'token {gh_tok}', 'Accept': 'application/vnd.github+json'}, json={'ref': 'main'}, timeout=15)
