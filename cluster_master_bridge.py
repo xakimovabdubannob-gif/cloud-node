@@ -603,6 +603,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         f"{ws_html}</div>"
                     )
 
+            all_done_badge = "<div style='padding:10px;color:#22c55e;'>✅ Barchasi 100% yakunlandi!</div>"
             ban_rem = max(0, int(_tg_ban_until - now_t))
             ban_txt = f"⏳ Telegram 429 flood-wait: {ban_rem // 60} daqiqa {ban_rem % 60} soniyada ochiladi" if ban_rem > 0 else "🟢 Telegram xabarlar ochiq"
             empty_rem_msg = "<div style='padding:10px;color:#22c55e;'>✅ Barchasi 100% yakunlandi!</div>"
@@ -1124,7 +1125,10 @@ def cloudflared_loop():
         except Exception:
             pass
 
+    import shutil
     cf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloudflared.exe")
+    if not os.path.exists(cf_path):
+        cf_path = shutil.which("cloudflared") or cf_path
     if not os.path.exists(cf_path):
         print("[CLUSTER] cloudflared.exe topilmadi!")
         return
