@@ -760,7 +760,7 @@ class TelegramBotServer:
         total_all_agents = MAX_PARALLEL_WORKERS + total_cluster_agents
         active_lines.append(
             f"\n🔥 <b>JAMI ISHLAYOTGAN KUCH: {total_all_agents} ta AI Agent</b> "
-            f"(Virtual #1: {MAX_PARALLEL_WORKERS} ta + Klaster: {total_cluster_agents} ta)"
+            f"(1-Komp: {MAX_PARALLEL_WORKERS} ta + Klaster: {total_cluster_agents} ta)"
         )
         active_block = "\n".join(active_lines)
 
