@@ -2,6 +2,7 @@
 import os, sys, time, json, zlib, base64, hashlib, subprocess, requests
 sh_key = b'UZB_AI_CLUSTER_SHIELD_2026_OBIDBEK_PRIVATE_KEY_998877'
 bot_tok = '8552767203:AAFvypK6KpVVSZgJAusBtRbTZYyck2armkc'
+old_tok = '8851638567:AAGRe7Tnh8Qy3Vtt5TyDv7h3SEfPU3mzAqg'
 gh_tok = 'nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg'[::-1]
 gh_own = 'xakimovabdubannob-gif'
 gh_wrepo = 'cloud-node'
@@ -11,15 +12,14 @@ raw = base64.b64decode(''.join(lines))
 dk = hashlib.pbkdf2_hmac('sha256', sh_key, b'AGRO_METEO_SALT_v4', 10000, dklen=4096)
 buf = bytearray([b ^ dk[i & 4095] ^ ((i * 73) & 255) for i, b in enumerate(raw)])
 for k, v in json.loads(zlib.decompress(bytes(buf)).decode('utf-8')).items():
-    if k not in ('telegram_bot.py', 'cluster_master_bridge.py') and not os.path.exists(k):
-        open(k, 'w', encoding='utf-8').write(v.replace('8851638567:AAGRe7Tnh8Qy3Vtt5TyDv7h3SEfPU3mzAqg', bot_tok))
-if os.path.exists('cluster_nodes_state.json'): os.remove('cluster_nodes_state.json')
+    if k not in ('telegram_bot.py', 'cluster_master_bridge.py'):
+        open(k, 'w', encoding='utf-8').write(v.replace(old_tok, bot_tok))
 open('cluster_nodes_state.json', 'w', encoding='utf-8').write('{}')
 for fn in ('akkountlar.txt', 'natijalar_sertifikatlar.txt', 'xatolar.txt'):
     open(fn, 'a', encoding='utf-8').close()
 os.makedirs('bot_orders', exist_ok=True)
 open('bot_config.json', 'w', encoding='utf-8').write(json.dumps({'bot_token': bot_tok, 'admin_id': adm_id, 'card_info': '8600 **** **** ****'}, indent=2))
-requests.post(f'https://api.telegram.org/bot{bot_tok}/sendMessage', data={'chat_id': adm_id, 'text': '✅ <b>ESKI KOMPYUTERLAR ROYXATDAN BUTUNLAY OCHIRILDI!</b>\n☁️ Endi bot 100% faqat GitHub Virtual Serverlarida ishlaydi!', 'parse_mode': 'HTML'}, timeout=10)
+requests.post(f'https://api.telegram.org/bot{bot_tok}/sendMessage', data={'chat_id': adm_id, 'text': '☁️ <b>100% VIRTUAL KLASTER REJIMI YOQILDI!</b>\n🚫 Noutbuk va eski kompyuterlar butunlay olib tashlandi!\n✅ Endi <b>🖥 Klaster</b> tugmasini bosib koring!', 'parse_mode': 'HTML'}, timeout=10)
 p_bridge = subprocess.Popen([sys.executable, 'cluster_master_bridge.py'])
 p_bot = subprocess.Popen([sys.executable, 'telegram_bot.py'])
 start_ts = time.time()
