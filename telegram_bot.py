@@ -720,7 +720,7 @@ class TelegramBotServer:
 
         import socket
         pc1_name = socket.gethostname()
-        active_lines = [f"💻 <b>☁️ GitHub Bulut Serveri [{pc1_name}]</b> (16 GB | {MAX_PARALLEL_WORKERS} Agent) — 🟢 FAOL"]
+        active_lines = [f"💻 <b>☁️ GitHub Bulut Dispetcheri</b> (16 GB | {MAX_PARALLEL_WORKERS} Agent) — 🟢 FAOL"]
         has_pc1 = False
         for wid, st_text in sorted(self.active_worker_status.items()):
             if st_text:
@@ -1440,7 +1440,13 @@ class TelegramBotServer:
             except Exception:
                 st_nodes = {}
         if not st_nodes:
-            st_nodes = {}
+            st_nodes = {
+                "DESKTOP-EKA9GM2-60DD": {
+                    "pc_name": "DESKTOP-EKA9GM2-60DD",
+                    "ram_gb": 16,
+                    "workers": 6,
+                }
+            }
 
         now_ts = time.time()
         online_list = []
@@ -1459,7 +1465,7 @@ class TelegramBotServer:
                 offline_list.append(f"• 🔴 <b>{pc_idx}-Kompyuter [{pc_name}]</b> ({ram_gb} GB) — UZILGAN / O'CHIQ ({ago_s // 60} daqiqa oldin!)")
 
         summary_msg = (
-            f"📡 <b>☁️ GITHUB VIRTUAL KLASTER HOLATI (FAQAT BULUT):</b>\n"
+            f"📡 <b>BARCHA KOMPYUTERLAR ALOQA VA FAOLLIK XULOSASI:</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🟢 <b>Faol ishlayotganlar ({len(online_list) + 1} ta):</b>\n"
             f"• 🟢 <b>1-Kompyuter [Asosiy Server]</b> (8 GB | 3 Agent) — Ishlayapti\n"
@@ -2249,6 +2255,63 @@ class TelegramBotServer:
                 self.handle_students_submission(chat_id, user_name, username, students)
             else:
                 self.handle_smart_question(chat_id, user_name, text)
+
+
+
+
+# =====================================================================
+# 100% FAQAT VIRTUAL SERVERLAR REJIMI (NOUTBUK VA ESKI PC LAR O'CHIRILDI)
+# =====================================================================
+def _pure_virtual_selector(self, chat_id: int):
+    st_nodes = {}
+    if os.path.exists("cluster_nodes_state.json"):
+        try:
+            with open("cluster_nodes_state.json", "r", encoding="utf-8") as nf:
+                st_nodes = json.load(nf)
+        except Exception:
+            st_nodes = {}
+    st_nodes.pop("DESKTOP-EKA9GM2-60DD", None)
+
+    now_ts = time.time()
+    online_list = []
+    for idx_v, (node_id, ninfo) in enumerate(st_nodes.items(), start=1):
+        w_cnt = int(ninfo.get("workers", 6))
+        ram_gb = ninfo.get("ram_gb", 16)
+        comp_c = int(ninfo.get("completed_count", 0))
+        ago_s = max(0, int(now_ts - float(ninfo.get("last_seen", 0))))
+        if ago_s < 600 and w_cnt > 0:
+            online_list.append(
+                f"• 🟢 <b>☁️ Virtual Server #{idx_v} [{node_id}]</b> ({ram_gb} GB RAM | {w_cnt} ta AI Agent | 🏅{comp_c} ta)\n"
+                f"   └ <i>{str(ninfo.get('status', 'Ishlamoqda...'))[:85]}</i>"
+            )
+
+    if online_list:
+        body_txt = (
+            f"🟢 <b>Faol ishlayotgan Virtual Serverlar ({len(online_list)} ta):</b>\n"
+            + "\n".join(online_list)
+        )
+    else:
+        body_txt = (
+            "💤 <b>Hozircha faol Virtual Serverlar yo'q (Kutish rejimida).</b>\n\n"
+            "✨ <i>Botga o'quvchi yoki Excel tashlashingiz bilan avtomatik ravishda "
+            "GitHub Bulutida 1 tadan 10 tagacha Virtual Server (60 ta AI Agent) o'zi yonadi!</i>"
+        )
+
+    msg = (
+        f"☁️ <b>GITHUB VIRTUAL KLASTER HOLATI (100% AVTONOM BULUT)</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🚫 <i>Shaxsiy kompyuter va noutbuklar butunlay uzilgan!</i>\n\n"
+        f"{body_txt}"
+    )
+    markup = {
+        "inline_keyboard": [
+            [{"text": "🔄 Holatni yangilash", "callback_data": "open_cluster"}],
+            [{"text": "📊 Tahlil va Jarayon", "callback_data": "refresh_tahlil"}],
+        ]
+    }
+    self.send_message(chat_id, msg, reply_markup=markup)
+
+TelegramBotServer.send_cluster_agent_selector = _pure_virtual_selector
 
 
 if __name__ == "__main__":
