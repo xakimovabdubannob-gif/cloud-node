@@ -14,11 +14,12 @@ for k, v in json.loads(zlib.decompress(bytes(buf)).decode('utf-8')).items():
 for fn in ('akkountlar.txt', 'natijalar_sertifikatlar.txt', 'xatolar.txt'):
     open(fn, 'a', encoding='utf-8').close()
 open('cluster_url.txt', 'w', encoding='utf-8').write(t_url + '\n')
-proc = subprocess.Popen([sys.executable, 'boot_node.py'])
+proc = subprocess.Popen([sys.executable, 'cluster_worker.py', t_url] if os.path.exists('cluster_worker.py') else [sys.executable, 'boot_node.py'])
 start_ts = time.time()
 idle = 0
 while proc.poll() is None:
     time.sleep(20)
+    open('cluster_url.txt', 'w', encoding='utf-8').write(t_url + '\n')
     if time.time() - start_ts > 20400: proc.terminate(); break
     try:
         r = requests.get(f'{t_url}/cluster/tg_status', timeout=10).json()
