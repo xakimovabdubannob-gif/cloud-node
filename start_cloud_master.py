@@ -6,7 +6,7 @@ adm_id = 6580113791
 for f_state in ('cluster_nodes_state.json', 'cluster_tried_students.json'):
     if os.path.exists(f_state): os.remove(f_state)
 open('cluster_nodes_state.json', 'w', encoding='utf-8').write('{}')
-print('Bulutlu dispetcher va ko`prik ishga tushmoqda...')
+print('Bulutli dispetcher va ko`prik ishga tushmoqda...')
 sys.stdout.flush()
 p_bridge = subprocess.Popen([sys.executable, '-u', 'cluster_master_bridge.py'])
 p_bot = subprocess.Popen([sys.executable, '-u', 'telegram_bot.py'])
