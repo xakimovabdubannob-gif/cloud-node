@@ -1,0 +1,20 @@
+name: 24-7 Master Bot Server
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '25 */5 * * *'
+jobs:
+  master-bot:
+    runs-on: windows-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - name: Kutubxonalar va Cloudflared ornatish
+        shell: cmd
+        run: |
+          python -m pip install --quiet --disable-pip-version-check requests openpyxl playwright selenium undetected-chromedriver setuptools
+          python -m playwright install chromium
+          curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -o cloudflared.exe
+      - name: Ishga tushirish
+        shell: cmd
+        run: python start_cloud_master.py
