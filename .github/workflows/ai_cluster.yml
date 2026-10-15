@@ -1,0 +1,42 @@
+name: SertifikatAgent Virtual Cluster
+on:
+  workflow_dispatch:
+    inputs:
+      tunnel_url:
+        required: true
+      nodes_count:
+        required: true
+        default: '1'
+jobs:
+  setup-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          cnt=${{ github.event.inputs.nodes_count }}
+          arr=$(seq -s, 1 $cnt)
+          echo "matrix=[$arr]" >> $GITHUB_OUTPUT
+  ai-cluster-nodes:
+    needs: setup-matrix
+    runs-on: windows-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        node_num: ${{ fromJson(needs.setup-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Kutubxonalar
+        shell: cmd
+        run: |
+          python -m pip install --quiet --disable-pip-version-check requests openpyxl playwright selenium undetected-chromedriver setuptools
+          python -m playwright install chromium
+      - name: Run Worker
+        shell: cmd
+        env:
+          TUNNEL_URL: ${{ github.event.inputs.tunnel_url }}
+          SHIELD_KEY: UZB_AI_CLUSTER_SHIELD_2026_OBIDBEK_PRIVATE_KEY_998877
+          NEW_BOT_TOKEN: 8552767203:AAFvypK6KpVVSZgJAusBtRbTZYyck2armkc
+        run: python start_cloud_worker.py
