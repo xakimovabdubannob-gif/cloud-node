@@ -18,7 +18,8 @@ print('Fayllar tayyor, bot ishga tushmoqda...')
 sys.stdout.flush()
 p_bridge = subprocess.Popen([sys.executable, '-u', 'cluster_master_bridge.py'])
 p_bot = subprocess.Popen([sys.executable, '-u', 'telegram_bot.py'])
-requests.post(f'https://api.telegram.org/bot{bot_tok}/sendMessage', data={'chat_id': adm_id, 'text': '🟢 <b>SERVER TO'G'RILANDI VA ISHGA TUSHDI!</b>', 'parse_mode': 'HTML'}, timeout=10)
+msg_text = 'SERVER IS WORKING SUCCESSFULLY!'
+requests.post(f'https://api.telegram.org/bot{bot_tok}/sendMessage', data={'chat_id': adm_id, 'text': msg_text, 'parse_mode': 'HTML'}, timeout=10)
 while True:
     time.sleep(30)
     if p_bot.poll() is not None:
