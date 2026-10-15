@@ -3,11 +3,10 @@ import os, sys, time, json, subprocess, requests
 sys.stdout.reconfigure(encoding='utf-8', errors='replace') if hasattr(sys.stdout, 'reconfigure') else None
 bot_tok = '8552767203:AAFvypK6KpVVSZgJAusBtRbTZYyck2armkc'
 adm_id = 6580113791
-# Eski kompyuterlar xotirasi tozalanadi
 for f_state in ('cluster_nodes_state.json', 'cluster_tried_students.json'):
     if os.path.exists(f_state): os.remove(f_state)
 open('cluster_nodes_state.json', 'w', encoding='utf-8').write('{}')
-print('Bulutli dispetcher va ko`prik ishga tushmoqda...')
+print('Bulutlu dispetcher va ko`prik ishga tushmoqda...')
 sys.stdout.flush()
 p_bridge = subprocess.Popen([sys.executable, '-u', 'cluster_master_bridge.py'])
 p_bot = subprocess.Popen([sys.executable, '-u', 'telegram_bot.py'])
