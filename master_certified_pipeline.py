@@ -1442,7 +1442,11 @@ def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, stu
 
 
 def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_name="", wait_timeout=45):
-    """2-XABAR: Pochtadagi Coursera Enterprise 'Join now' taklifnomasini ochib, parolni (@Ak101095) o'rnatadi va DEDC dasturiga qo'shadi."""
+    """2-XABAR: Pochtadagi Coursera Enterprise 'Join now' taklifnomasini ochadi.
+    TARTIB:
+    1. Avval 'Create password' / Ism maydoni (yangi profil bo'lsa) orqali parolni o'rnatadi.
+    2. Shu bo'lmasa KEYIN mavjud profil parolini (Log in / Welcome back) kiritib tizimga kiradi.
+    3. DEDC dasturiga ('Join Program') ulanadi va kursga Enroll qiladi."""
     print("   [2-XABAR: Coursera Join now] Taklifnoma kutilmoqda...")
     coursera_link = mail_svc.wait_for_coursera_invite(timeout=wait_timeout)
     if not coursera_link:
@@ -1467,7 +1471,7 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
         print(f"   [2-XABAR: Coursera Join #{idx_link}/{len(all_invite_links)}] Taklifnoma ochilmoqda...")
         safe_goto_commit(page, inv_link, wait_sec=4.0)
         return_to_url = ""
-        for _ in range(28):
+        for step_i in range(35):
             try:
                 if "returnTo=" in page.url and not return_to_url:
                     q_params = urllib.parse.parse_qs(urllib.parse.urlparse(page.url).query)
@@ -1475,27 +1479,44 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
                         return_to_url = q_params["returnTo"][0]
 
                 # Agar sahifada 'Join Program' / 'Continue' / 'Присоединиться к программе' chiqsa, bosamiz!
-                join_prog_btn = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе'), div[role='dialog'] button:has-text('Continue'), div[role='dialog'] button:has-text('Продолжить')").first
+                join_prog_btn = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе'), button:has-text('Accept invitation'), div[role='dialog'] button:has-text('Continue'), div[role='dialog'] button:has-text('Продолжить')").first
                 if join_prog_btn.count() > 0 and join_prog_btn.is_visible():
+                    print("   [JOIN] 'Join Program' tugmasi bosilmoqda...")
                     join_prog_btn.click(force=True)
-                    time.sleep(3.0)
+                    time.sleep(2.5)
 
                 # Agar email kiritish maydoni bo'lsa (Log in / Welcome back):
                 em_in_join = page.locator("input[type='email'], input[name='email']").first
                 if em_in_join.count() > 0 and em_in_join.is_visible():
                     em_val = getattr(mail_svc, "email", "")
                     if em_val:
-                        em_in_join.fill(em_val)
-                        time.sleep(0.3)
-                    cont_b = page.locator("button:has-text('Continue'), button:has-text('Продолжить'), button[type='submit']").first
+                        try:
+                            cur_em = em_in_join.input_value().strip()
+                        except Exception:
+                            cur_em = ""
+                        if not cur_em:
+                            em_in_join.fill(em_val)
+                            time.sleep(0.3)
+                    cont_b = page.locator("button:has-text('Continue'), button:has-text('Продолжить'), button:has-text('Next'), button:has-text('Далее'), button[type='submit']").first
                     if cont_b.count() > 0 and cont_b.is_visible():
                         cont_b.click(force=True)
                         time.sleep(1.2)
 
-                c_pwd = page.locator("input[placeholder='Create password'], input[type='password'], input[name='password']").first
-                if c_pwd.count() > 0 and c_pwd.is_visible():
-                    time.sleep(0.6)
-                    fn_in = page.locator("input[name='fullName'], input[placeholder*='full name' i], input[placeholder*='имя' i]").first
+                # TARTIB:
+                # 1) BIRINCHI NAVBATDA: 'Create password' / Ism kiritish bormi? (Yangi profil uchun)
+                create_pwd = page.locator("input[placeholder*='Create password' i], input[aria-label*='Create password' i], input[id*='create-password' i]").first
+                fn_in = page.locator("input[name='fullName'], input[placeholder*='full name' i], input[placeholder*='имя' i]").first
+                
+                is_create_password = False
+                if create_pwd.count() > 0 and create_pwd.is_visible():
+                    is_create_password = True
+                    pwd_box = create_pwd
+                elif fn_in.count() > 0 and fn_in.is_visible() and page.locator("input[type='password']").count() > 0:
+                    is_create_password = True
+                    pwd_box = page.locator("input[type='password']").first
+
+                if is_create_password:
+                    print("   [PAROL O'RNATISH] 'Create password' maydoni topildi...")
                     if fn_in.count() > 0 and fn_in.is_visible():
                         try:
                             cur_fn = fn_in.input_value().strip()
@@ -1506,36 +1527,50 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
                             time.sleep(0.15)
                             fn_in.fill(full_name.replace("`", "'"))
                             time.sleep(0.25)
-                    c_pwd.click(force=True)
+                    pwd_box.click(force=True)
                     time.sleep(0.2)
                     page.keyboard.press("Control+A")
                     page.keyboard.press("Backspace")
                     time.sleep(0.15)
                     page.keyboard.type(student_password, delay=35)
                     time.sleep(0.5)
-                    set_b = page.locator("button:has-text('Set Password'), button:has-text('Установить пароль'), button:has-text('Log in'), button:has-text('Войти'), button:has-text('Next'), button:has-text('Продолжить'), button:has-text('Continue'), button:has-text('Создать'), button[type='submit']").first
+
+                    set_b = page.locator("button:has-text('Set Password'), button:has-text('Установить пароль'), button:has-text('Create Account'), button:has-text('Создать'), button:has-text('Continue'), button:has-text('Продолжить'), button[type='submit']").first
                     if set_b.count() > 0 and set_b.is_visible():
+                        print("   [+] 'Set Password' bosilmoqda...")
                         set_b.click(force=True)
-                        cauth_ok = False
-                        for _ in range(20):
-                            time.sleep(0.5)
-                            cookies = [c.get("name", "") for c in page.context.cookies()]
-                            if any("CAUTH" in c for c in cookies) or "/programs/" in page.url or "/learn/" in page.url:
-                                cauth_ok = True
-                                break
-                        if cauth_ok:
-                            time.sleep(3.0)
-                            break
-                        continue
-                    break
+                        time.sleep(3.0)
+
+                # 2) SHU BO'LMASA KEYIN: Mavjud parol kiritish maydoni (Log in / Welcome back)
                 else:
-                    cookies = [c.get("name", "") for c in page.context.cookies()]
-                    if (any("CAUTH" in c for c in cookies) or "/programs/" in page.url or "/learn/" in page.url) and ("coursera.org" in page.url):
+                    existing_pwd = page.locator("input[type='password'], input[name='password']").first
+                    if existing_pwd.count() > 0 and existing_pwd.is_visible():
+                        print("   [LOGIN] 'Create password' yo'q (profil oldin ochilgan). Mavjud parol kiritilmoqda...")
+                        existing_pwd.click(force=True)
+                        time.sleep(0.2)
+                        page.keyboard.press("Control+A")
+                        page.keyboard.press("Backspace")
+                        time.sleep(0.15)
+                        page.keyboard.type(student_password, delay=35)
+                        time.sleep(0.5)
+
+                        login_btn = page.locator("button:has-text('Log in'), button:has-text('Войти'), button:has-text('Next'), button:has-text('Далее'), button:has-text('Continue'), button:has-text('Продолжить'), button[type='submit']").first
+                        if login_btn.count() > 0 and login_btn.is_visible():
+                            print("   [+] 'Log in' bosilmoqda...")
+                            login_btn.click(force=True)
+                            time.sleep(3.0)
+
+                cookies = [c.get("name", "") for c in page.context.cookies()]
+                if any("CAUTH" in c for c in cookies) or "/programs/" in page.url or "/learn/" in page.url:
+                    j_b = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе')").first
+                    if j_b.count() > 0 and j_b.is_visible():
+                        j_b.click(force=True)
                         time.sleep(2.0)
-                        break
+                    time.sleep(2.0)
+                    break
             except Exception:
                 pass
-            time.sleep(0.5)
+            time.sleep(0.6)
 
         for _ in range(8):
             try:
@@ -1834,11 +1869,10 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                 # Yangi ochilgan profil Courseraga kirganini tekshiramiz, kirmagan bo'lsa kiramiz!
                 cookies = [c.get("name", "") for c in context.cookies()]
                 if not any("CAUTH" in c for c in cookies):
-                    login_coursera(page, acc["email"], acc["password"], full_name=full_name)
                     try:
                         existing_mail = TempMailAPI(existing_email=acc["email"])
                         if existing_mail.token:
-                            complete_coursera_join_and_enroll(page, existing_mail, acc["password"], full_name=full_name, wait_timeout=15)
+                            complete_coursera_join_and_enroll(page, existing_mail, acc["password"], full_name=full_name, wait_timeout=25)
                     except Exception:
                         pass
                 cookies = [c.get("name", "") for c in context.cookies()]
