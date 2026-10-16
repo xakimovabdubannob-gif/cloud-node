@@ -457,12 +457,7 @@ def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
         GH_OWNER = "xakimovabdubannob-gif"
         GH_REPO = "cloud-node"
 
-        # 1. Agar 1-3 ta o'quvchi bo'lsa, Master server (1-Kompyuter, 3 ta Agent)ning o'zi bemalol bajaradi!
-        if nodes_count is None and students_count <= 3:
-            print(f"[CLUSTER DISPATCH] {students_count} ta o'quvchi uchun 1-Kompyuter (3 ta Agent) yetarli, qo'shimcha kompyuter yoqilmadi.")
-            return
-
-        # 2. Yangi klaster yoqishdan oldin, eski ishlab turgan klaster runlarini to'xtatamiz (zombi kompyuterlar yig'ilmasligi uchun)
+        # 1. Eski ishlab turgan klaster runlarini to'xtatamiz (zombi kompyuterlar yig'ilmasligi uchun)
         try:
             hdr = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"}
             r_act = requests.get(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs?status=in_progress", headers=hdr, timeout=10)
@@ -472,6 +467,11 @@ def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
                         requests.post(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs/{r['id']}/cancel", headers=hdr, timeout=5)
         except Exception as e:
             print(f"[CANCEL OLD RUNS ERROR] {e}")
+
+        # 2. Agar 1-3 ta o'quvchi bo'lsa, Master server (1-Kompyuter, 3 ta Agent)ning o'zi bemalol bajaradi!
+        if nodes_count is None and students_count <= 3:
+            print(f"[CLUSTER DISPATCH] {students_count} ta o'quvchi uchun 1-Kompyuter (3 ta Agent) yetarli, qo'shimcha kompyuter yoqilmadi.")
+            return
 
         for attempt in range(45):
             t_url = ""
