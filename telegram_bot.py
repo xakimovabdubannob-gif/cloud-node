@@ -720,7 +720,7 @@ class TelegramBotServer:
 
         import socket
         pc1_name = socket.gethostname()
-        active_lines = [f"💻 <b>☁️ GitHub Virtual Server #1</b> (16 GB | {MAX_PARALLEL_WORKERS} Agent) — 🟢 FAOL"]
+        active_lines = [f"💻 <b>1-Kompyuter [{pc1_name}]</b> (8 GB | {MAX_PARALLEL_WORKERS} Agent) — 🟢 FAOL"]
         has_pc1 = False
         for wid, st_text in sorted(self.active_worker_status.items()):
             if st_text:
@@ -780,7 +780,7 @@ class TelegramBotServer:
             f"📊 <b>JONLI TAHLIL VA KOMPYUTERLAR HOLATI ({now_str})</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{ord_block}"
-            f"⚡ <b>☁️ GITHUB VIRTUAL SERVERLAR VA AI AGENTLAR:</b>\n"
+            f"⚡ <b>BARCHA 13 TA KOMPYUTER VA AI AGENTLAR:</b>\n"
             f"{active_block}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🌐 <b>UMUMIY BAZA:</b> Jami <b>{current_total_certs} ta</b> sertifikat (Oxirgi soatda: <b>+{certs_last_hour} ta</b>)\n"
@@ -1070,16 +1070,6 @@ class TelegramBotServer:
         self.send_message(chat_id, msg, reply_markup=client_markup)
 
     def enqueue_order(self, chat_id, user_name, students, paid_info=None, silent=False):
-        try:
-            auto_xlsx = os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}.xlsx")
-            wb_a = Workbook()
-            ws_a = wb_a.active
-            ws_a.append(["№", "F.I.SH", "Tug'ilgan sana", "Guvohnoma seriyasi", "Guvohnoma raqami", "Sinf"])
-            for i_s, s_o in enumerate(students, 1):
-                ws_a.append([i_s, s_o.get("name",""), s_o.get("birth_date",""), s_o.get("doc_series",""), s_o.get("doc_number",""), s_o.get("class","")])
-            wb_a.save(auto_xlsx)
-        except Exception:
-            pass
         q_pos = order_queue.qsize() + 1
         est_mins = max(3, ((q_pos - 1) * 15) + int(len(students) * 1.2))
         if not silent:
@@ -1451,7 +1441,12 @@ class TelegramBotServer:
             except Exception:
                 st_nodes = {}
         if not st_nodes:
-            st_nodes = {}
+            st_nodes = {
+                "Cloud-Worker": {
+                    "pc_name": "Cloud-Worker",
+                    "ram_gb": 16,
+                    "workers": 6,
+                }
             }
 
         now_ts = time.time()
@@ -1471,10 +1466,10 @@ class TelegramBotServer:
                 offline_list.append(f"• 🔴 <b>{pc_idx}-Kompyuter [{pc_name}]</b> ({ram_gb} GB) — UZILGAN / O'CHIQ ({ago_s // 60} daqiqa oldin!)")
 
         summary_msg = (
-            f"📡 <b>☁️ GITHUB VIRTUAL SERVERLAR HOLATI (100% BULUT):</b>\n"
+            f"📡 <b>BARCHA KOMPYUTERLAR ALOQA VA FAOLLIK XULOSASI:</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🟢 <b>Faol ishlayotganlar ({len(online_list) + 1} ta):</b>\n"
-            f"• 🟢 <b>1-Kompyuter [Asosiy Server]</b> (8 GB | 3 Agent) — Ishlayapti\n"
+            f"• 🟢 <b>GitHub Cloud Server</b> (8 GB | 3 Agent) — Ishlayapti\n"
             + ("\n".join(online_list) + "\n" if online_list else "")
             + (f"\n🟡 <b>Bo'sh / To'xtatilganlar ({len(idle_list)} ta):</b>\n" + "\n".join(idle_list) + "\n" if idle_list else "")
             + (f"\n🔴 <b>Uzilgan yoki O'chiq kompyuterlar ({len(offline_list)} ta):</b>\n" + "\n".join(offline_list) + "\n" if offline_list else "\n✅ <b>Uzilgan kompyuterlar yo'q!</b>\n")
@@ -2075,14 +2070,6 @@ class TelegramBotServer:
                 "<i>Tanlagan kompyuteringizda hech qanday oyna ochilmaydi — rasm 100% orqa fonda olinib, 2–4 soniyada shu yerga keladi:</i>",
                 reply_markup={"inline_keyboard": rows}
             )
-            return
-
-        if text == "📸 Ekran Skrinshoti (Server/PC)":
-            self.send_message(chat_id, "📸 <b>Server va ulangan kompyuterlardan ekran skrinshoti olinmoqda (3-5 soniya)...</b>")
-            try:
-                open("screenshot_req.flag", "w").write(str(chat_id))
-            except Exception:
-                pass
             return
 
         if text in ("▶️ Qolgan joyidan davom ettirish", "/davom", "/resume"):
