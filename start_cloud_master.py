@@ -45,6 +45,19 @@ cfg = {
 with open("bot_config.json", "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2, ensure_ascii=False)
 
+def cleanup_old_runs(keep_last=5):
+    try:
+        hdr = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"}
+        r = requests.get(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs?per_page=50", headers=hdr, timeout=10)
+        completed_runs = [run for run in r.json().get("workflow_runs", []) if run.get("status") == "completed"]
+        for run in completed_runs[keep_last:]:
+            requests.delete(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs/{run['id']}", headers=hdr, timeout=5)
+    except Exception:
+        pass
+
+# Eski yakunlangan tarixlarni tozalaymiz (faqat oxirgi 5 tasi qoladi)
+cleanup_old_runs(keep_last=5)
+
 # 1. Master ko'prikni ishga tushirish
 print("[1] Cluster Master Bridge (port 8766) ishga tushirilmoqda...")
 p_bridge = subprocess.Popen([sys.executable, "-u", "cluster_master_bridge.py"])
