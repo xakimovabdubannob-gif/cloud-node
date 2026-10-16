@@ -90,6 +90,7 @@ except Exception as e:
 
 start_ts = time.time()
 known_orders = set(os.listdir("bot_orders"))
+last_dispatch_ts = 0.0
 
 print("=" * 65)
 print("🤖 TIZIM MONITORING REJIMIDA: Buyurtmalar va Klaster kuzatilmoqda...")
@@ -108,29 +109,64 @@ while time.time() - start_ts < 16200:
         print(f"[QAYTA ISHGA TUSHIRISH] Master Bridge to'xtadi (kod: {p_bridge.poll()}). Qayta yoqilmoqda...")
         p_bridge = subprocess.Popen([sys.executable, "-u", "cluster_master_bridge.py"])
 
-    # Yangi buyurtma kelganda ai_cluster.yml workflow ni avtomatik chaqirish
-    cur_orders = set(f for f in os.listdir("bot_orders") if f.startswith("in_") and f.endswith(".xlsx"))
-    new_f = cur_orders - known_orders
-    if new_f and os.path.exists("cluster_url.txt"):
-        known_orders = cur_orders
+    # Tunnel manzilini tekshiramiz
+    t_url = ""
+    if os.path.exists("cluster_url.txt"):
         try:
             t_url = open("cluster_url.txt", "r", encoding="utf-8").read().strip().splitlines()[0].strip()
-            if t_url.startswith("https://"):
-                latest_f = os.path.join("bot_orders", sorted(list(new_f))[-1])
-                try:
-                    wb = load_workbook(latest_f, read_only=True)
-                    st_cnt = max(1, wb.active.max_row - 1)
-                    wb.close()
-                except Exception:
-                    st_cnt = 10
-                n_cnt = 1 if st_cnt <= 3 else (3 if st_cnt <= 15 else 6)
-                print(f"[BUYURTMA KELDI] {st_cnt} ta o'quvchi! GitHub'da {n_cnt} ta Virtual Ishchi oqim ishga tushirilmoqda...")
-                requests.post(
-                    f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/workflows/ai_cluster.yml/dispatches",
-                    headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"},
-                    json={"ref": "main", "inputs": {"tunnel_url": t_url, "nodes_count": str(n_cnt)}},
-                    timeout=15,
-                )
+        except Exception:
+            pass
+
+    # Yangi buyurtma kelganda yoki tugallanmagan vazifalar qolib, klaster o'chiq bo'lsa
+    cur_orders = set(f for f in os.listdir("bot_orders") if f.startswith("in_") and f.endswith(".xlsx"))
+    new_f = cur_orders - known_orders
+
+    should_dispatch = False
+    target_st_cnt = 0
+
+    if new_f and t_url.startswith("https://"):
+        known_orders = cur_orders
+        latest_f = os.path.join("bot_orders", sorted(list(new_f))[-1])
+        try:
+            wb = load_workbook(latest_f, read_only=True)
+            target_st_cnt = max(1, wb.active.max_row - 1)
+            wb.close()
+        except Exception:
+            target_st_cnt = 10
+        should_dispatch = True
+    elif (time.time() - last_dispatch_ts > 180) and t_url.startswith("https://"):
+        # Failsafe: agar hali tugallanmagan o'quvchilar ko'p bo'lsa va klaster kompyuterlari ulanmagan bo'lsa
+        try:
+            st_resp = requests.get("http://127.0.0.1:8766/cluster/tg_status", timeout=5).json()
+            rem = st_resp.get("remaining_count", 0)
+            online = st_resp.get("online_nodes", 0)
+            if rem > 3 and online == 0:
+                print(f"[FAILSAFE KLASTER] {rem} ta tugallanmagan o'quvchi bor, ammo virtual klaster ulanmagan. Avtomatik ishga tushirilmoqda...")
+                target_st_cnt = rem
+                should_dispatch = True
+        except Exception:
+            pass
+
+    if should_dispatch and t_url.startswith("https://"):
+        last_dispatch_ts = time.time()
+        # O'quvchilar soniga qarab klaster kompyuterlari sonini avtomatik belgilash
+        if target_st_cnt <= 3:
+            n_cnt = 1
+        elif target_st_cnt <= 10:
+            n_cnt = 2
+        elif target_st_cnt <= 20:
+            n_cnt = 4
+        else:
+            n_cnt = 6
+        print(f"[BUYURTMA KELDI] {target_st_cnt} ta o'quvchi! GitHub'da {n_cnt} ta Virtual Kompyuter (Klaster) ishga tushirilmoqda...")
+        try:
+            r = requests.post(
+                f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/workflows/ai_cluster.yml/dispatches",
+                headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"},
+                json={"ref": "main", "inputs": {"tunnel_url": t_url, "nodes_count": str(n_cnt)}},
+                timeout=15,
+            )
+            print(f"[DISPATCH NATIJASI] status_code={r.status_code}")
         except Exception as err:
             print(f"[DISPATCH XATO] {err}")
 

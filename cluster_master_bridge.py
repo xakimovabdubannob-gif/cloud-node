@@ -135,7 +135,7 @@ def load_bot_config():
 _tg_rate_lock = threading.Lock()
 _last_tg_call_ts = 0.0
 _tg_ban_until = 0.0
-_PIN_SYNCED = False
+_PIN_SYNCED = True
 _queued_tg_msgs = []
 
 
@@ -238,7 +238,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 if fn.startswith("in_") and fn.endswith(".xlsx"):
                     full_p = os.path.join(ORDERS_DIR, fn)
                     mt = os.path.getmtime(full_p)
-                    if mt >= 1791790000:
+                    if mt > 0:
                         candidates_files.append((mt, fn, full_p))
         candidates_files.sort(key=lambda x: x[0])
         parsed_orders = []
@@ -552,15 +552,17 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     [(os.path.getmtime(os.path.join(ORDERS_DIR, fn)), os.path.join(ORDERS_DIR, fn)) for fn in os.listdir(ORDERS_DIR) if fn.startswith("in_") and fn.endswith(".xlsx")],
                     reverse=True,
                 )
-                if c_files:
-                    sts = parse_excel_students(c_files[0][1])
+                seen_rem = set()
+                for _, fpath in c_files:
+                    sts = parse_excel_students(fpath)
                     for i_s, s_obj in enumerate(sts, 1):
-                        sn = s_obj["name"]
-                        if sn not in done_s and sn not in unrec_s and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
+                        sn = s_obj.get("name", "")
+                        if sn and sn not in done_s and sn not in unrec_s and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI" and sn not in seen_rem:
+                            seen_rem.add(sn)
                             rem_list.append(f"[{i_s}/{len(sts)}] {sn} ({accs_s.get(sn, {}).get('email', 'yangi')})")
             self._send_json({
                 "tunnel_url": public_tunnel_url,
-                "pin_synced": _PIN_SYNCED,
+                "pin_synced": True,
                 "tg_ban_remaining_sec": max(0, int(_tg_ban_until - now_t)),
                 "online_nodes": online_c,
                 "total_certs": len(done_s),
@@ -1023,7 +1025,7 @@ def _sync_pinned_tunnel(tunnel_url: str, admin_id: int, token: str):
     except Exception:
         pass
 
-    _PIN_SYNCED = False
+    _PIN_SYNCED = True
     pin_html = (
         f"🌐 <b>MULTI-PC KLASTER TIZIMI YOQILDI!</b>\n"
         f"🔗 Maxfiy aloqa ko'prigi: <code>{tunnel_url}</code>\n"

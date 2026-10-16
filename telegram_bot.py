@@ -425,6 +425,31 @@ def parse_students_from_excel(file_path: str):
     return students
 
 
+def save_students_to_excel(students: list, target_path: str):
+    """O'quvchilar ro'yxatini Klaster va Master Bridge tushunadigan .xlsx faylga saqlaydi."""
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Oquvchilar"
+        ws.append(["№", "F.I.SH", "Tug'ilgan sana", "Guvohnoma seriyasi", "Guvohnoma raqami", "Sinf"])
+        for idx, st in enumerate(students, 1):
+            ws.append([
+                idx,
+                st.get("name", ""),
+                st.get("birth_date", "") or st.get("birth", ""),
+                st.get("cert_series", "") or st.get("doc_series", ""),
+                st.get("cert_number", "") or st.get("doc_number", ""),
+                st.get("class_name", "") or st.get("class", "") or "8-sinf"
+            ])
+        wb.save(target_path)
+        wb.close()
+        return True
+    except Exception as e:
+        print(f"[EXCEL_SAVE_ERROR] {e}")
+        return False
+
+
 def create_template_excel(output_path: str = None):
     """Mijozlar to'ldirishi uchun chiroyli, tushunarli Excel (.xlsx) shablon yaratadi."""
     if not output_path:
@@ -1083,6 +1108,20 @@ class TelegramBotServer:
                 f"🤖 Agentlarimiz ishni boshlaganda har bir o'quvchining qadamlarini jonli xabar qilib turadi!\n"
                 f"🔄 <i>Sertifikat olinmagan o'quvchilar chiqsa, o'rniga boshqa o'quvchilar berilsa bepul to'ldirib beriladi!</i>",
             )
+        # Klaster va Master Bridge ko'rishi uchun buyurtmani bot_orders/ ga saqlaymiz
+        try:
+            os.makedirs(ORDERS_DIR, exist_ok=True)
+            recent = [f for f in os.listdir(ORDERS_DIR) if f.startswith(f"in_{chat_id}_") and f.endswith(".xlsx")]
+            need_save = True
+            if recent:
+                latest = max(os.path.getmtime(os.path.join(ORDERS_DIR, f)) for f in recent)
+                if time.time() - latest < 10:
+                    need_save = False
+            if need_save:
+                save_students_to_excel(students, os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}.xlsx"))
+        except Exception as e:
+            print(f"[SAVE_ORDER_EXCEL_ERROR] {e}")
+
         order_queue.put({
             "chat_id": chat_id,
             "user_name": user_name,
