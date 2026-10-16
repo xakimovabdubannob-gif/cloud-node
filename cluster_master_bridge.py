@@ -56,8 +56,7 @@ file_lock = threading.Lock()
 nodes_lock = threading.Lock()
 _excel_cache = {}
 
-cluster_nodes = {}
-# 
+cluster_nodes = {
     "DESKTOP-EKA9GM2-60DD": {
         "pc_name": "DESKTOP-EKA9GM2-60DD",
         "ram_gb": 16,
