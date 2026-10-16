@@ -272,11 +272,8 @@ class ClusterWorkerNode:
         print("Asosiy bot serveri qidirilmoqda...")
         print("=" * 70)
 
-        for wid in range(1, 11):
-            t = threading.Thread(target=self.worker_thread_fn, args=(wid,), daemon=True)
-            t.start()
-
         first_reg = True
+        started_workers = set()
         while True:
             if not self.master_url:
                 self.master_url = self.discover_master_url()
@@ -298,8 +295,16 @@ class ClusterWorkerNode:
                 )
                 first_reg = False
                 resp = r.json()
-                self.approved = bool(resp.get("approved", False))
+                self.approved = bool(resp.get("approved", True))
                 self.target_workers = int(resp.get("workers", self.target_workers))
+
+                if self.approved:
+                    for wid in range(1, self.target_workers + 1):
+                        if wid not in started_workers:
+                            started_workers.add(wid)
+                            t = threading.Thread(target=self.worker_thread_fn, args=(wid,), daemon=True)
+                            t.start()
+                            time.sleep(0.3)
             except Exception:
                 self.master_url = ""
             time.sleep(5)

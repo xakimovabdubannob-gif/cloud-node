@@ -247,6 +247,11 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         parsed_orders = _state_mem_cache["orders"]
 
     with nodes_lock:
+        # Uzilgan nodelarni cluster_nodes dan tozalaymiz (zombi kompyuter raqamlari yig'ilmasligi uchun)
+        dead_nodes = [nid for nid, ninf in list(cluster_nodes.items()) if now - ninf.get("last_seen", 0) > 180]
+        for nid in dead_nodes:
+            cluster_nodes.pop(nid, None)
+
         # Uzilgan kompyuterlarning band qilgan o'quvchilarini bo'shatamiz
         for (_wnid, _wwid), _wst in list(_worker_assigned.items()):
             if _wnid == "MASTER_PC":
@@ -291,8 +296,9 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         done_norm = {normalize_student_key(d) for d in done_set}
         unrec_norm = {normalize_student_key(u) for u in unrec_set}
 
-        # 1) Agar shu agent o'ziga biriktirilgan o'quvchini hali oxirigacha (COMPLETED/UNRECOVERABLE) yetkazmagan bo'lsa,
-        # va u o'quvchi boshqa agentda band bo'lmasa, 3 urinishgacha qayta beramiz
+        # 1) QAT'IY QOIDA: 1 AGENT 1 TA O'QUVCHINI TUGATADI!
+        # Agar shu agent o'ziga biriktirilgan o'quvchini hali oxirigacha (COMPLETED/UNRECOVERABLE) yetkazmagan bo'lsa,
+        # SHU AGENTNING O'ZI oxirigacha ishlaydi, hech qachon boshqa o'quvchiga sakramaydi!
         if w_key:
             sticky = _sticky_workers.get(w_key)
             if sticky:
@@ -303,7 +309,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                     sn_norm not in done_norm
                     and sn_norm not in unrec_norm
                     and sn_norm not in busy_by_others_norm
-                    and sticky.get("tries", 1) < 3
+                    and sticky.get("tries", 1) < 10
                 ):
                     sticky["tries"] = sticky.get("tries", 1) + 1
                     in_progress_students[sn_sticky] = now
@@ -334,12 +340,12 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 if prev_st and normalize_student_key(prev_st) not in busy_by_others_norm:
                     in_progress_students.pop(prev_st, None)
 
-        # 2) Yangi o'quvchi tanlash: har bir qolgan o'quvchiga FAQAT 1 TA AGENT kiradi!
-        # Agar o'quvchi hozirda biror agent tomonidan ishlanayotgan bo'lsa, hech qachon 2-agent ustiga kiritilmaydi!
+        # 2) Yangi o'quvchi tanlash: 1 AGENT 1 TA O'QUVCHINI TUGATADI, SAKRAMAYDI QAT'IY!
+        # Ro'yxat boshidan (1, 2, 3...) tartib bilan eng birinchi bo'sh o'quvchini oladi!
         best_cand = None
         for chat_id, students in parsed_orders:
             total = len(students)
-            for idx in range(total, 0, -1):
+            for idx in range(1, total + 1):
                 st = students[idx - 1]
                 s_name = st["name"]
                 s_norm = normalize_student_key(s_name)
@@ -349,15 +355,14 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                     continue
                 if s_norm in busy_by_others_norm:
                     continue
-                tries_c = _state_mem_cache.setdefault("try_counts", {}).get(s_name, 0)
-                last_t = in_progress_students.get(s_name, 0.0)
-                has_ac_prio = 0 if (s_name in accs or s_norm in {normalize_student_key(a) for a in accs}) else 1
-                sort_key = (tries_c, last_t, has_ac_prio, -idx)
-                if best_cand is None or sort_key < best_cand[0]:
-                    best_cand = (sort_key, chat_id, idx, total, st, s_name)
+                # QAT'IY KETMA-KET: Doimo ro'yxatdagi eng birinchi bo'sh o'quvchini oladi (sakramaydi!)
+                best_cand = (chat_id, idx, total, st, s_name)
+                break
+            if best_cand is not None:
+                break
 
         if best_cand is not None:
-            _, chat_id, idx, total, st, s_name = best_cand
+            chat_id, idx, total, st, s_name = best_cand
             _state_mem_cache.setdefault("try_counts", {})[s_name] = _state_mem_cache["try_counts"].get(s_name, 0) + 1
             in_progress_students[s_name] = now
             acc_line = ""
