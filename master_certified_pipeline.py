@@ -1409,27 +1409,37 @@ def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, stu
 
         # Coursera kursini tanlash va "TEKSHIRISH" bosish
         print("   Coursera 'Generativ AI' kursi biriktirilmoqda...")
-        safe_goto_commit(page, "https://aileaders.uz/courses?platform=coursera", wait_sec=2.8)
-        for _ in range(2):
-            try:
-                page.keyboard.press("Escape")
-                page.evaluate("""() => {
-                    const b = document.querySelector('button[aria-label="Yopish"], button[aria-label="Close"]');
-                    if (b) b.click();
-                }""")
-            except Exception:
-                pass
-            time.sleep(0.25)
+        safe_goto_commit(page, "https://aileaders.uz/courses", wait_sec=2.8)
+        time.sleep(1.0)
+        # 1. Telegram yoki boshqa modalni yopish
+        page.evaluate("""() => {
+            const btns = Array.from(document.querySelectorAll('button'));
+            const b = btns.find(x => x.getAttribute('aria-label') === 'Yopish' || (x.innerText || '').trim().toLowerCase() === 'close');
+            if (b) b.click();
+        }""")
+        page.keyboard.press("Escape")
+        time.sleep(0.5)
 
-        c_tab = page.locator("button:has-text('Coursera')").first
+        # 2. 'Kurslar' va 'Coursera' filterini tanlash
+        kurslar_tab = page.locator("button:has-text('Kurslar')").first
+        if kurslar_tab.count() > 0 and kurslar_tab.is_visible():
+            kurslar_tab.click(force=True)
+            time.sleep(0.5)
+
+        c_tab = page.locator("button").filter(has_text=re.compile(r"Coursera", re.I)).first
         if c_tab.count() > 0 and c_tab.is_visible():
             c_tab.click(force=True)
             time.sleep(1.5)
 
-        card = page.locator("div, a, h3, p").filter(has_text=re.compile(r"Generativ Sun.iy Intellekt|Introduction to Generative AI", re.I)).first
-        if card.count() > 0 and card.is_visible():
-            card.scroll_into_view_if_needed()
-            card.click(force=True)
+        # 3. 'Generativ Sun’iy Intellektga Kirish' kartochkasini tanlash / ochish
+        h3 = page.locator("h3").filter(has_text=re.compile(r"Generativ", re.I)).first
+        if h3.count() > 0 and h3.is_visible():
+            card_box = h3.locator("xpath=ancestor::div[contains(@class, 'flex-col')]").first
+            open_btn = card_box.locator("button[aria-label='Kursni ochish']").first if card_box.count() > 0 else None
+            if open_btn and open_btn.count() > 0 and open_btn.is_visible():
+                open_btn.click(force=True)
+            else:
+                h3.click(force=True)
             time.sleep(2.5)
 
         tekshir_b = page.locator("button:has-text('TEKSHIRISH'), button:has-text('Tekshirish'), button:has-text('Boshlash'), button:has-text('Kursga')").first

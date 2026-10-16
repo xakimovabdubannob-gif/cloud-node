@@ -63,6 +63,13 @@ _worker_assigned = {}
 _sticky_workers = {}
 _last_nodes_save_ts = 0.0
 
+
+def normalize_student_key(name: str) -> str:
+    if not name:
+        return ""
+    s = re.sub(r"[`'ʻʼ’]", "", str(name).strip().upper())
+    return " ".join(s.split())
+
 if os.path.exists(NODES_STATE_FILE):
     try:
         with open(NODES_STATE_FILE, "r", encoding="utf-8") as _nf:
@@ -242,22 +249,47 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
     with nodes_lock:
         # Uzilgan kompyuterlarning band qilgan o'quvchilarini bo'shatamiz
         for (_wnid, _wwid), _wst in list(_worker_assigned.items()):
+            if _wnid == "MASTER_PC":
+                # Master PC mahalliy host - faqat 45 daqiqa mutlaqo javob bo'lmasa tozalaymiz
+                if now - in_progress_students.get(_wst, 0) > 2700:
+                    _worker_assigned.pop((_wnid, _wwid), None)
+                    _sticky_workers.pop((_wnid, _wwid), None)
+                    in_progress_students.pop(_wst, None)
+                continue
             _nlast = cluster_nodes.get(_wnid, {}).get("last_seen", 0)
             if now - _nlast > 180:
                 _worker_assigned.pop((_wnid, _wwid), None)
                 _sticky_workers.pop((_wnid, _wwid), None)
                 in_progress_students.pop(_wst, None)
 
-        expired = [k for k, t in in_progress_students.items() if now - t > 240]
+        # Hozir tirik agentlarga biriktirilgan barcha o'quvchilar
+        active_assigned_norm = set()
+        for (_wn, _ww), _st in _worker_assigned.items():
+            if _wn == "MASTER_PC" or (now - cluster_nodes.get(_wn, {}).get("last_seen", 0) <= 180):
+                active_assigned_norm.add(normalize_student_key(_st))
+
+        # Agar o'quvchi faol agentga biriktirilgan bo'lsa, in_progress_students dan HECH QACHON o'chirilmaydi!
+        expired = [k for k, t in in_progress_students.items() if (now - t > 600 and normalize_student_key(k) not in active_assigned_norm)]
         for k in expired:
             in_progress_students.pop(k, None)
 
-        # Hozir boshqa faol agentlar ishlayotgan o'quvchilar to'plami
+        # Hozir boshqa faol agentlar ishlayotgan o'quvchilar to'plami (Qat'iy 1 o'quvchi = 1 agent!)
         w_key = (node_id, str(worker_id)) if (node_id and worker_id) else None
-        busy_by_others = set()
+        busy_by_others_norm = set()
         for _ok, _ost in _worker_assigned.items():
-            if _ok != w_key and _ost in in_progress_students and (now - in_progress_students.get(_ost, 0) <= 240):
-                busy_by_others.add(_ost)
+            if _ok != w_key:
+                _ok_nid = _ok[0]
+                if _ok_nid == "MASTER_PC" or (now - cluster_nodes.get(_ok_nid, {}).get("last_seen", 0) <= 180):
+                    busy_by_others_norm.add(normalize_student_key(_ost))
+
+        for _st_k, _st_t in in_progress_students.items():
+            if now - _st_t <= 600:
+                # Agar aynan shu worker ga tegishli bo'lmasa, busy_by_others ga kiradi
+                if not (w_key and normalize_student_key(_worker_assigned.get(w_key, "")) == normalize_student_key(_st_k)):
+                    busy_by_others_norm.add(normalize_student_key(_st_k))
+
+        done_norm = {normalize_student_key(d) for d in done_set}
+        unrec_norm = {normalize_student_key(u) for u in unrec_set}
 
         # 1) Agar shu agent o'ziga biriktirilgan o'quvchini hali oxirigacha (COMPLETED/UNRECOVERABLE) yetkazmagan bo'lsa,
         # va u o'quvchi boshqa agentda band bo'lmasa, 3 urinishgacha qayta beramiz
@@ -266,10 +298,11 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
             if sticky:
                 st_sticky = sticky["student"]
                 sn_sticky = st_sticky["name"]
+                sn_norm = normalize_student_key(sn_sticky)
                 if (
-                    sn_sticky not in done_set
-                    and sn_sticky not in unrec_set
-                    and sn_sticky not in busy_by_others
+                    sn_norm not in done_norm
+                    and sn_norm not in unrec_norm
+                    and sn_norm not in busy_by_others_norm
                     and sticky.get("tries", 1) < 3
                 ):
                     sticky["tries"] = sticky.get("tries", 1) + 1
@@ -293,12 +326,12 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 else:
                     _sticky_workers.pop(w_key, None)
                     prev_st = _worker_assigned.pop(w_key, None)
-                    if prev_st and prev_st not in busy_by_others:
+                    if prev_st and normalize_student_key(prev_st) not in busy_by_others_norm:
                         in_progress_students.pop(prev_st, None)
                     tried_cluster_set.add(sn_sticky)
             else:
                 prev_st = _worker_assigned.pop(w_key, None)
-                if prev_st and prev_st not in busy_by_others:
+                if prev_st and normalize_student_key(prev_st) not in busy_by_others_norm:
                     in_progress_students.pop(prev_st, None)
 
         # 2) Yangi o'quvchi tanlash: har bir qolgan o'quvchiga FAQAT 1 TA AGENT kiradi!
@@ -309,15 +342,16 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
             for idx in range(total, 0, -1):
                 st = students[idx - 1]
                 s_name = st["name"]
-                if s_name in done_set or s_name in unrec_set:
+                s_norm = normalize_student_key(s_name)
+                if s_norm in done_norm or s_norm in unrec_norm:
                     continue
-                if s_name == "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
+                if s_norm == normalize_student_key("MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"):
                     continue
-                if s_name in busy_by_others or s_name in in_progress_students:
+                if s_norm in busy_by_others_norm:
                     continue
                 tries_c = _state_mem_cache.setdefault("try_counts", {}).get(s_name, 0)
                 last_t = in_progress_students.get(s_name, 0.0)
-                has_ac_prio = 0 if s_name in accs else 1
+                has_ac_prio = 0 if (s_name in accs or s_norm in {normalize_student_key(a) for a in accs}) else 1
                 sort_key = (tries_c, last_t, has_ac_prio, -idx)
                 if best_cand is None or sort_key < best_cand[0]:
                     best_cand = (sort_key, chat_id, idx, total, st, s_name)
@@ -353,7 +387,9 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         # Agar barcha qolgan o'quvchilar hozir faol agentlar tomonidan ishlanayotgan bo'lsa (all_done=False!),
         # ortiqcha agentlar ustiga kirib xalaqit bermasdan 10 soniya kutib turadi
         has_any_remaining = any(
-            s["name"] not in done_set and s["name"] not in unrec_set and s["name"] != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"
+            normalize_student_key(s["name"]) not in done_norm
+            and normalize_student_key(s["name"]) not in unrec_norm
+            and normalize_student_key(s["name"]) != normalize_student_key("MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI")
             for _, sts in parsed_orders
             for s in sts
         )
@@ -814,13 +850,15 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
         if path == "/cluster/claim_task":
             data = self._read_body()
             s_name = " ".join(data.get("student_name", "").strip().upper().split())
+            s_norm = normalize_student_key(s_name)
             node_id = data.get("node_id", "MASTER_PC")
             w_id = str(data.get("worker_id", "1"))
             now_t = time.time()
             with nodes_lock:
                 for (nid, wid), st_assigned in list(_worker_assigned.items()):
-                    if st_assigned == s_name and (nid, wid) != (node_id, w_id):
-                        if now_t - in_progress_students.get(s_name, 0) < 300:
+                    if normalize_student_key(st_assigned) == s_norm and (nid, wid) != (node_id, w_id):
+                        is_alive = (nid == "MASTER_PC" or (now_t - cluster_nodes.get(nid, {}).get("last_seen", 0) <= 180))
+                        if is_alive:
                             self._send_json({"ok": False, "busy_by": f"{nid} #{wid}"})
                             return
                 in_progress_students[s_name] = now_t
