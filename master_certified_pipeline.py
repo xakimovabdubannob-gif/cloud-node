@@ -877,8 +877,24 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                     page.keyboard.type(clean_honor_name, delay=10)
                     time.sleep(0.4)
 
-            # Honor Code galichkasini (checkbox) barcha Quizlarda (1, 2, 3 va 4) belgilash!
-            honor_cb = page.locator("label:has-text('understand and agree') input[type='checkbox'], label:has-text('понимаю и соглашаюсь') input[type='checkbox'], input[type='checkbox']").last
+            # React inputga F.I.SH ni 100% tanitish (Отправить kulrang bo'lib qolmasligi uchun!)
+            page.evaluate("""(val) => {
+                const inps = Array.from(document.querySelectorAll('input[type="text"], input:not([type])')).filter(i => !i.placeholder.toLowerCase().includes('search') && !i.placeholder.toLowerCase().includes('поиск'));
+                const target = inps[inps.length - 1];
+                if (target) {
+                    target.scrollIntoView({block: 'center'});
+                    target.focus();
+                    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                    nativeSetter.call(target, val);
+                    target.dispatchEvent(new Event('input', { bubbles: true }));
+                    target.dispatchEvent(new Event('change', { bubbles: true }));
+                    target.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                }
+            }""", clean_honor_name)
+            time.sleep(0.5)
+
+            # MUHIM: Quiz 4 savolining checkboxini bosib qo'ymaslik uchun faqat Honor Code checkboxinigina qidiramiz!
+            honor_cb = page.locator("label:has-text('understand and agree') input[type='checkbox'], label:has-text('понимаю и соглашаюсь') input[type='checkbox']")
             try:
                 if honor_cb.count() > 0 and not honor_cb.is_checked():
                     box = honor_cb.bounding_box()
