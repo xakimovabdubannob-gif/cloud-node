@@ -499,41 +499,69 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             node_id = qs.get("node", [""])[0]
             w_cnt = int(qs.get("w", ["4"])[0])
             act = qs.get("act", ["yes"])[0]
-            cfg = load_bot_config()
-            admin_id = cfg.get("admin_id", 6580113791)
 
-            if act == "no":
+            if act == "no" or w_cnt == 0:
                 with nodes_lock:
-                    pc_name = cluster_nodes.get(node_id, {}).get("pc_name", node_id)
-                    cluster_nodes.pop(node_id, None)
-                send_tg(admin_id, f"❌ <b>{pc_name}</b> kompyuteri rad etildi.")
-                self._send_html("<h2 style='font-family:sans-serif;color:#d9534f;text-align:center;margin-top:50px;'>❌ Rad etildi! Telegramga qaytishingiz mumkin.</h2>")
+                    if node_id in cluster_nodes:
+                        cluster_nodes[node_id]["approved"] = False
+                        cluster_nodes[node_id]["workers"] = 0
+                        cluster_nodes[node_id]["status"] = "🔴 To'xtatilgan (0 Agent)"
+                        pc_name = cluster_nodes[node_id].get("pc_name", node_id)
+                    else:
+                        pc_name = node_id
+                    save_nodes_state(force=True)
+
+                # Chala qolgan vazifalarni darhol boshqa kompyuterlar uchun bo'shatamiz:
+                with task_lock:
+                    released = []
+                    for (n, w), s_name in list(_worker_assigned.items()):
+                        if n == node_id:
+                            _worker_assigned.pop((n, w), None)
+                            _sticky_workers.pop((n, w), None)
+                            in_progress_students.pop(s_name, None)
+                            released.append(s_name)
+                    if released:
+                        print(f"[REASSIGN] {node_id} to'xtatildi. {len(released)} ta o'quvchi navbatga qaytarildi: {released}")
+
+                self._send_json({"ok": True, "action": "stopped", "node_id": node_id})
                 return
 
             with nodes_lock:
                 if node_id in cluster_nodes:
                     cluster_nodes[node_id]["approved"] = True
                     cluster_nodes[node_id]["workers"] = w_cnt
+                    cluster_nodes[node_id]["status"] = "🟢 Faol ishlamoqda..."
                     pc_name = cluster_nodes[node_id].get("pc_name", node_id)
                 else:
-                    cluster_nodes[node_id] = {"pc_name": node_id, "ram_gb": 16, "workers": w_cnt, "approved": True, "last_seen": time.time()}
+                    cluster_nodes[node_id] = {"pc_name": node_id, "ram_gb": 16, "workers": w_cnt, "approved": True, "last_seen": time.time(), "status": "🟢 Faol ishlamoqda..."}
                     pc_name = node_id
+                save_nodes_state(force=True)
 
-            send_tg(
-                admin_id,
-                f"✅ <b>BOTINGIZGA YANGI AI AGENTLAR QO'SHILDI!</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💻 Qo'shilgan kompyuter: <b>{pc_name}</b>\n"
-                f"🤖 Qo'shilgan parallel AI Agentlar: <b>+{w_cnt} ta Agent</b>\n"
-                f"🚀 Asosiy kompyuter (3 ta Agent) + {pc_name} ({w_cnt} ta Agent) = <b>Jami {3 + w_cnt} ta AI Agent</b> orqa fonda bo'linib ishni boshladi!",
-            )
-            self._send_html(
-                f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'></head>"
-                f"<body style='background:#0f172a;color:#22c55e;font-family:sans-serif;text-align:center;padding-top:60px;'>"
-                f"<h1>✅ {pc_name} ({w_cnt} ta AI Agent) muvaffaqiyatli qo'shildi!</h1>"
-                f"<p style='color:#cbd5e1;font-size:18px;'>Orqa fonda barcha buyurtmalarni bo'lishib bajarishni boshladi.<br>Ushbu oynani yopib Telegramga qaytishingiz mumkin.</p>"
-                f"<script>setTimeout(function(){{window.close();}}, 2500);</script></body></html>"
-            )
+            self._send_json({"ok": True, "action": "started", "node_id": node_id, "workers": w_cnt})
+            return
+
+        if path == "/cluster/stop_all":
+            with nodes_lock:
+                for nid in cluster_nodes:
+                    cluster_nodes[nid]["approved"] = False
+                    cluster_nodes[nid]["workers"] = 0
+                    cluster_nodes[nid]["status"] = "🔴 To'xtatilgan (0 Agent)"
+                save_nodes_state(force=True)
+            with task_lock:
+                _worker_assigned.clear()
+                _sticky_workers.clear()
+                in_progress_students.clear()
+            self._send_json({"ok": True, "action": "stopped_all"})
+            return
+
+        if path == "/cluster/start_all":
+            with nodes_lock:
+                for nid in cluster_nodes:
+                    cluster_nodes[nid]["approved"] = True
+                    cluster_nodes[nid]["workers"] = 4
+                    cluster_nodes[nid]["status"] = "🟢 Faol ishlamoqda..."
+                save_nodes_state(force=True)
+            self._send_json({"ok": True, "action": "started_all"})
             return
 
         if path == "/cluster/nodes":

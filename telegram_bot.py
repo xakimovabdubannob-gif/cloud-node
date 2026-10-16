@@ -450,7 +450,7 @@ def save_students_to_excel(students: list, target_path: str):
         return False
 
 
-def trigger_cluster_dispatch(students_count: int):
+def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
     """Buyurtma kelganda GitHub Actions ai_cluster.yml workflow ni to'g'ridan-to'g'ri chaqiradi."""
     def _run():
         GH_TOKEN = "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1]
@@ -464,8 +464,11 @@ def trigger_cluster_dispatch(students_count: int):
                 except Exception:
                     pass
             if t_url.startswith("https://"):
-                n_cnt = 1 if students_count <= 3 else (2 if students_count <= 10 else (4 if students_count <= 20 else 6))
-                print(f"[DIRECT CLUSTER DISPATCH] {students_count} ta o'quvchi uchun {n_cnt} ta Virtual Kompyuter chaqirilmoqda...")
+                if nodes_count is not None:
+                    n_cnt = max(1, min(6, nodes_count))
+                else:
+                    n_cnt = 1 if students_count <= 3 else (2 if students_count <= 10 else (4 if students_count <= 20 else 6))
+                print(f"[DIRECT CLUSTER DISPATCH] {n_cnt} ta Virtual Kompyuter chaqirilmoqda...")
                 try:
                     r = requests.post(
                         f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/workflows/ai_cluster.yml/dispatches",
@@ -1608,16 +1611,37 @@ class TelegramBotServer:
             + (f"\n🟡 <b>Bo'sh / To'xtatilganlar ({len(idle_list)} ta):</b>\n" + "\n".join(idle_list) + "\n" if idle_list else "")
             + (f"\n🔴 <b>Uzilgan yoki O'chiq kompyuterlar ({len(offline_list)} ta):</b>\n" + "\n".join(offline_list) + "\n" if offline_list else "\n✅ <b>Uzilgan kompyuterlar yo'q!</b>\n")
         )
-        cluster_ctrl_markup = {
-            "inline_keyboard": [
-                [
-                    {"text": "⚡ Klasterni yoqish (6 ta Kompyuter)", "callback_data": "start_cluster_manual"}
-                ],
-                [
-                    {"text": "🔄 Klaster holatini yangilash", "callback_data": "refresh_cluster_status"}
-                ]
-            ]
-        }
+        cluster_buttons = []
+        for pc_idx, (node_id, ninfo) in enumerate(st_nodes.items(), start=2):
+            w_cnt = int(ninfo.get("workers", 4))
+            ago_s = max(0, int(now_ts - float(ninfo.get("last_seen", 0))))
+            is_active = ninfo.get("approved", True) and w_cnt > 0 and ago_s < 120
+
+            if is_active:
+                cluster_buttons.append([
+                    {"text": f"🟢 {pc_idx}-Kompyuter ({w_cnt} Agent) ➡️ 🔴 O'chirish", "callback_data": f"cl_toggle|{node_id}|off"}
+                ])
+            else:
+                cluster_buttons.append([
+                    {"text": f"🔴 {pc_idx}-Kompyuter (O'chiq) ➡️ 🟢 Yoqish (4 Agent)", "callback_data": f"cl_toggle|{node_id}|on"}
+                ])
+
+        connected_count = len(st_nodes)
+        if connected_count < 6:
+            next_num = connected_count + 2
+            cluster_buttons.append([
+                {"text": f"➕ {next_num}-Virtual Kompyuterni yoqish (Bulut)", "callback_data": f"cl_spawn_one|{next_num}"}
+            ])
+
+        cluster_buttons.append([
+            {"text": "⚡ Barchasini yoqish (6 ta)", "callback_data": "start_cluster_manual"},
+            {"text": "🛑 Barchasini to'xtatish", "callback_data": "stop_cluster_all"},
+        ])
+        cluster_buttons.append([
+            {"text": "🔄 Klaster holatini yangilash", "callback_data": "refresh_cluster_status"}
+        ])
+
+        cluster_ctrl_markup = {"inline_keyboard": cluster_buttons}
         self.send_message(chat_id, summary_msg, reply_markup=cluster_ctrl_markup)
 
         for pc_idx, (node_id, ninfo) in enumerate(st_nodes.items(), start=2):
@@ -1637,24 +1661,16 @@ class TelegramBotServer:
             markup = {
                 "inline_keyboard": [
                     [
-                        {"text": f"✅ Ha ({def_workers} ta Agent bo'linsin)", "callback_data": f"cl_set|{node_id}|{def_workers}"},
+                        {"text": "🟢 Yoqish (4 Agent)", "callback_data": f"cl_toggle|{node_id}|on"},
+                        {"text": "🔴 O'chirish", "callback_data": f"cl_toggle|{node_id}|off"},
                     ],
                     [
-                        {"text": "🤖 1 Agent", "callback_data": f"cl_set|{node_id}|1"},
                         {"text": "🤖 2 Agent", "callback_data": f"cl_set|{node_id}|2"},
-                        {"text": "🤖 3 Agent", "callback_data": f"cl_set|{node_id}|3"},
                         {"text": "🤖 4 Agent", "callback_data": f"cl_set|{node_id}|4"},
-                        {"text": "🤖 5 Agent", "callback_data": f"cl_set|{node_id}|5"},
-                    ],
-                    [
                         {"text": "🤖 6 Agent", "callback_data": f"cl_set|{node_id}|6"},
-                        {"text": "🤖 7 Agent", "callback_data": f"cl_set|{node_id}|7"},
-                        {"text": "🤖 8 Agent", "callback_data": f"cl_set|{node_id}|8"},
-                        {"text": "🤖 9 Agent", "callback_data": f"cl_set|{node_id}|9"},
-                        {"text": "🤖 10 Agent", "callback_data": f"cl_set|{node_id}|10"},
                     ],
                     [
-                        {"text": "📸 Ekran Skrinshoti (Yashirin)", "callback_data": f"cl_scr|{node_id}"}, {"text": "❌ To'xtatish", "callback_data": f"cl_set|{node_id}|0"},
+                        {"text": "📸 Ekran Skrinshoti (Yashirin)", "callback_data": f"cl_scr|{node_id}"},
                     ],
                 ]
             }
@@ -1957,17 +1973,65 @@ class TelegramBotServer:
                 self.send_cluster_agent_selector(from_id)
                 return
 
-            if data == "start_cluster_manual":
+            if data.startswith("cl_toggle|"):
                 try:
-                    trigger_cluster_dispatch(28)
+                    _, n_id, action = data.split("|", 2)
+                    import urllib.parse
+                    q_n = urllib.parse.quote(n_id)
+                    if action == "off":
+                        requests.get(f"http://127.0.0.1:8766/cluster/approve?node={q_n}&w=0&act=no", timeout=5)
+                        alert_t = f"🔴 {n_id} to'xtatildi! Chala qolgan vazifalari boshqa kompyuterlarga o'tkazildi."
+                    else:
+                        requests.get(f"http://127.0.0.1:8766/cluster/approve?node={q_n}&w=4&act=yes", timeout=5)
+                        alert_t = f"🟢 {n_id} yoqildi! 4 ta AI Agent vazifalarni bo'lib olishga kirishdi."
                     requests.post(
                         f"{self.api_url}/answerCallbackQuery",
-                        data={"callback_query_id": cb["id"], "text": "✅ 6 ta Virtual Kompyuter (Klaster) ishga tushirish buyrug'i yuborildi!", "show_alert": True},
+                        data={"callback_query_id": cb["id"], "text": alert_t, "show_alert": True},
+                        timeout=5,
+                    )
+                    self.send_cluster_agent_selector(from_id)
+                except Exception as e:
+                    print(f"[CL_TOGGLE ERROR] {e}")
+                return
+
+            if data.startswith("cl_spawn_one|"):
+                try:
+                    _, pc_num = data.split("|", 1)
+                    trigger_cluster_dispatch(nodes_count=1)
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": f"🚀 {pc_num}-Virtual kompyuter ishga tushirilmoqda (30-60 soniyada ulanadi)...", "show_alert": True},
+                        timeout=5,
+                    )
+                except Exception as e:
+                    print(f"[CL_SPAWN_ONE ERROR] {e}")
+                return
+
+            if data == "stop_cluster_all":
+                try:
+                    requests.get("http://127.0.0.1:8766/cluster/stop_all", timeout=5)
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": "🛑 Barcha klaster kompyuterlari to'xtatildi! Vazifalar xavfsiz saqlandi.", "show_alert": True},
+                        timeout=5,
+                    )
+                    self.send_cluster_agent_selector(from_id)
+                except Exception as e:
+                    print(f"[STOP_CLUSTER_ALL ERROR] {e}")
+                return
+
+            if data == "start_cluster_manual":
+                try:
+                    requests.get("http://127.0.0.1:8766/cluster/start_all", timeout=5)
+                    trigger_cluster_dispatch(nodes_count=6)
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": "⚡ 6 ta Virtual Kompyuter (Klaster) ishga tushirish buyrug'i yuborildi!", "show_alert": True},
                         timeout=5,
                     )
                     self.send_message(
                         from_id,
-                        "🚀 <b>KLASTER ISHGA TUSHIRILMOQDA!</b>\n\n"
+                        "🚀 <b>BARCHA 6 TA KLASTER KOMPYUTERI YOQILMOQDA!</b>\n\n"
                         "⚡ GitHub Actions orqali 6 ta Virtual kompyuter (24 ta AI Agent) faollashtirildi.\n"
                         "⏳ Taxminan 30-60 soniyada kompyuterlar ulanib, navbatdagi barcha o'quvchilarni bo'lib oladi!",
                         reply_markup=self.get_reply_keyboard(from_id),
