@@ -1441,13 +1441,7 @@ class TelegramBotServer:
             except Exception:
                 st_nodes = {}
         if not st_nodes:
-            st_nodes = {
-                "Cloud-Worker": {
-                    "pc_name": "Cloud-Worker",
-                    "ram_gb": 16,
-                    "workers": 6,
-                }
-            }
+            st_nodes = {}
 
         now_ts = time.time()
         online_list = []
@@ -1469,7 +1463,7 @@ class TelegramBotServer:
             f"📡 <b>BARCHA KOMPYUTERLAR ALOQA VA FAOLLIK XULOSASI:</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🟢 <b>Faol ishlayotganlar ({len(online_list) + 1} ta):</b>\n"
-            f"• 🟢 <b>GitHub Cloud Server</b> (8 GB | 3 Agent) — Ishlayapti\n"
+            f"• 🟢 <b>1-Kompyuter [Asosiy Server]</b> (8 GB | 3 Agent) — Ishlayapti\n"
             + ("\n".join(online_list) + "\n" if online_list else "")
             + (f"\n🟡 <b>Bo'sh / To'xtatilganlar ({len(idle_list)} ta):</b>\n" + "\n".join(idle_list) + "\n" if idle_list else "")
             + (f"\n🔴 <b>Uzilgan yoki O'chiq kompyuterlar ({len(offline_list)} ta):</b>\n" + "\n".join(offline_list) + "\n" if offline_list else "\n✅ <b>Uzilgan kompyuterlar yo'q!</b>\n")
