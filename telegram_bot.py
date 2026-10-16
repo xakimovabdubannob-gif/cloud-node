@@ -451,11 +451,28 @@ def save_students_to_excel(students: list, target_path: str):
 
 
 def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
-    """Buyurtma kelganda GitHub Actions ai_cluster.yml workflow ni to'g'ridan-to'g'ri chaqiradi."""
+    """Buyurtma kelganda o'quvchilar soniga mos ravishda kerakli miqdorda Virtual Kompyuter chaqiradi."""
     def _run():
         GH_TOKEN = os.environ.get("GH_TOKEN", "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1])
         GH_OWNER = "xakimovabdubannob-gif"
         GH_REPO = "cloud-node"
+
+        # 1. Agar 1-3 ta o'quvchi bo'lsa, Master server (1-Kompyuter, 3 ta Agent)ning o'zi bemalol bajaradi!
+        if nodes_count is None and students_count <= 3:
+            print(f"[CLUSTER DISPATCH] {students_count} ta o'quvchi uchun 1-Kompyuter (3 ta Agent) yetarli, qo'shimcha kompyuter yoqilmadi.")
+            return
+
+        # 2. Yangi klaster yoqishdan oldin, eski ishlab turgan klaster runlarini to'xtatamiz (zombi kompyuterlar yig'ilmasligi uchun)
+        try:
+            hdr = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"}
+            r_act = requests.get(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs?status=in_progress", headers=hdr, timeout=10)
+            if r_act.status_code == 200:
+                for r in r_act.json().get("workflow_runs", []):
+                    if "Cluster" in r.get("name", ""):
+                        requests.post(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs/{r['id']}/cancel", headers=hdr, timeout=5)
+        except Exception as e:
+            print(f"[CANCEL OLD RUNS ERROR] {e}")
+
         for attempt in range(45):
             t_url = ""
             try:
@@ -472,8 +489,9 @@ def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
                 if nodes_count is not None:
                     n_cnt = max(1, min(6, nodes_count))
                 else:
-                    n_cnt = 1 if students_count <= 3 else (2 if students_count <= 10 else (4 if students_count <= 20 else 6))
-                print(f"[DIRECT CLUSTER DISPATCH] {n_cnt} ta Virtual Kompyuter chaqirilmoqda (tunnel: {t_url})...")
+                    needed = max(1, students_count - 3)
+                    n_cnt = min(6, max(1, (needed + 5) // 6))
+                print(f"[DIRECT CLUSTER DISPATCH] {n_cnt} ta Virtual Kompyuter chaqirilmoqda (o'quvchilar: {students_count}, tunnel: {t_url})...")
                 try:
                     r = requests.post(
                         f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/workflows/ai_cluster.yml/dispatches",
@@ -1221,6 +1239,21 @@ class TelegramBotServer:
                 )
             return
 
+        # Cluster ko'prigi bilan sinxronizatsiya: Agar bu o'quvchi boshqa klaster kompyuterida ishlanayotgan bo'lsa, ustiga kirmaymiz!
+        try:
+            claim_resp = requests.post("http://127.0.0.1:8766/cluster/claim_task", json={
+                "node_id": "MASTER_PC",
+                "worker_id": str(worker_id),
+                "student_name": s_name,
+                "idx": idx,
+                "total": total,
+            }, timeout=2).json()
+            if not claim_resp.get("ok", True):
+                print(f"[1-KOMPYUTER #{worker_id}] {s_name} klaster ({claim_resp.get('busy_by')}) tomonidan ishlanmoqda. Ustiga kirmasdan o'tkazildi.")
+                return
+        except Exception:
+            pass
+
         def _ensure_internet():
             while True:
                 try:
@@ -1243,6 +1276,14 @@ class TelegramBotServer:
 
         def update_step(step_text, _cid=chat_id, _mid=msg_id, _i=idx, _t=total, _name=s_name, _hist=step_history, _wid=worker_id, _ptag=pc1_tag):
             self.active_worker_status[_wid] = f"[{_i}/{_t}] {_name} — {step_text}"
+            try:
+                requests.post("http://127.0.0.1:8766/cluster/status", json={
+                    "node_id": "MASTER_PC",
+                    "worker_id": str(_wid),
+                    "status_text": f"[{_i}/{_t}] {_name} — {step_text}",
+                }, timeout=1)
+            except Exception:
+                pass
             if not _hist or _hist[-1] != step_text:
                 _hist.append(step_text)
             if _mid:
@@ -1253,6 +1294,15 @@ class TelegramBotServer:
                 self.edit_message(_cid, _mid, "\n".join(lines_txt))
 
         result_status = process_student(st, status_callback=update_step, headless=True, worker_id=worker_id)
+        try:
+            requests.post("http://127.0.0.1:8766/cluster/finish_task", json={
+                "node_id": "MASTER_PC",
+                "worker_id": worker_id,
+                "status": result_status,
+                "student": st,
+            }, timeout=2)
+        except Exception:
+            pass
         if result_status not in ("COMPLETED", "UNRECOVERABLE"):
             _ensure_internet()
 

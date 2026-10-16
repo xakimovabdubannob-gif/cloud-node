@@ -301,59 +301,54 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 if prev_st and prev_st not in busy_by_others:
                     in_progress_students.pop(prev_st, None)
 
-        # 2) Yangi o'quvchi tanlash: har bir qolgan o'quvchiga FAQAT 1 TA AGENT kiradi (40 ta agent bitta o'quvchiga tiqilmaydi!)
-        # Eng kam urinilgan o'quvchi birinchi tanlanadi (round-robin)
-        for pass_mode in ("FREE_ONLY", "OLDEST_IN_PROGRESS"):
-            best_cand = None
-            for chat_id, students in parsed_orders:
-                total = len(students)
-                for idx in range(total, 0, -1):
-                    st = students[idx - 1]
-                    s_name = st["name"]
-                    if s_name in done_set or s_name in unrec_set:
-                        continue
-                    if s_name == "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
-                        continue
-                    if pass_mode == "FREE_ONLY" and (s_name in busy_by_others or s_name in in_progress_students):
-                        continue
-                    if pass_mode == "OLDEST_IN_PROGRESS":
-                        # Agar o'quvchida hozir faol agent Quiz/Video/Login qilayotgan bo'lsa (<120s), ustiga 2-agentni kiritmaymiz!
-                        if now - in_progress_students.get(s_name, 0) < 120:
-                            continue
-                    tries_c = _state_mem_cache.setdefault("try_counts", {}).get(s_name, 0)
-                    last_t = in_progress_students.get(s_name, 0.0)
-                    has_ac_prio = 0 if s_name in accs else 1
-                    sort_key = (tries_c, last_t, has_ac_prio, -idx)
-                    if best_cand is None or sort_key < best_cand[0]:
-                        best_cand = (sort_key, chat_id, idx, total, st, s_name)
+        # 2) Yangi o'quvchi tanlash: har bir qolgan o'quvchiga FAQAT 1 TA AGENT kiradi!
+        # Agar o'quvchi hozirda biror agent tomonidan ishlanayotgan bo'lsa, hech qachon 2-agent ustiga kiritilmaydi!
+        best_cand = None
+        for chat_id, students in parsed_orders:
+            total = len(students)
+            for idx in range(total, 0, -1):
+                st = students[idx - 1]
+                s_name = st["name"]
+                if s_name in done_set or s_name in unrec_set:
+                    continue
+                if s_name == "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
+                    continue
+                if s_name in busy_by_others or s_name in in_progress_students:
+                    continue
+                tries_c = _state_mem_cache.setdefault("try_counts", {}).get(s_name, 0)
+                last_t = in_progress_students.get(s_name, 0.0)
+                has_ac_prio = 0 if s_name in accs else 1
+                sort_key = (tries_c, last_t, has_ac_prio, -idx)
+                if best_cand is None or sort_key < best_cand[0]:
+                    best_cand = (sort_key, chat_id, idx, total, st, s_name)
 
-            if best_cand is not None:
-                _, chat_id, idx, total, st, s_name = best_cand
-                _state_mem_cache.setdefault("try_counts", {})[s_name] = _state_mem_cache["try_counts"].get(s_name, 0) + 1
-                in_progress_students[s_name] = now
-                acc_line = ""
-                if s_name in accs:
-                    ac = accs[s_name]
-                    acc_line = f"{s_name} | {st.get('class_name', '')} | {ac.get('email', '')} | {ac.get('password', '')}"
-                if w_key:
-                    _worker_assigned[w_key] = s_name
-                    _sticky_workers[w_key] = {
-                        "chat_id": chat_id,
-                        "idx": idx,
-                        "total": total,
-                        "student": st,
-                        "tries": 1,
-                        "account_line": acc_line,
-                    }
-                return {
-                    "has_task": True,
-                    "task_id": f"task_{idx}_{int(now)}",
+        if best_cand is not None:
+            _, chat_id, idx, total, st, s_name = best_cand
+            _state_mem_cache.setdefault("try_counts", {})[s_name] = _state_mem_cache["try_counts"].get(s_name, 0) + 1
+            in_progress_students[s_name] = now
+            acc_line = ""
+            if s_name in accs:
+                ac = accs[s_name]
+                acc_line = f"{s_name} | {st.get('class_name', '')} | {ac.get('email', '')} | {ac.get('password', '')}"
+            if w_key:
+                _worker_assigned[w_key] = s_name
+                _sticky_workers[w_key] = {
                     "chat_id": chat_id,
                     "idx": idx,
                     "total": total,
                     "student": st,
+                    "tries": 1,
                     "account_line": acc_line,
                 }
+            return {
+                "has_task": True,
+                "task_id": f"task_{idx}_{int(now)}",
+                "chat_id": chat_id,
+                "idx": idx,
+                "total": total,
+                "student": st,
+                "account_line": acc_line,
+            }
 
         # Agar barcha qolgan o'quvchilar hozir faol agentlar tomonidan ishlanayotgan bo'lsa (all_done=False!),
         # ortiqcha agentlar ustiga kirib xalaqit bermasdan 10 soniya kutib turadi
@@ -814,6 +809,23 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 ).start()
 
             self._send_json({"approved": approved, "workers": workers})
+            return
+
+        if path == "/cluster/claim_task":
+            data = self._read_body()
+            s_name = " ".join(data.get("student_name", "").strip().upper().split())
+            node_id = data.get("node_id", "MASTER_PC")
+            w_id = str(data.get("worker_id", "1"))
+            now_t = time.time()
+            with nodes_lock:
+                for (nid, wid), st_assigned in list(_worker_assigned.items()):
+                    if st_assigned == s_name and (nid, wid) != (node_id, w_id):
+                        if now_t - in_progress_students.get(s_name, 0) < 300:
+                            self._send_json({"ok": False, "busy_by": f"{nid} #{wid}"})
+                            return
+                in_progress_students[s_name] = now_t
+                _worker_assigned[(node_id, w_id)] = s_name
+                self._send_json({"ok": True})
             return
 
         if path == "/cluster/pop_task":
