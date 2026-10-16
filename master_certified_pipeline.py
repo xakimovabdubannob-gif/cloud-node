@@ -1248,23 +1248,23 @@ class TempMailAPI:
                         a_tags = re.findall(r'<a\s+[^>]*href=["\'](https?://link\.coursera\.org/f/a/[^"\']+)["\'][^>]*>(.*?)</a>', html, re.DOTALL | re.I)
                         for href, txt in a_tags:
                             clean_t = re.sub(r'<[^>]+>', '', txt).strip().lower()
-                            if any(w in clean_t for w in ['join now', 'присоединиться', 'join coursera', 'accept', 'start learning', 'начать']):
+                            if any(w in clean_t for w in ['join now', 'присоединиться', 'join coursera', 'accept', 'start learning', 'начать', 'explore courses', 'log in', 'sign in']):
                                 found_url = href.replace('&amp;', '&')
                                 break
                         if not found_url:
                             links = re.findall(r'https?://link\.coursera\.org/f/a/[^\s"\'<>)]+', html)
                             if links:
-                                found_url = max(links, key=len).replace('&amp;', '&')
+                                found_url = links[0].replace('&amp;', '&')
                         if found_url:
-                            if 'digital education' in subj or 'invites you to learn' in subj or 'обучен' in subj:
-                                if found_url not in program_links:
-                                    program_links.append(found_url)
+                            # Avval 'Join now' va 'DEDC invites you to learn' ni to'g'ri tartibda yig'amiz
+                            if 'you\'re invited to join coursera' in subj:
+                                account_links.insert(0, found_url)
+                            elif 'digital education' in subj or 'invites you to learn' in subj or 'обучен' in subj:
+                                program_links.append(found_url)
                             else:
-                                if found_url not in account_links:
-                                    account_links.append(found_url)
+                                account_links.append(found_url)
         except Exception:
             pass
-        # Avval akkount parolini o'rnatish havolasi, keyin DEDC dasturiga qo'shilish havolasi (yoki DEDC o'zi)
         return account_links + program_links
 
     def wait_for_coursera_invite(self, timeout=50):
@@ -1851,54 +1851,33 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                 print(f"{tag}>>> O'QUVCHI: {full_name} ({email}) <<<")
                 print(f"=======================================================")
                 if status_callback:
-                    status_callback(f"🔐 {full_name}: Profilga kirilmoqda ({email})...")
-                logged_ok, was_signup = login_coursera(page, email, password, full_name=full_name)
-                cookies = [c.get("name", "") for c in context.cookies()]
-                has_cauth = any("CAUTH" in c for c in cookies)
+                    status_callback(f"🔐 {full_name}: Pochtadan DEDC Join ulanmoqda ({email})...")
 
-                # MUHIM HIMOYA: Agar pochta akkountlar.txt ga yozilgan bo'lsayu, lekin Coursera 'Join now' da uzilib qolgan bo'lsa
-                # YOKI hozirgina Sign Up (Full Name + Password) orqali yangi ochilgan bo'lsa -> mail.tm dan 1- va 2-Join havolalarini ochib DEDC dasturiga ulaymiz!
-                if not logged_ok or not has_cauth or was_signup:
-                    print(f"{tag}[TIKLASH] {email} uchun mail.tm pochtasidan 1- va 2-Join havolalari ochilib DEDC dasturiga ulanmoqda...")
+                # Coursera to'g'ridan-to'g'ri (authMode=login) da captcha / to'lov so'raydi.
+                # Shuning uchun doimo POCHTA (mail.tm) dagi 'Join now' yoki Aileaders 'TEKSHIRISH' orqali kiriladi!
+                print(f"{tag}[POCHTA-JOIN] {email} uchun mail.tm pochtasidan Join/DEDC havolasi ochilmoqda...")
+                existing_mail = TempMailAPI(existing_email=email)
+                joined_ok = False
+                if existing_mail.token:
+                    joined_ok = complete_coursera_join_and_enroll(page, existing_mail, password, full_name=full_name, wait_timeout=20)
+
+                if not joined_ok or not ensure_enrolled_on_coursera(page):
+                    print(f"{tag}[AILEADERS-TEKSHIRISH] {email} uchun Aileaders TEKSHIRISH orqali yangi Join havolasi yuborilmoqda...")
                     if status_callback:
-                        status_callback(f"🔗 1-xabar tasdiqlandi! Coursera 2-xabar (Join now) ulanmoqda...")
+                        status_callback(f"🔄 {full_name}: Aileaders TEKSHIRISH orqali yangi Join yuborilmoqda...")
                     try:
-                        existing_mail = TempMailAPI(existing_email=email)
-                        if existing_mail.token:
-                            complete_coursera_join_and_enroll(page, existing_mail, password, full_name=full_name, wait_timeout=15)
-                            if status_callback:
-                                status_callback(f"✅ Coursera DEDC dasturiga ulandi va kursga yozildi!")
-                            cookies = [c.get("name", "") for c in context.cookies()]
-                            has_cauth = any("CAUTH" in c for c in cookies)
-                            if not has_cauth:
-                                logged_ok, _ = login_coursera(page, email, password, full_name=full_name)
-                                cookies = [c.get("name", "") for c in context.cookies()]
-                                has_cauth = any("CAUTH" in c for c in cookies)
+                        ensure_aileaders_activated_and_tekshirish(page, existing_mail, email, password)
+                        complete_coursera_join_and_enroll(page, existing_mail, password, full_name=full_name, wait_timeout=25)
                     except Exception as rec_e:
-                        print(f"{tag}[!] Pochtadan tiklashda ogohlantirish: {rec_e}")
+                        print(f"{tag}[!] Aileaders TEKSHIRISH xatosi: {rec_e}")
 
-                if not has_cauth:
-                    print(f"{tag}[!] {email} ga bu safar kirib bo'lmadi, keyingi bosqichda qayta tekshiriladi!")
+                if not ensure_enrolled_on_coursera(page):
+                    print(f"{tag}[!] {email} kursga yozilmadi, keyingi bosqichda qayta tekshiriladi!")
                     try:
                         browser.close()
                     except Exception:
                         pass
                     return "FAILED"
-
-                # Agar kursga hali Enroll ('Enroll Starts Oct 11') bo'lmagan bo'lsa, Enroll qilishni 100% kafolatlaymiz!
-                # Agar DEDC dasturi ulanmagani sababli Enroll bo'lmasa, pochtadan DEDC taklifnomasini ochib ulaymiz!
-                if not ensure_enrolled_on_coursera(page):
-                    print(f"{tag}[DEDC-TIKLASH] {email} kursga hali yozilmagan — mail.tm dan DEDC dasturi taklifnomasi ochilmoqda...")
-                    if status_callback:
-                        status_callback(f"🔗 1-xabar tasdiqlandi! Coursera 2-xabar (Join now) ulanmoqda...")
-                    try:
-                        existing_mail = TempMailAPI(existing_email=email)
-                        if existing_mail.token:
-                            complete_coursera_join_and_enroll(page, existing_mail, password, full_name=full_name, wait_timeout=18)
-                            if status_callback:
-                                status_callback(f"✅ Coursera DEDC dasturiga ulandi va kursga yozildi!")
-                    except Exception as dedc_e:
-                        print(f"{tag}[!] DEDC tiklashda ogohlantirish: {dedc_e}")
 
             cert_url = None
             # Sertifikat chiqmasa, xatoni topib to'g'rilash uchun 3 marta to'liq tekshirib harakat qiladi!
