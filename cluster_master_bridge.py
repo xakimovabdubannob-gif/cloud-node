@@ -227,6 +227,8 @@ _last_tried_save_ts = 0.0
 
 def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
     global _last_tried_save_ts
+    if os.path.exists("cluster_pause_state.txt"):
+        return {"has_task": False, "all_done": False, "reason": "system_paused"}
     now = time.time()
     if now - _state_mem_cache["ts"] > 2.0:
         done_set = get_completed_students()

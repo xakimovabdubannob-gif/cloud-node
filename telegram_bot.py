@@ -545,6 +545,7 @@ class TelegramBotServer:
         self.shared_lock = threading.Lock()
         self.shared_orders = []
         self.active_worker_status = {}
+        self.is_paused = False
         self.hourly_stats = {
             "window_start": time.strftime("%H:%M"),
             "orders_submitted": 0,
@@ -1015,6 +1016,8 @@ class TelegramBotServer:
 
         # Agar yuboruvchi ADMIN bo'lsa — chek so'ramasdan darhol navbatga qo'shib ishga tushiramiz!
         if self.admin_id and chat_id == self.admin_id:
+            # Yangi Excel/matn kelganda oldingi qolib ketgan yoki to'xtatilgan eskilarni arxivlab, FAQAT yangisi bilan ishlaymiz!
+            self.clear_and_archive_old_orders()
             with self.stats_lock:
                 self.hourly_stats["orders_approved"] += 1
                 self.hourly_stats["students_ordered"] += count
@@ -1022,7 +1025,9 @@ class TelegramBotServer:
                 chat_id,
                 f"👑 <b>ADMIN BUYURTMASI QABUL QILINDI!</b>\n\n"
                 f"👥 O'quvchilar soni: <b>{count} ta</b>\n"
-                f"⚡ To'lov chekisiz to'g'ridan-to'g'ri navbatga qo'shildi va ishga tushirilmoqda!",
+                f"🧹 <i>Eski navbatlar tozalandi — faqat ushbu yangi buyurtma bajariladi!</i>\n"
+                f"⚡ Ishga tushirilmoqda...",
+                reply_markup=self.get_reply_keyboard(chat_id),
             )
             self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0})
             return
@@ -1131,6 +1136,8 @@ class TelegramBotServer:
         })
 
     def _pop_helper_task(self):
+        if getattr(self, "is_paused", False):
+            return None, None, None
         with self.shared_lock:
             for ctx in self.shared_orders:
                 try:
@@ -1238,6 +1245,9 @@ class TelegramBotServer:
 
     def worker_loop(self, worker_id: int):
         while True:
+            if getattr(self, "is_paused", False):
+                time.sleep(1.5)
+                continue
             ctx, idx, st = self._pop_helper_task()
             if ctx is not None:
                 try:
@@ -1297,6 +1307,8 @@ class TelegramBotServer:
 
                 try:
                     while True:
+                        if getattr(self, "is_paused", False):
+                            break
                         try:
                             idx, st = student_q.get_nowait()
                         except queue.Empty:
@@ -1348,14 +1360,70 @@ class TelegramBotServer:
             self.send_document(chat_id, excel_path, caption=summary_caption)
             order_queue.task_done()
 
+    def clear_and_archive_old_orders(self):
+        """Eski buyurtmalarni arxivlaydi, shunda yangi Excel/matn kelganda faqat yangisi bilan ishlanadi!"""
+        import shutil
+        if os.path.exists(ORDERS_DIR):
+            arch_dir = os.path.join(ORDERS_DIR, "archived")
+            os.makedirs(arch_dir, exist_ok=True)
+            for fn in os.listdir(ORDERS_DIR):
+                if fn.startswith("in_") and fn.endswith(".xlsx"):
+                    src = os.path.join(ORDERS_DIR, fn)
+                    dst = os.path.join(arch_dir, f"arch_{int(time.time())}_{fn}")
+                    try:
+                        shutil.move(src, dst)
+                    except Exception:
+                        pass
+        with self.shared_lock:
+            self.shared_orders.clear()
+        while not order_queue.empty():
+            try:
+                order_queue.get_nowait()
+                order_queue.task_done()
+            except Exception:
+                break
+        if os.path.exists("cluster_pause_state.txt"):
+            try:
+                os.remove("cluster_pause_state.txt")
+            except Exception:
+                pass
+        self.is_paused = False
+
+    def pause_all_tasks(self, chat_id: int):
+        self.is_paused = True
+        try:
+            with open("cluster_pause_state.txt", "w", encoding="utf-8") as f:
+                f.write("PAUSED")
+        except Exception:
+            pass
+        with self.shared_lock:
+            self.shared_orders.clear()
+        while not order_queue.empty():
+            try:
+                order_queue.get_nowait()
+                order_queue.task_done()
+            except Exception:
+                break
+        self.send_message(
+            chat_id,
+            "⏸ <b>JARAYON TO'XTATILDI (PAUZA)!</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "🛑 Yangi o'quvchilar navbati vaqtinchalik to'xtatildi.\n\n"
+            "👉 <b>Quyidagilardan birini tanlang:</b>\n"
+            "1️⃣ <b>▶️ Qolgan joyidan davom ettirish</b> — to'xtatilgan ro'yxat qolgan joyidan davom etadi.\n"
+            "2️⃣ <b>📁 Yangi Excel yoki matn tashlang</b> — eski ro'yxat to'liq bekor qilinadi va <b>FAQAT YANGI BUYURTMA</b> bajariladi!\n"
+            "3️⃣ <b>🗑 Yangi buyurtma (Eskisini o'chirish)</b> — eski navbatlarni butunlay tozalaydi.",
+            reply_markup=self.get_reply_keyboard(chat_id),
+        )
+
     def get_reply_keyboard(self, chat_id: int):
         if self.admin_id and chat_id == self.admin_id:
             return {
                 "keyboard": [
-                    [{"text": "🖥 Klaster (Kompyuterlar holati)"}, {"text": "📊 Tahlil va Jarayon"}],
-                    [{"text": "💰 Foyda va Kassa"}, {"text": "⚡ Jonli Log (Console)"}],
-                    [{"text": "📥 Tayyor Sertifikatlar (Excel)"}, {"text": "🌗 50% Avanslar"}],
-                    [{"text": "▶️ Qolgan joyidan davom ettirish"}, {"text": "🖥 Qo'shimcha Oqim (Agent tanlash)"}],
+                    [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
+                    [{"text": "🗑 Yangi buyurtma (Eskisini o'chirish)"}, {"text": "🖥 Klaster (Kompyuterlar holati)"}],
+                    [{"text": "📊 Tahlil va Jarayon"}, {"text": "⚡ Jonli Log (Console)"}],
+                    [{"text": "📥 Tayyor Sertifikatlar (Excel)"}, {"text": "💰 Foyda va Kassa"}],
                     [{"text": "📸 Kompyuterdan Skrinshot"}, {"text": "📄 Bo'sh Shablon (.xlsx)"}],
                     [{"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
                 ],
@@ -2105,9 +2173,33 @@ class TelegramBotServer:
             )
             return
 
+        if text in ("⏸ To'xtatish (Pauza)", "⏸ To'xtatish", "/stop", "/pause", "/toxtat"):
+            admin_input_state.pop(chat_id, None)
+            self.pause_all_tasks(chat_id)
+            return
+
         if text in ("▶️ Qolgan joyidan davom ettirish", "/davom", "/resume"):
             admin_input_state.pop(chat_id, None)
+            if os.path.exists("cluster_pause_state.txt"):
+                try:
+                    os.remove("cluster_pause_state.txt")
+                except Exception:
+                    pass
+            self.is_paused = False
             self.resume_latest_unfinished_order(notify_chat_id=chat_id, manual=True)
+            return
+
+        if text in ("🗑 Yangi buyurtma (Eskisini o'chirish)", "🗑 Yangi buyurtma", "/clear", "/tozalash"):
+            admin_input_state.pop(chat_id, None)
+            self.clear_and_archive_old_orders()
+            self.send_message(
+                chat_id,
+                "🗑 <b>ESKI BUYURTMALAR TO'LIQ TOZALANDI!</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                "Endi botga yangi <b>Excel (.xlsx)</b> fayl yoki o'quvchilar ro'yxatini yuboring.\n"
+                "Tizim faqat yangi ro'yxat bilan ishlaydi!",
+                reply_markup=self.get_reply_keyboard(chat_id),
+            )
             return
 
         if text in ("🖥 Klaster (Kompyuterlar holati)", "🖥 Qo'shimcha Oqim (Agent tanlash)", "/klaster", "/oqim", "/cluster"):
