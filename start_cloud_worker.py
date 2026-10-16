@@ -49,8 +49,8 @@ while proc.poll() is None:
             r = requests.get(f'{t_url}/cluster/tg_status', timeout=10).json()
             if r.get('remaining_count', 1) == 0:
                 idle += 1
-                print(f"[WORKER IDLE] {idle}/3")
-                if idle >= 3:
+                print(f"[WORKER IDLE] {idle}/20")
+                if idle >= 20:
                     print("[WORKER] Barcha vazifalar bajarildi, klaster bo'sh. Worker to'xtatilmoqda.")
                     proc.terminate()
                     break

@@ -1597,6 +1597,9 @@ class TelegramBotServer:
             st_nodes = {}
 
         now_ts = time.time()
+        # 150 soniyadan ko'proq vaqt oldin uzilgan eski mashinalarni ro'yxatdan tozalaymiz
+        st_nodes = {k: v for k, v in st_nodes.items() if (now_ts - float(v.get("last_seen", 0))) < 150}
+
         online_list = []
         idle_list = []
         offline_list = []
