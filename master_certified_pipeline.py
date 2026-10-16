@@ -609,9 +609,9 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
             if q_url.split("?")[0].rstrip("/") not in page.url or "/attempt" in page.url:
                 safe_navigate(page, q_url, wait_sec=2.5 * mult)
 
-            # Agar hali kursga Enroll ('Enroll Starts Oct 11') bo'lmagani uchun landing sahifaga qaytib qolgan bo'lsa, darhol Enroll qilamiz!
+            # Faqat haqiqatdan landing sahifaga qaytib qolib, Enroll tugmasi ko'rinib tursa Enroll qilamiz
             enr_check = page.locator("button[data-e2e='enroll-button'], button:has-text('Enroll'), button:has-text('Зарегистрироваться')").first
-            if ("/organizations/" in page.url and "/attempt" not in page.url) or (enr_check.count() > 0 and enr_check.is_visible()):
+            if enr_check.count() > 0 and enr_check.is_visible() and "/assignment-submission/" not in page.url and "/attempt" not in page.url:
                 ensure_enrolled_on_coursera(page)
                 safe_navigate(page, q_url, wait_sec=2.5 * mult)
 
