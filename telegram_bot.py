@@ -453,12 +453,17 @@ def save_students_to_excel(students: list, target_path: str):
 def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
     """Buyurtma kelganda GitHub Actions ai_cluster.yml workflow ni to'g'ridan-to'g'ri chaqiradi."""
     def _run():
-        GH_TOKEN = "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1]
+        GH_TOKEN = os.environ.get("GH_TOKEN", "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1])
         GH_OWNER = "xakimovabdubannob-gif"
         GH_REPO = "cloud-node"
-        for _ in range(45):
+        for attempt in range(45):
             t_url = ""
-            if os.path.exists("cluster_url.txt"):
+            try:
+                r_st = requests.get("http://127.0.0.1:8766/cluster/tg_status", timeout=2).json()
+                t_url = str(r_st.get("tunnel_url", "")).strip()
+            except Exception:
+                pass
+            if not t_url and os.path.exists("cluster_url.txt"):
                 try:
                     t_url = open("cluster_url.txt", "r", encoding="utf-8").read().strip().splitlines()[0].strip()
                 except Exception:
@@ -468,7 +473,7 @@ def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
                     n_cnt = max(1, min(6, nodes_count))
                 else:
                     n_cnt = 1 if students_count <= 3 else (2 if students_count <= 10 else (4 if students_count <= 20 else 6))
-                print(f"[DIRECT CLUSTER DISPATCH] {n_cnt} ta Virtual Kompyuter chaqirilmoqda...")
+                print(f"[DIRECT CLUSTER DISPATCH] {n_cnt} ta Virtual Kompyuter chaqirilmoqda (tunnel: {t_url})...")
                 try:
                     r = requests.post(
                         f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/workflows/ai_cluster.yml/dispatches",
@@ -1616,34 +1621,33 @@ class TelegramBotServer:
             + (f"\n🟡 <b>Bo'sh / To'xtatilganlar ({len(idle_list)} ta):</b>\n" + "\n".join(idle_list) + "\n" if idle_list else "")
             + (f"\n🔴 <b>Uzilgan yoki O'chiq kompyuterlar ({len(offline_list)} ta):</b>\n" + "\n".join(offline_list) + "\n" if offline_list else "\n✅ <b>Uzilgan kompyuterlar yo'q!</b>\n")
         )
+        node_keys = list(st_nodes.keys())
         cluster_buttons = []
-        for pc_idx, (node_id, ninfo) in enumerate(st_nodes.items(), start=2):
-            w_cnt = int(ninfo.get("workers", 4))
-            ago_s = max(0, int(now_ts - float(ninfo.get("last_seen", 0))))
-            is_active = ninfo.get("approved", True) and w_cnt > 0 and ago_s < 120
 
-            if is_active:
-                cluster_buttons.append([
-                    {"text": f"🟢 {pc_idx}-Kompyuter ({w_cnt} Agent) ➡️ 🔴 O'chirish", "callback_data": f"cl_toggle|{node_id}|off"}
-                ])
-            else:
-                cluster_buttons.append([
-                    {"text": f"🔴 {pc_idx}-Kompyuter (O'chiq) ➡️ 🟢 Yoqish (4 Agent)", "callback_data": f"cl_toggle|{node_id}|on"}
-                ])
-
-        connected_count = len(st_nodes)
-        if connected_count < 6:
-            next_num = connected_count + 2
-            cluster_buttons.append([
-                {"text": f"➕ {next_num}-Virtual Kompyuterni yoqish (Bulut)", "callback_data": f"cl_spawn_one|{next_num}"}
-            ])
+        for p1, p2 in [(2, 3), (4, 5), (6, 7)]:
+            row = []
+            for pc_num in (p1, p2):
+                idx_n = pc_num - 2
+                if idx_n < len(node_keys):
+                    nid = node_keys[idx_n]
+                    ninfo = st_nodes[nid]
+                    w_cnt = int(ninfo.get("workers", 4))
+                    ago_s = max(0, int(now_ts - float(ninfo.get("last_seen", 0))))
+                    is_active = ninfo.get("approved", True) and w_cnt > 0 and ago_s < 120
+                    if is_active:
+                        row.append({"text": f"🟢 {pc_num}-Komp ({w_cnt}A) 🔴", "callback_data": f"cl_toggle|{nid}|off"})
+                    else:
+                        row.append({"text": f"🔴 {pc_num}-Komp (0A) 🟢", "callback_data": f"cl_toggle|{nid}|on"})
+                else:
+                    row.append({"text": f"🚀 {pc_num}-Komp (Yoqish)", "callback_data": f"cl_spawn_idx|{pc_num}"})
+            cluster_buttons.append(row)
 
         cluster_buttons.append([
-            {"text": "⚡ Barchasini yoqish (6 ta)", "callback_data": "start_cluster_manual"},
-            {"text": "🛑 Barchasini to'xtatish", "callback_data": "stop_cluster_all"},
+            {"text": "⚡ BARCHASINI YOQISH (6 ta Kompyuter)", "callback_data": "start_cluster_manual"},
         ])
         cluster_buttons.append([
-            {"text": "🔄 Klaster holatini yangilash", "callback_data": "refresh_cluster_status"}
+            {"text": "🛑 Barchasini to'xtatish", "callback_data": "stop_cluster_all"},
+            {"text": "🔄 Yangilash", "callback_data": "refresh_cluster_status"},
         ])
 
         cluster_ctrl_markup = {"inline_keyboard": cluster_buttons}
@@ -1999,17 +2003,27 @@ class TelegramBotServer:
                     print(f"[CL_TOGGLE ERROR] {e}")
                 return
 
-            if data.startswith("cl_spawn_one|"):
+            if data.startswith("cl_spawn_one|") or data.startswith("cl_spawn_idx|"):
                 try:
-                    _, pc_num = data.split("|", 1)
-                    trigger_cluster_dispatch(nodes_count=1)
+                    parts = data.split("|")
+                    pc_num = parts[1] if len(parts) > 1 else "2"
+                    target_nodes = max(1, min(6, int(pc_num) - 1))
+                    trigger_cluster_dispatch(nodes_count=target_nodes)
                     requests.post(
                         f"{self.api_url}/answerCallbackQuery",
                         data={"callback_query_id": cb["id"], "text": f"🚀 {pc_num}-Virtual kompyuter ishga tushirilmoqda (30-60 soniyada ulanadi)...", "show_alert": True},
                         timeout=5,
                     )
+                    self.send_message(
+                        from_id,
+                        f"🚀 <b>{pc_num}-VIRTUAL KOMPYUTER ISHGA TUSHIRILMOQDA!</b>\n\n"
+                        f"⚡ GitHub Actions orqali 16 GB li Virtual kompyuter faollashtirildi.\n"
+                        f"⏳ Taxminan 30-60 soniyada ulanib, 4 ta AI Agent ishga tushadi!",
+                        reply_markup=self.get_reply_keyboard(from_id),
+                    )
+                    self.send_cluster_agent_selector(from_id)
                 except Exception as e:
-                    print(f"[CL_SPAWN_ONE ERROR] {e}")
+                    print(f"[CL_SPAWN ERROR] {e}")
                 return
 
             if data == "stop_cluster_all":
