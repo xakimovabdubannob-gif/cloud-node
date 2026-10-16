@@ -38,7 +38,7 @@ from master_certified_pipeline import (
     RESULTS_FILE,
     ERRORS_FILE,
 )
-from telegram_bot import parse_students_from_text, get_certificate_map, get_error_reason_map
+from telegram_bot import parse_students_from_text, parse_students_from_excel, get_certificate_map, get_error_reason_map
 
 if sys.platform == "win32":
     try:
@@ -190,35 +190,13 @@ def parse_excel_students(xlsx_path: str):
     except Exception:
         mtime = 0
 
-    students = []
     try:
-        wb = load_workbook(xlsx_path, data_only=True, read_only=True)
-        ws = wb.active
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            cells = []
-            for v in row:
-                if v is None:
-                    continue
-                if hasattr(v, "strftime"):
-                    cells.append(v.strftime("%d.%m.%Y"))
-                else:
-                    s = str(v).strip()
-                    if s:
-                        cells.append(s)
-            if not cells:
-                continue
-            line_joined = " ".join(cells)
-            if any(w in line_joined.lower() for w in ("ism", "familiya", "f.i.sh", "tug'ilgan", "seriya", "coursera")):
-                continue
-            st_list = parse_students_from_text(" | ".join(cells))
-            if st_list:
-                students.extend(st_list)
-        wb.close()
+        students = parse_students_from_excel(xlsx_path)
         if students:
             _excel_cache[xlsx_path] = (mtime, students)
+        return students
     except Exception:
-        pass
-    return students
+        return []
 
 
 _state_mem_cache = {"ts": 0.0, "done": set(), "unrec": set(), "accs": {}, "orders": []}
@@ -569,6 +547,28 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json(cluster_nodes)
             return
 
+        if path == "/cluster/rebalance":
+            with nodes_lock:
+                _state_mem_cache["ts"] = 0.0
+                _excel_cache.clear()
+                now_r = time.time()
+                stale_keys = [k for k, t in in_progress_students.items() if now_r - t > 90]
+                for k in stale_keys:
+                    in_progress_students.pop(k, None)
+                active_nodes_count = sum(1 for n in cluster_nodes.values() if (now_r - float(n.get("last_seen", 0))) < 180 and n.get("approved", True))
+
+            done_s = get_completed_students()
+            unrec_s = get_unrecoverable_students()
+            rem_count = 0
+            if os.path.exists(ORDERS_DIR):
+                for fn in os.listdir(ORDERS_DIR):
+                    if fn.startswith("in_") and fn.endswith(".xlsx"):
+                        sts = parse_excel_students(os.path.join(ORDERS_DIR, fn))
+                        rem_count += sum(1 for s in sts if s.get("name") and s["name"] not in done_s and s["name"] not in unrec_s and s["name"] != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI")
+
+            self._send_json({"ok": True, "active_nodes": active_nodes_count, "remaining_tasks": rem_count})
+            return
+
         if path == "/cluster/tg_status":
             now_t = time.time()
             with nodes_lock:
@@ -842,6 +842,17 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         cluster_nodes[node_id]["worker_statuses"] = {}
                     cluster_nodes[node_id]["worker_statuses"][worker_id] = init_st
                     save_nodes_state(force=False)
+                    pc_idx_reg = (list(cluster_nodes.keys()).index(node_id) + 2) if node_id in cluster_nodes else 2
+                    pc_name_reg = cluster_nodes[node_id].get("pc_name", node_id)
+
+                cid = task.get("chat_id") or load_bot_config().get("admin_id", 6580113791)
+                pc_tg_tag = f"💻 {pc_idx_reg}-Kompyuter [{pc_name_reg}] | 🤖 Agent #{worker_id}"
+                start_msg = (
+                    f"⏳ <b>[{idx_v}/{tot_v}] {st_n}</b>\n"
+                    f"└ <b>{pc_tg_tag}</b>\n"
+                    f"└ 🚀 Jarayon boshlanmoqda..."
+                )
+                threading.Thread(target=send_tg, args=(cid, start_msg), daemon=True).start()
             elif task.get("all_done") and node_id in cluster_nodes:
                 with nodes_lock:
                     cluster_nodes[node_id]["status"] = "🟡 Bo'sh (Yangi buyurtma kutilmoqda)"

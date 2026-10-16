@@ -1468,10 +1468,10 @@ class TelegramBotServer:
                 "keyboard": [
                     [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
                     [{"text": "🧹 Keshni tozalash (Yangi buyurtma)"}, {"text": "🖥 Klaster (Kompyuterlar holati)"}],
-                    [{"text": "📊 Tahlil va Jarayon"}, {"text": "⚡ Jonli Log (Console)"}],
-                    [{"text": "📥 Tayyor Sertifikatlar (Excel)"}, {"text": "💰 Foyda va Kassa"}],
-                    [{"text": "📸 Kompyuterdan Skrinshot"}, {"text": "📄 Bo'sh Shablon (.xlsx)"}],
-                    [{"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
+                    [{"text": "⚡ Ishlarni bo'lish (Klasterga)"}, {"text": "📊 Tahlil va Jarayon"}],
+                    [{"text": "⚡ Jonli Log (Console)"}, {"text": "📥 Tayyor Sertifikatlar (Excel)"}],
+                    [{"text": "💰 Foyda va Kassa"}, {"text": "📸 Kompyuterdan Skrinshot"}],
+                    [{"text": "📄 Bo'sh Shablon (.xlsx)"}, {"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
                 ],
                 "resize_keyboard": True,
                 "is_persistent": True,
@@ -1645,6 +1645,9 @@ class TelegramBotServer:
                     row.append({"text": f"🚀 {pc_num}-Komp (Yoqish)", "callback_data": f"cl_spawn_idx|{pc_num}"})
             cluster_buttons.append(row)
 
+        cluster_buttons.append([
+            {"text": "⚡ BARCHA KOMPYUTERLARGA ISH BO'LISH 🚀", "callback_data": "distribute_work_all"},
+        ])
         cluster_buttons.append([
             {"text": "⚡ BARCHASINI YOQISH (6 ta Kompyuter)", "callback_data": "start_cluster_manual"},
         ])
@@ -2062,6 +2065,30 @@ class TelegramBotServer:
                     print(f"[START_CLUSTER_MANUAL ERROR] {e}")
                 return
 
+            if data == "distribute_work_all":
+                try:
+                    r_reb = requests.get("http://127.0.0.1:8766/cluster/rebalance", timeout=5).json()
+                    active_c = r_reb.get("active_nodes", 0)
+                    rem_c = r_reb.get("remaining_tasks", 0)
+                    alert_text = f"⚡ Ishlar {active_c + 1} ta kompyuterga bo'lindi! Qolgan vazifalar: {rem_c} ta"
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": alert_text, "show_alert": True},
+                        timeout=5,
+                    )
+                    self.send_message(
+                        from_id,
+                        f"⚡ <b>BARCHA KOMPYUTERLARGA ISH BO'LINDI!</b>\n\n"
+                        f"• <b>1-Kompyuter (Asosiy Server):</b> 1-o'quvchidan boshlab olmoqda (Boshidan)\n"
+                        f"• <b>Klaster Kompyuterlari ({active_c} ta faol):</b> Oxiridan ({rem_c} ta qolgan vazifalarni) bo'lib olmoqda\n\n"
+                        f"🚀 Barcha faol AI Agentlar parallel ravishda ishga kirishdi!\n"
+                        f"Har bir kompyuter o'z natijasini to'g'ridan-to'g'ri botga xabar qiladi.",
+                        reply_markup=self.get_reply_keyboard(from_id),
+                    )
+                except Exception as e:
+                    print(f"[DISTRIBUTE_WORK ERROR] {e}")
+                return
+
             if data == "refresh_cluster_status":
                 try:
                     requests.post(
@@ -2360,6 +2387,25 @@ class TelegramBotServer:
                 "Tizim faqat yangi ro'yxat bilan ishlaydi!",
                 reply_markup=self.get_reply_keyboard(chat_id),
             )
+            return
+
+        if text in ("⚡ Ishlarni bo'lish (Klasterga)", "⚡ Ishlarni bo'lish", "/rebalance", "/bolish"):
+            admin_input_state.pop(chat_id, None)
+            try:
+                r_reb = requests.get("http://127.0.0.1:8766/cluster/rebalance", timeout=5).json()
+                active_c = r_reb.get("active_nodes", 0)
+                rem_c = r_reb.get("remaining_tasks", 0)
+                self.send_message(
+                    chat_id,
+                    f"⚡ <b>ISHLAR BARCHA KOMPYUTERLARGA BO'LINDI!</b>\n\n"
+                    f"• <b>1-Kompyuter (Asosiy Server):</b> 1-o'quvchidan boshlab olmoqda (Boshidan)\n"
+                    f"• <b>Klaster Kompyuterlari ({active_c} ta faol):</b> Oxiridan ({rem_c} ta qolgan vazifalarni) bo'lib olmoqda\n\n"
+                    f"🚀 Barcha faol AI Agentlar parallel ravishda ishga kirishdi!\n"
+                    f"Har bir kompyuter o'z natijasini to'g'ridan-to'g'ri botga xabar qiladi.",
+                    reply_markup=self.get_reply_keyboard(chat_id),
+                )
+            except Exception as e:
+                self.send_message(chat_id, f"⚠️ Qayta taqsimlashda xatolik: {e}")
             return
 
         if text in ("🖥 Klaster (Kompyuterlar holati)", "🖥 Qo'shimcha Oqim (Agent tanlash)", "/klaster", "/oqim", "/cluster"):
