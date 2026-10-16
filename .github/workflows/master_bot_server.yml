@@ -2,19 +2,22 @@ name: 24-7 Cloud Master Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: '25 */5 * * *'
+    - cron: '*/30 * * * *'
+concurrency:
+  group: master-bot-24-7-group
+  cancel-in-progress: false
 jobs:
   cloud-bot:
     runs-on: windows-latest
-    timeout-minutes: 350
+    timeout-minutes: 340
     steps:
       - uses: actions/checkout@v4
       - name: Kutubxonalar va Cloudflared ornatish
         shell: cmd
         run: |
-          python -m pip install --quiet --disable-pip-version-check requests openpyxl playwright selenium undetected-chromedriver setuptools
+          python -m pip install --quiet --disable-pip-version-check requests openpyxl playwright selenium undetected-chromedriver pillow setuptools
           python -m playwright install chromium
           curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -o cloudflared.exe
       - name: Bulut serverni ishga tushirish
         shell: cmd
-        run: python start_cloud_master.py
+        run: python -u start_cloud_master.py
