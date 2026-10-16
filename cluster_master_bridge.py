@@ -833,21 +833,28 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         ],
                     ]
                 }
-                threading.Thread(
-                    target=send_tg,
-                    args=(
-                        admin_id,
-                        f"🖥 <b>YANGI ({pc_idx_reg}-) KOMPYUTER BOTGA ULANDI!</b>\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                        f"💻 {pc_idx_reg}-Kompyuter: <b>{pc_name}</b>\n"
-                        f"🧠 Operativka (RAM): <b>{ram_gb} GB</b>\n"
-                        f"🤖 Tavsiya etilgan: <b>{def_workers} ta parallel AI Agent</b>\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                        f"❓ <b>Nechta AI Agent bo'lib beray? (Telefondan yoki kompyuterdan bitta bosing — havola ochmasdan darhol ishga tushadi!)</b>",
-                        markup,
-                    ),
-                    daemon=True,
-                ).start()
+                if force_prompt:
+                    threading.Thread(
+                        target=send_tg,
+                        args=(
+                            admin_id,
+                            f"🖥 <b>YANGI ({pc_idx_reg}-) KOMPYUTER BOTGA ULANDI!</b>\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"💻 {pc_idx_reg}-Kompyuter: <b>{pc_name}</b> ({ram_gb} GB)\n"
+                            f"🤖 <b>{def_workers} ta parallel AI Agent</b> bilan ishga tushirildi!",
+                            markup,
+                        ),
+                        daemon=True,
+                    ).start()
+                else:
+                    threading.Thread(
+                        target=send_tg,
+                        args=(
+                            admin_id,
+                            f"🟢 <b>{pc_idx_reg}-Kompyuter [{pc_name}]</b> ulandi va <b>{def_workers} ta AI Agent</b> bilan ishga tushdi!",
+                        ),
+                        daemon=True,
+                    ).start()
 
             self._send_json({"approved": approved, "workers": workers})
             return
@@ -990,20 +997,33 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             num_prefix = f"[{idx_val}/{tot_val}] " if (idx_val and tot_val) else ""
             pc2_tag = f"💻 {pc_idx_fin}-Kompyuter [{pc_name}] | 🤖 Agent #{worker_id}"
 
+            # Faqat masofaviy klaster kompyuterlari uchun Telegram xabari yuboramiz.
+            # 1-Kompyuter (MASTER_PC) uchun asosiy telegram_bot.py o'zi allaqachon to'g'ridan-to'g'ri xabar beradi!
+            if node_id != "MASTER_PC":
+                if status == "COMPLETED":
+                    certs = get_certificate_map()
+                    accs = get_existing_accounts()
+                    ac = accs.get(s_name, {})
+                    c_url = certs.get(s_name, "Havola faylda")
+                    msg_done = (
+                        f"🎉 <b>{num_prefix}MUVAFFAQIYATLI OLINDI!</b>\n"
+                        f"🖥 <b>{pc2_tag}</b>\n"
+                        f"👤 <b>{s_name}</b>\n"
+                        f"📧 Login: <code>{ac.get('email', '—')}</code>\n"
+                        f"🔑 Parol: <code>{ac.get('password', '—')}</code>\n"
+                        f"🏅 Sertifikat: {c_url}"
+                    )
+                    threading.Thread(target=send_tg, args=(chat_id, msg_done), daemon=True).start()
+                elif status == "UNRECOVERABLE":
+                    errs = get_error_reason_map()
+                    msg_skip = (
+                        f"⚠️ <b>{num_prefix}{s_name} — O'TKAZIB YUBORILDI! ({pc2_tag})</b>\n"
+                        f"Sababi: <i>{errs.get(s_name, 'Oldin boshqa joyda roʻyxatdan oʻtgan')}</i>"
+                    )
+                    threading.Thread(target=send_tg, args=(chat_id, msg_skip), daemon=True).start()
+
+            # Agar bu o'quvchi oxirgisi bo'lsa va buyurtma to'liq yakunlangan bo'lsa, umumiy Excelni yuboramiz
             if status == "COMPLETED":
-                certs = get_certificate_map()
-                accs = get_existing_accounts()
-                ac = accs.get(s_name, {})
-                c_url = certs.get(s_name, "Havola faylda")
-                msg_done = (
-                    f"🎉 <b>{num_prefix}MUVAFFAQIYATLI OLINDI!</b>\n"
-                    f"🖥 <b>{pc2_tag}</b>\n"
-                    f"👤 <b>{s_name}</b>\n"
-                    f"📧 Login: <code>{ac.get('email', '—')}</code>\n"
-                    f"🔑 Parol: <code>{ac.get('password', '—')}</code>\n"
-                    f"🏅 Sertifikat: {c_url}"
-                )
-                threading.Thread(target=send_tg, args=(chat_id, msg_done), daemon=True).start()
                 try:
                     cands = sorted(
                         [(os.path.getmtime(os.path.join(ORDERS_DIR, fn)), os.path.join(ORDERS_DIR, fn))
@@ -1042,13 +1062,6 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                                 )
                 except Exception:
                     pass
-            elif status == "UNRECOVERABLE":
-                errs = get_error_reason_map()
-                msg_skip = (
-                    f"⚠️ <b>{num_prefix}{s_name} — O'TKAZIB YUBORILDI! ({pc2_tag})</b>\n"
-                    f"Sababi: <i>{errs.get(s_name, 'Oldin boshqa joyda roʻyxatdan oʻtgan')}</i>"
-                )
-                threading.Thread(target=send_tg, args=(chat_id, msg_skip), daemon=True).start()
 
             self._send_json({"ok": True})
             return
