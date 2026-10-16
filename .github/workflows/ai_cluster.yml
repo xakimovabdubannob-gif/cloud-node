@@ -31,12 +31,12 @@ jobs:
       - name: Kutubxonalar
         shell: cmd
         run: |
-          python -m pip install --quiet --disable-pip-version-check requests openpyxl playwright selenium undetected-chromedriver setuptools
+          python -m pip install --quiet --disable-pip-version-check requests openpyxl playwright selenium undetected-chromedriver setuptools cryptography
           python -m playwright install chromium
       - name: Run Worker
         shell: cmd
         env:
           TUNNEL_URL: ${{ github.event.inputs.tunnel_url }}
-          SHIELD_KEY: UZB_AI_CLUSTER_SHIELD_2026_OBIDBEK_PRIVATE_KEY_998877
-          NEW_BOT_TOKEN: 8552767203:AAHk6KsW5r7PY6MC69A1ibYrz1c6aTmjLxM
+          SHIELD_KEY: ${{ secrets.SHIELD_KEY }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
         run: python start_cloud_worker.py

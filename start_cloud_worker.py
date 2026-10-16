@@ -22,6 +22,12 @@ if not t_url and os.path.exists('cluster_url.txt'):
 
 print(f"🚀 [CLOUD WORKER] Connecting to Master Tunnel: {t_url}")
 
+try:
+    from vault_security import decrypt_data_store
+    decrypt_data_store()
+except Exception:
+    pass
+
 for fn in ('akkountlar.txt', 'natijalar_sertifikatlar.txt', 'xatolar.txt'):
     open(fn, 'a', encoding='utf-8').close()
 

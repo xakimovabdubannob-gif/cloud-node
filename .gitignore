@@ -8,4 +8,9 @@ bot_orders/
 cluster_url.txt
 cluster_nodes_state.json
 cluster_tried_students.json
+cluster_pause_state.txt
 cloudflared.exe
+akkountlar.txt
+natijalar_sertifikatlar.txt
+bot_config.json
+xatolar.txt

@@ -1418,11 +1418,16 @@ class TelegramBotServer:
                 order_queue.task_done()
             except Exception:
                 break
-        if os.path.exists("cluster_pause_state.txt"):
-            try:
-                os.remove("cluster_pause_state.txt")
-            except Exception:
-                pass
+        for f in ("cluster_tried_students.json", "cluster_nodes_state.json", "cluster_pause_state.txt"):
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
+        try:
+            requests.get("http://127.0.0.1:8766/cluster/clear_cache", timeout=3)
+        except Exception:
+            pass
         self.is_paused = False
 
     def pause_all_tasks(self, chat_id: int):
@@ -1457,7 +1462,7 @@ class TelegramBotServer:
             return {
                 "keyboard": [
                     [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
-                    [{"text": "🗑 Yangi buyurtma (Eskisini o'chirish)"}, {"text": "🖥 Klaster (Kompyuterlar holati)"}],
+                    [{"text": "🧹 Keshni tozalash (Yangi buyurtma)"}, {"text": "🖥 Klaster (Kompyuterlar holati)"}],
                     [{"text": "📊 Tahlil va Jarayon"}, {"text": "⚡ Jonli Log (Console)"}],
                     [{"text": "📥 Tayyor Sertifikatlar (Excel)"}, {"text": "💰 Foyda va Kassa"}],
                     [{"text": "📸 Kompyuterdan Skrinshot"}, {"text": "📄 Bo'sh Shablon (.xlsx)"}],
@@ -2327,7 +2332,7 @@ class TelegramBotServer:
             self.resume_latest_unfinished_order(notify_chat_id=chat_id, manual=True)
             return
 
-        if text in ("🗑 Yangi buyurtma (Eskisini o'chirish)", "🗑 Yangi buyurtma", "/clear", "/tozalash"):
+        if text in ("🧹 Keshni tozalash (Yangi buyurtma)", "🧹 Keshni tozalash", "🗑 Yangi buyurtma (Eskisini o'chirish)", "🗑 Yangi buyurtma", "/clear", "/tozalash", "/kesh"):
             admin_input_state.pop(chat_id, None)
             self.clear_and_archive_old_orders()
             self.send_message(
