@@ -58,7 +58,7 @@ _excel_cache = {}
 
 cluster_nodes = {}
 # 
-    "OLD_PC": {
+    "DESKTOP-EKA9GM2-60DD": {
         "pc_name": "DESKTOP-EKA9GM2-60DD",
         "ram_gb": 16,
         "workers": 6,
@@ -251,7 +251,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 if fn.startswith("in_") and fn.endswith(".xlsx"):
                     full_p = os.path.join(ORDERS_DIR, fn)
                     mt = os.path.getmtime(full_p)
-                    if mt >= 0:
+                    if mt >= 1791790000:
                         candidates_files.append((mt, fn, full_p))
         candidates_files.sort(key=lambda x: x[0])
         parsed_orders = []
