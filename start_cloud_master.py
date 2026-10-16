@@ -55,6 +55,21 @@ def cleanup_old_runs(keep_last=5):
     except Exception:
         pass
 
+def sync_databases_to_github():
+    try:
+        st = subprocess.run(["git", "status", "--porcelain", "akkountlar.txt", "natijalar_sertifikatlar.txt"], capture_output=True, text=True)
+        if st.stdout.strip():
+            print("[SYNC] Yangi akkountlar va sertifikatlar GitHub'ga saqlanmoqda...")
+            subprocess.run(["git", "config", "user.name", "github-actions[bot]"])
+            subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"])
+            subprocess.run(["git", "add", "akkountlar.txt", "natijalar_sertifikatlar.txt"])
+            subprocess.run(["git", "commit", "-m", "sync: akkountlar va sertifikatlar yangilandi [skip ci]"])
+            push_url = f"https://x-access-token:{GH_TOKEN}@github.com/{GH_OWNER}/{GH_REPO}.git"
+            subprocess.run(["git", "push", push_url, "HEAD:main"])
+            print("[SYNC] Muvaffaqiyatli saqlandi!")
+    except Exception as e:
+        print(f"[SYNC XATO] {e}")
+
 # Eski yakunlangan tarixlarni tozalaymiz (faqat oxirgi 5 tasi qoladi)
 cleanup_old_runs(keep_last=5)
 
@@ -91,6 +106,7 @@ except Exception as e:
 start_ts = time.time()
 known_orders = set(os.listdir("bot_orders"))
 last_dispatch_ts = 0.0
+last_sync_ts = time.time()
 
 print("=" * 65)
 print("🤖 TIZIM MONITORING REJIMIDA: Buyurtmalar va Klaster kuzatilmoqda...")
@@ -99,6 +115,11 @@ print("=" * 65)
 # Runner aylanish davomiyligi: ~4.5 soat (16200 soniya)
 while time.time() - start_ts < 16200:
     time.sleep(6)
+
+    # Har 5 daqiqada yangi ro'yxatdan o'tgan login-parollarni GitHub'ga saqlash
+    if time.time() - last_sync_ts > 300:
+        last_sync_ts = time.time()
+        sync_databases_to_github()
 
     # Agar bot to'xtab qolsa, avtomatik qayta yoqish
     if p_bot.poll() is not None:
@@ -188,6 +209,11 @@ try:
         json={"ref": "main"},
         timeout=15,
     )
+except Exception:
+    pass
+
+try:
+    sync_databases_to_github()
 except Exception:
     pass
 

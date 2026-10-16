@@ -1048,8 +1048,6 @@ class TelegramBotServer:
 
         # Agar yuboruvchi ADMIN bo'lsa — chek so'ramasdan darhol navbatga qo'shib ishga tushiramiz!
         if self.admin_id and chat_id == self.admin_id:
-            # Yangi Excel/matn kelganda oldingi qolib ketgan yoki to'xtatilgan eskilarni arxivlab, FAQAT yangisi bilan ishlaymiz!
-            self.clear_and_archive_old_orders()
             with self.stats_lock:
                 self.hourly_stats["orders_approved"] += 1
                 self.hourly_stats["students_ordered"] += count
@@ -1057,8 +1055,7 @@ class TelegramBotServer:
                 chat_id,
                 f"👑 <b>ADMIN BUYURTMASI QABUL QILINDI!</b>\n\n"
                 f"👥 O'quvchilar soni: <b>{count} ta</b>\n"
-                f"🧹 <i>Eski navbatlar tozalandi — faqat ushbu yangi buyurtma bajariladi!</i>\n"
-                f"⚡ Ishga tushirilmoqda...",
+                f"⚡ Navbatga qo'shildi va barcha 6 ta Klaster kompyuterlari bilan birgalikda taqsimlanmoqda...",
                 reply_markup=self.get_reply_keyboard(chat_id),
             )
             self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0})
@@ -1611,7 +1608,17 @@ class TelegramBotServer:
             + (f"\n🟡 <b>Bo'sh / To'xtatilganlar ({len(idle_list)} ta):</b>\n" + "\n".join(idle_list) + "\n" if idle_list else "")
             + (f"\n🔴 <b>Uzilgan yoki O'chiq kompyuterlar ({len(offline_list)} ta):</b>\n" + "\n".join(offline_list) + "\n" if offline_list else "\n✅ <b>Uzilgan kompyuterlar yo'q!</b>\n")
         )
-        self.send_message(chat_id, summary_msg, reply_markup=self.get_reply_keyboard(chat_id))
+        cluster_ctrl_markup = {
+            "inline_keyboard": [
+                [
+                    {"text": "⚡ Klasterni yoqish (6 ta Kompyuter)", "callback_data": "start_cluster_manual"}
+                ],
+                [
+                    {"text": "🔄 Klaster holatini yangilash", "callback_data": "refresh_cluster_status"}
+                ]
+            ]
+        }
+        self.send_message(chat_id, summary_msg, reply_markup=cluster_ctrl_markup)
 
         for pc_idx, (node_id, ninfo) in enumerate(st_nodes.items(), start=2):
             pc_name = ninfo.get("pc_name", node_id)
@@ -1947,6 +1954,37 @@ class TelegramBotServer:
                 return
 
             if data == "open_cluster":
+                self.send_cluster_agent_selector(from_id)
+                return
+
+            if data == "start_cluster_manual":
+                try:
+                    trigger_cluster_dispatch(28)
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": "✅ 6 ta Virtual Kompyuter (Klaster) ishga tushirish buyrug'i yuborildi!", "show_alert": True},
+                        timeout=5,
+                    )
+                    self.send_message(
+                        from_id,
+                        "🚀 <b>KLASTER ISHGA TUSHIRILMOQDA!</b>\n\n"
+                        "⚡ GitHub Actions orqali 6 ta Virtual kompyuter (24 ta AI Agent) faollashtirildi.\n"
+                        "⏳ Taxminan 30-60 soniyada kompyuterlar ulanib, navbatdagi barcha o'quvchilarni bo'lib oladi!",
+                        reply_markup=self.get_reply_keyboard(from_id),
+                    )
+                except Exception as e:
+                    print(f"[START_CLUSTER_MANUAL ERROR] {e}")
+                return
+
+            if data == "refresh_cluster_status":
+                try:
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": "🔄 Klaster holati yangilanmoqda..."},
+                        timeout=5,
+                    )
+                except Exception:
+                    pass
                 self.send_cluster_agent_selector(from_id)
                 return
 
