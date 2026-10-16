@@ -1516,12 +1516,12 @@ if __name__ == "__main__":
             except Exception:
                 pass
 
-    _bridge_lock_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
+        _bridge_lock_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         _bridge_lock_sock.bind(("127.0.0.1", 49882))
         os.set_handle_inheritable(_bridge_lock_sock.fileno(), False)
-    except OSError:
-        sys.exit(0)
+    except Exception:
+        pass
 
     for _tmp_f in ("decoded_cw.txt", "decoded_mcp.txt"):
         try:
@@ -1543,14 +1543,6 @@ if __name__ == "__main__":
 
     sys.stdout = _TeeLog(sys.stdout, os.path.join(os.path.dirname(os.path.abspath(__file__)), "cluster_bridge_4w.log"))
     sys.stderr = _TeeLog(sys.stderr, os.path.join(os.path.dirname(os.path.abspath(__file__)), "cluster_bridge_4w.log"))
-
-    # Agar yangilangan (v2) ko'prik allaqachon ishlab turgan bo'lsa, ortiqcha oyna xato chiqarmasdan yopiladi
-    try:
-        _r = requests.get(f"http://127.0.0.1:{CLUSTER_PORT}/cluster/v2_ping", timeout=2)
-        if _r.status_code == 200 and _r.text.strip() == "OK_V2":
-            sys.exit(0)
-    except Exception:
-        pass
 
     def _free_port_8766(kill_cf: bool = False):
         if kill_cf:
@@ -1593,7 +1585,7 @@ if __name__ == "__main__":
     time.sleep(0.5)
 
     save_nodes_state()
-    http.server.ThreadingHTTPServer.allow_reuse_address = False
+    http.server.ThreadingHTTPServer.allow_reuse_address = True
     server = None
     for _attempt in range(15):
         try:

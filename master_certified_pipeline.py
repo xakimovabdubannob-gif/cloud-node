@@ -359,8 +359,10 @@ def check_module1_overview(page):
             const t = (a.innerText || '').trim();
             if (!h.includes('introduction-to-generative-ai')) return;
             for (let i = 1; i <= 4; i++) {
-                if (t.includes('Quiz ' + i)) {
+                if (t.includes('Quiz ' + i) && h.includes('/assignment-submission/')) {
                     res.quiz_urls['Quiz ' + i] = h;
+                }
+                if (t.includes('Quiz ' + i)) {
                     const row = getItemRow(a);
                     const rTxt = (row ? row.innerText : '') || '';
                     if ((rTxt.includes('100%') && !rTxt.includes('0%')) || isRowGreenCompleted(a)) {
@@ -1917,6 +1919,8 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
 
                     for q_name, default_url, q_num in QUIZZES_INFO:
                         actual_url = dynamic_urls.get(q_name, default_url)
+                        if "/assignment-submission/" not in str(actual_url):
+                            actual_url = default_url
                         if quiz_statuses.get(q_name) == "PASSED":
                             print(f"{tag}[+] {q_name} allaqachon 100% (PASSED) - vaqt sarflamay o'tkazib yuborildi!")
                         else:
