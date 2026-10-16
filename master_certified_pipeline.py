@@ -1480,9 +1480,21 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
                     join_prog_btn.click(force=True)
                     time.sleep(3.0)
 
+                # Agar email kiritish maydoni bo'lsa (Log in / Welcome back):
+                em_in_join = page.locator("input[type='email'], input[name='email']").first
+                if em_in_join.count() > 0 and em_in_join.is_visible():
+                    em_val = getattr(mail_svc, "email", "")
+                    if em_val:
+                        em_in_join.fill(em_val)
+                        time.sleep(0.3)
+                    cont_b = page.locator("button:has-text('Continue'), button:has-text('Продолжить'), button[type='submit']").first
+                    if cont_b.count() > 0 and cont_b.is_visible():
+                        cont_b.click(force=True)
+                        time.sleep(1.2)
+
                 c_pwd = page.locator("input[placeholder='Create password'], input[type='password'], input[name='password']").first
                 if c_pwd.count() > 0 and c_pwd.is_visible():
-                    time.sleep(0.8)
+                    time.sleep(0.6)
                     fn_in = page.locator("input[name='fullName'], input[placeholder*='full name' i], input[placeholder*='имя' i]").first
                     if fn_in.count() > 0 and fn_in.is_visible():
                         try:
@@ -1495,31 +1507,31 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
                             fn_in.fill(full_name.replace("`", "'"))
                             time.sleep(0.25)
                     c_pwd.click(force=True)
-                    time.sleep(0.25)
+                    time.sleep(0.2)
                     page.keyboard.press("Control+A")
                     page.keyboard.press("Backspace")
                     time.sleep(0.15)
-                    page.keyboard.type(student_password, delay=40)
+                    page.keyboard.type(student_password, delay=35)
                     time.sleep(0.5)
-                    set_b = page.locator("button:has-text('Set Password'), button:has-text('Установить пароль'), button:has-text('Продолжить'), button:has-text('Continue'), button:has-text('Создать'), button[type='submit']").first
+                    set_b = page.locator("button:has-text('Set Password'), button:has-text('Установить пароль'), button:has-text('Log in'), button:has-text('Войти'), button:has-text('Next'), button:has-text('Продолжить'), button:has-text('Continue'), button:has-text('Создать'), button[type='submit']").first
                     if set_b.count() > 0 and set_b.is_visible():
                         set_b.click(force=True)
                         cauth_ok = False
                         for _ in range(20):
                             time.sleep(0.5)
                             cookies = [c.get("name", "") for c in page.context.cookies()]
-                            if any("CAUTH" in c for c in cookies):
+                            if any("CAUTH" in c for c in cookies) or "/programs/" in page.url or "/learn/" in page.url:
                                 cauth_ok = True
                                 break
                         if cauth_ok:
-                            time.sleep(3.5)
+                            time.sleep(3.0)
                             break
                         continue
                     break
                 else:
                     cookies = [c.get("name", "") for c in page.context.cookies()]
-                    if any("CAUTH" in c for c in cookies) and ("/programs/" in page.url or "coursera.org" in page.url):
-                        time.sleep(2.5)
+                    if (any("CAUTH" in c for c in cookies) or "/programs/" in page.url or "/learn/" in page.url) and ("coursera.org" in page.url):
+                        time.sleep(2.0)
                         break
             except Exception:
                 pass
