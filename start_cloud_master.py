@@ -105,8 +105,17 @@ while time.time() - start_ts < 16200:
         print(f"[QAYTA ISHGA TUSHIRISH] Telegram Bot to'xtadi (kod: {p_bot.poll()}). Qayta yoqilmoqda...")
         p_bot = subprocess.Popen([sys.executable, "-u", "telegram_bot.py"])
 
-    if p_bridge.poll() is not None:
-        print(f"[QAYTA ISHGA TUSHIRISH] Master Bridge to'xtadi (kod: {p_bridge.poll()}). Qayta yoqilmoqda...")
+    # Faqat agar Master Bridge (port 8766) haqiqatan javob bermay qolsagina qayta yoqamiz
+    bridge_alive = False
+    try:
+        r_chk = requests.get("http://127.0.0.1:8766/cluster/v2_ping", timeout=2)
+        if r_chk.status_code == 200 and r_chk.text.strip() == "OK_V2":
+            bridge_alive = True
+    except Exception:
+        bridge_alive = False
+
+    if not bridge_alive and (p_bridge is None or p_bridge.poll() is not None):
+        print(f"[QAYTA ISHGA TUSHIRISH] Master Bridge to'xtadi. Qayta yoqilmoqda...")
         p_bridge = subprocess.Popen([sys.executable, "-u", "cluster_master_bridge.py"])
 
     # Tunnel manzilini tekshiramiz
