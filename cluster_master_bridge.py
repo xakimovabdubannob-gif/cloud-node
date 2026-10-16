@@ -127,7 +127,7 @@ def load_bot_config():
         except Exception:
             pass
     return {
-        "bot_token": "8552767203:AAFvypK6KpVVSZgJAusBtRbTZYyck2armkc",
+        "bot_token": "8552767203:AAHk6KsW5r7PY6MC69A1ibYrz1c6aTmjLxM",
         "admin_id": 6580113791,
     }
 
@@ -148,7 +148,7 @@ def send_tg(chat_id, text, reply_markup=None, priority_pin=False):
                     _queued_tg_msgs.append((chat_id, text, reply_markup))
         return {}
     cfg = load_bot_config()
-    token = cfg.get("bot_token", "8552767203:AAFvypK6KpVVSZgJAusBtRbTZYyck2armkc")
+    token = cfg.get("bot_token", "8552767203:AAHk6KsW5r7PY6MC69A1ibYrz1c6aTmjLxM")
     data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)

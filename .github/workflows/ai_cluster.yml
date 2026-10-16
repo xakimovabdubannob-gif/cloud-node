@@ -38,5 +38,5 @@ jobs:
         env:
           TUNNEL_URL: ${{ github.event.inputs.tunnel_url }}
           SHIELD_KEY: UZB_AI_CLUSTER_SHIELD_2026_OBIDBEK_PRIVATE_KEY_998877
-          NEW_BOT_TOKEN: 8552767203:AAFvypK6KpVVSZgJAusBtRbTZYyck2armkc
+          NEW_BOT_TOKEN: 8552767203:AAHk6KsW5r7PY6MC69A1ibYrz1c6aTmjLxM
         run: python start_cloud_worker.py

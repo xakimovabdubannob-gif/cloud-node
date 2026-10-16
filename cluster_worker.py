@@ -88,7 +88,7 @@ def load_bot_config():
         except Exception:
             pass
     return {
-        "bot_token": "8552767203:AAFvypK6KpVVSZgJAusBtRbTZYyck2armkc",
+        "bot_token": "8552767203:AAHk6KsW5r7PY6MC69A1ibYrz1c6aTmjLxM",
         "admin_id": 6580113791,
     }
 
@@ -96,7 +96,7 @@ def load_bot_config():
 class ClusterWorkerNode:
     def __init__(self):
         cfg = load_bot_config()
-        self.token = cfg.get("bot_token", "8552767203:AAFvypK6KpVVSZgJAusBtRbTZYyck2armkc")
+        self.token = cfg.get("bot_token", "8552767203:AAHk6KsW5r7PY6MC69A1ibYrz1c6aTmjLxM")
         self.admin_id = cfg.get("admin_id", 6580113791)
         self.api_url = f"https://api.telegram.org/bot{self.token}"
         mac_tail = hex(uuid.getnode())[-4:].upper()

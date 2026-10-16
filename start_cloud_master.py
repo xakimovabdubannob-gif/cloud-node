@@ -12,7 +12,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-BOT_TOKEN = "8552767203:AAFvypK6KpVVSZgJAusBtRbTZYyck2armkc"
+BOT_TOKEN = "8552767203:AAHk6KsW5r7PY6MC69A1ibYrz1c6aTmjLxM"
 ADMIN_ID = 6580113791
 GH_TOKEN = "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1]
 GH_OWNER = "xakimovabdubannob-gif"
