@@ -720,7 +720,7 @@ class TelegramBotServer:
 
         import socket
         pc1_name = socket.gethostname()
-        active_lines = [f"💻 <b>1-Kompyuter [{pc1_name}]</b> (8 GB | {MAX_PARALLEL_WORKERS} Agent) — 🟢 FAOL"]
+        active_lines = [f"💻 <b>☁️ GitHub Virtual Server #1</b> (16 GB | {MAX_PARALLEL_WORKERS} Agent) — 🟢 FAOL"]
         has_pc1 = False
         for wid, st_text in sorted(self.active_worker_status.items()):
             if st_text:
@@ -780,7 +780,7 @@ class TelegramBotServer:
             f"📊 <b>JONLI TAHLIL VA KOMPYUTERLAR HOLATI ({now_str})</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{ord_block}"
-            f"⚡ <b>BARCHA 13 TA KOMPYUTER VA AI AGENTLAR:</b>\n"
+            f"⚡ <b>☁️ GITHUB VIRTUAL SERVERLAR VA AI AGENTLAR:</b>\n"
             f"{active_block}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🌐 <b>UMUMIY BAZA:</b> Jami <b>{current_total_certs} ta</b> sertifikat (Oxirgi soatda: <b>+{certs_last_hour} ta</b>)\n"
@@ -1070,6 +1070,16 @@ class TelegramBotServer:
         self.send_message(chat_id, msg, reply_markup=client_markup)
 
     def enqueue_order(self, chat_id, user_name, students, paid_info=None, silent=False):
+        try:
+            auto_xlsx = os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}.xlsx")
+            wb_a = Workbook()
+            ws_a = wb_a.active
+            ws_a.append(["№", "F.I.SH", "Tug'ilgan sana", "Guvohnoma seriyasi", "Guvohnoma raqami", "Sinf"])
+            for i_s, s_o in enumerate(students, 1):
+                ws_a.append([i_s, s_o.get("name",""), s_o.get("birth_date",""), s_o.get("doc_series",""), s_o.get("doc_number",""), s_o.get("class","")])
+            wb_a.save(auto_xlsx)
+        except Exception:
+            pass
         q_pos = order_queue.qsize() + 1
         est_mins = max(3, ((q_pos - 1) * 15) + int(len(students) * 1.2))
         if not silent:
@@ -1317,7 +1327,8 @@ class TelegramBotServer:
                     [{"text": "💰 Foyda va Kassa"}, {"text": "⚡ Jonli Log (Console)"}],
                     [{"text": "📥 Tayyor Sertifikatlar (Excel)"}, {"text": "🌗 50% Avanslar"}],
                     [{"text": "▶️ Qolgan joyidan davom ettirish"}, {"text": "🖥 Qo'shimcha Oqim (Agent tanlash)"}],
-                    [{"text": "📄 Bo'sh Shablon (.xlsx)"}, {"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
+                    [{"text": "📸 Kompyuterdan Skrinshot"}, {"text": "📄 Bo'sh Shablon (.xlsx)"}],
+                    [{"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
                 ],
                 "resize_keyboard": True,
                 "is_persistent": True,
@@ -1440,12 +1451,7 @@ class TelegramBotServer:
             except Exception:
                 st_nodes = {}
         if not st_nodes:
-            st_nodes = {
-                "DESKTOP-EKA9GM2-60DD": {
-                    "pc_name": "DESKTOP-EKA9GM2-60DD",
-                    "ram_gb": 16,
-                    "workers": 6,
-                }
+            st_nodes = {}
             }
 
         now_ts = time.time()
@@ -1465,7 +1471,7 @@ class TelegramBotServer:
                 offline_list.append(f"• 🔴 <b>{pc_idx}-Kompyuter [{pc_name}]</b> ({ram_gb} GB) — UZILGAN / O'CHIQ ({ago_s // 60} daqiqa oldin!)")
 
         summary_msg = (
-            f"📡 <b>BARCHA KOMPYUTERLAR ALOQA VA FAOLLIK XULOSASI:</b>\n"
+            f"📡 <b>☁️ GITHUB VIRTUAL SERVERLAR HOLATI (100% BULUT):</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🟢 <b>Faol ishlayotganlar ({len(online_list) + 1} ta):</b>\n"
             f"• 🟢 <b>1-Kompyuter [Asosiy Server]</b> (8 GB | 3 Agent) — Ishlayapti\n"
@@ -1509,7 +1515,7 @@ class TelegramBotServer:
                         {"text": "🤖 10 Agent", "callback_data": f"cl_set|{node_id}|10"},
                     ],
                     [
-                        {"text": "❌ Yo'q, to'xtatish", "callback_data": f"cl_set|{node_id}|0"},
+                        {"text": "📸 Ekran Skrinshoti (Yashirin)", "callback_data": f"cl_scr|{node_id}"}, {"text": "❌ To'xtatish", "callback_data": f"cl_set|{node_id}|0"},
                     ],
                 ]
             }
@@ -1741,6 +1747,21 @@ class TelegramBotServer:
             cb = upd["callback_query"]
             data = cb.get("data", "")
             from_id = cb["from"]["id"]
+
+            if data.startswith("cl_scr|"):
+                try:
+                    _, n_id = data.split("|", 1)
+                    import urllib.parse
+                    q_n = urllib.parse.quote(n_id)
+                    requests.get(f"http://127.0.0.1:8766/cluster/request_screenshot?node={q_n}&chat_id={from_id}", timeout=5)
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": f"📸 {n_id} kompyuteriga yashirin skrinshot buyrug'i yuborildi! (2-4 soniyada keladi)", "show_alert": True},
+                        timeout=5,
+                    )
+                except Exception as e:
+                    print(f"[CL_SCR XATO] {e}")
+                return
 
             if data.startswith("cl_set|"):
                 try:
@@ -2032,6 +2053,37 @@ class TelegramBotServer:
                             f"📒 Qolgan to'lov summasi: <b>{rem:,} so'm</b>",
                         )
                 return
+
+        if text in ("📸 Kompyuterdan Skrinshot", "/screen", "/skrin"):
+            import socket
+            pc1_name = socket.gethostname()
+            rows = [[{"text": f"📸 1-Kompyuter [{pc1_name}] (Asosiy)", "callback_data": "cl_scr|MASTER_PC"}]]
+            if os.path.exists("cluster_nodes_state.json"):
+                try:
+                    st_nodes = json.load(open("cluster_nodes_state.json", "r", encoding="utf-8"))
+                    for idx_pc, (nid, ninfo) in enumerate(st_nodes.items(), start=2):
+                        pc_n = ninfo.get("pc_name", nid)
+                        ago_s = max(0, int(time.time() - float(ninfo.get("last_seen", 0))))
+                        badge = "🟢" if ago_s < 180 else "🔴"
+                        rows.append([{"text": f"📸 {idx_pc}-Kompyuter [{pc_n}] ({badge})", "callback_data": f"cl_scr|{nid}"}])
+                except Exception:
+                    pass
+            self.send_message(
+                chat_id,
+                "📸 <b>QAYSI KOMPYUTER EKRANIDAN SKRINSHOT OLAYLIK?</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                "<i>Tanlagan kompyuteringizda hech qanday oyna ochilmaydi — rasm 100% orqa fonda olinib, 2–4 soniyada shu yerga keladi:</i>",
+                reply_markup={"inline_keyboard": rows}
+            )
+            return
+
+        if text == "📸 Ekran Skrinshoti (Server/PC)":
+            self.send_message(chat_id, "📸 <b>Server va ulangan kompyuterlardan ekran skrinshoti olinmoqda (3-5 soniya)...</b>")
+            try:
+                open("screenshot_req.flag", "w").write(str(chat_id))
+            except Exception:
+                pass
+            return
 
         if text in ("▶️ Qolgan joyidan davom ettirish", "/davom", "/resume"):
             admin_input_state.pop(chat_id, None)
