@@ -57,7 +57,21 @@ nodes_lock = threading.Lock()
 _excel_cache = {}
 
 cluster_nodes = {}
+# 
+    "OLD_PC": {
+        "pc_name": "DESKTOP-EKA9GM2-60DD",
+        "ram_gb": 16,
+        "workers": 6,
+        "approved": True,
+        "last_seen": time.time(),
+        "last_prompt": time.time(),
+        "status": "Faol ishlamoqda...",
+        "worker_statuses": {},
+        "notified": True,
+    },
+}
 in_progress_students = {}
+pending_screen_requests = {}  # node_id -> chat_id
 _worker_assigned = {}
 _sticky_workers = {}
 _last_nodes_save_ts = 0.0
@@ -237,7 +251,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 if fn.startswith("in_") and fn.endswith(".xlsx"):
                     full_p = os.path.join(ORDERS_DIR, fn)
                     mt = os.path.getmtime(full_p)
-                    if mt >= 1791790000:
+                    if mt >= 0:
                         candidates_files.append((mt, fn, full_p))
         candidates_files.sort(key=lambda x: x[0])
         parsed_orders = []
@@ -442,6 +456,48 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             self._send_text("OK")
             return
 
+        if path == "/cluster/request_screenshot":
+            node_id = qs.get("node", [""])[0]
+            chat_id = int(qs.get("chat_id", [str(load_bot_config().get("admin_id", 6580113791))])[0])
+            if node_id == "MASTER_PC":
+                def _master_scr():
+                    try:
+                        tmp_p = os.path.join(os.environ.get("TEMP", "."), f"m_scr_{int(time.time())}.png")
+                        ps_p = tmp_p.replace("\\", "/")
+                        ps_c = (
+                            "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; "
+                            "$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; "
+                            "$bmp = New-Object System.Drawing.Bitmap($b.Width, $b.Height); "
+                            "$g = [System.Drawing.Graphics]::FromImage($bmp); "
+                            "$g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size); "
+                            f"$bmp.Save('{ps_p}', [System.Drawing.Imaging.ImageFormat]::Png); "
+                            "$g.Dispose(); $bmp.Dispose();"
+                        )
+                        subprocess.run(["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_c], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, creationflags=0x08000000 if os.name == "nt" else 0)
+                        if os.path.exists(tmp_p):
+                            tok = load_bot_config().get("bot_token", "")
+                            with open(tmp_p, "rb") as ph:
+                                requests.post(f"https://api.telegram.org/bot{tok}/sendPhoto", data={"chat_id": chat_id, "caption": f"📸 <b>1-Kompyuter [{socket.gethostname()}] ekrani</b>", "parse_mode": "HTML"}, files={"photo": ph}, timeout=25)
+                            os.remove(tmp_p)
+                    except Exception:
+                        pass
+                threading.Thread(target=_master_scr, daemon=True).start()
+                self._send_json({"ok": True})
+                return
+            with nodes_lock:
+                pending_screen_requests[node_id] = chat_id
+            with nodes_lock:
+                need_s = node_id in pending_screen_requests
+            self._send_json({"ok": True, "take_screenshot": need_s})
+            return
+
+        if path == "/cluster/check_screen_req":
+            node_id = qs.get("node", [""])[0]
+            with nodes_lock:
+                need_scr = node_id in pending_screen_requests
+            self._send_json({"take_screenshot": need_scr})
+            return
+
         if path == "/cluster/v2_ping":
             self._send_text("OK_V2")
             return
@@ -603,7 +659,6 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         f"{ws_html}</div>"
                     )
 
-            all_done_badge = "<div style='padding:10px;color:#22c55e;'>✅ Barchasi 100% yakunlandi!</div>"
             ban_rem = max(0, int(_tg_ban_until - now_t))
             ban_txt = f"⏳ Telegram 429 flood-wait: {ban_rem // 60} daqiqa {ban_rem % 60} soniyada ochiladi" if ban_rem > 0 else "🟢 Telegram xabarlar ochiq"
             empty_rem_msg = "<div style='padding:10px;color:#22c55e;'>✅ Barchasi 100% yakunlandi!</div>"
@@ -628,6 +683,32 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?")[0]
+
+        if path == "/cluster/upload_screenshot":
+            data = self._read_body()
+            node_id = data.get("node_id", "")
+            pc_name = data.get("pc_name", node_id)
+            img_b64 = data.get("image_b64", "")
+            with nodes_lock:
+                chat_id = pending_screen_requests.pop(node_id, load_bot_config().get("admin_id", 6580113791))
+            if img_b64:
+                try:
+                    raw_img = base64.b64decode(img_b64)
+                    tok = load_bot_config().get("bot_token", "")
+                    requests.post(
+                        f"https://api.telegram.org/bot{tok}/sendPhoto",
+                        data={
+                            "chat_id": chat_id,
+                            "caption": f"📸 <b>Kompyuter [{pc_name}] ekrani (Orqa fonda olindi)</b>\n⏱ Vaqt: <code>{time.strftime('%Y-%m-%d %H:%M:%S')}</code>",
+                            "parse_mode": "HTML"
+                        },
+                        files={"photo": ("screen.png", raw_img, "image/png")},
+                        timeout=30
+                    )
+                except Exception as e:
+                    print(f"[SCREEN UPLOAD XATO] {e}")
+            self._send_json({"ok": True})
+            return
 
         if path == "/cluster/register":
             data = self._read_body()
@@ -1125,10 +1206,7 @@ def cloudflared_loop():
         except Exception:
             pass
 
-    import shutil
     cf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloudflared.exe")
-    if not os.path.exists(cf_path):
-        cf_path = shutil.which("cloudflared") or cf_path
     if not os.path.exists(cf_path):
         print("[CLUSTER] cloudflared.exe topilmadi!")
         return
