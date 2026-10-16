@@ -877,24 +877,8 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                     page.keyboard.type(clean_honor_name, delay=10)
                     time.sleep(0.4)
 
-            # React inputga F.I.SH ni 100% tanitish (Отправить kulrang bo'lib qolmasligi uchun!)
-            page.evaluate("""(val) => {
-                const inps = Array.from(document.querySelectorAll('input[type="text"], input:not([type])')).filter(i => !i.placeholder.toLowerCase().includes('search') && !i.placeholder.toLowerCase().includes('поиск'));
-                const target = inps[inps.length - 1];
-                if (target) {
-                    target.scrollIntoView({block: 'center'});
-                    target.focus();
-                    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                    nativeSetter.call(target, val);
-                    target.dispatchEvent(new Event('input', { bubbles: true }));
-                    target.dispatchEvent(new Event('change', { bubbles: true }));
-                    target.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-                }
-            }""", clean_honor_name)
-            time.sleep(0.5)
-
-            # MUHIM: Quiz 4 savolining checkboxini bosib qo'ymaslik uchun faqat Honor Code checkboxinigina qidiramiz!
-            honor_cb = page.locator("label:has-text('understand and agree') input[type='checkbox'], label:has-text('понимаю и соглашаюсь') input[type='checkbox']")
+            # Honor Code galichkasini (checkbox) barcha Quizlarda (1, 2, 3 va 4) belgilash!
+            honor_cb = page.locator("label:has-text('understand and agree') input[type='checkbox'], label:has-text('понимаю и соглашаюсь') input[type='checkbox'], input[type='checkbox']").last
             try:
                 if honor_cb.count() > 0 and not honor_cb.is_checked():
                     box = honor_cb.bounding_box()
@@ -1683,10 +1667,18 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                 continue
 
             print(f"   1-bosqich muvaffaqiyatli ({s_val} {n_val})! 'Keyingi' bosilmoqda...")
-            keyingi.click(force=True)
-            page.wait_for_timeout(2000)
-
             em_in = page.locator("input[type='email'], input[name='email']").first
+            for _ in range(3):
+                if em_in.count() > 0 and em_in.is_visible():
+                    break
+                keyingi.click(force=True)
+                page.wait_for_timeout(1500)
+
+            try:
+                em_in.wait_for(state="visible", timeout=7000)
+            except Exception:
+                pass
+
             if not em_in.is_visible():
                 continue
             fill_react_input(em_in, student_email)
@@ -2019,12 +2011,11 @@ def create_or_load_roster_excel():
                             "school": parts[5] if len(parts) >= 6 else ""
                         })
 
-    if not os.path.exists(ROSTER_EXCEL) and txt_students:
+    if txt_students:
         wb = Workbook()
         ws = wb.active
         ws.title = "Oquvchilar Shabloni"
 
-        # 1-qator: Tepasida COURSERA SERTIFIKAT | MAKTAB RAQAMI | JAMI
         default_class = txt_students[0].get("class", "5-V") if txt_students else ""
         ws.append([
             "COURSERA SERTIFIKAT (SHABLON)",
@@ -2039,7 +2030,6 @@ def create_or_load_roster_excel():
             c.fill = top_fill
             c.font = top_font
 
-        # 2-qator: Ustun sarlavhalari
         headers = ["№", "F.I.SH", "Tug'ilgan sana", "I-FR (Seriya)", "Guvohnoma / Pasport raqami", "Sinf"]
         ws.append(headers)
         hdr_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
@@ -2072,8 +2062,11 @@ def create_or_load_roster_excel():
         for i, w in enumerate(col_widths, 1):
             ws.column_dimensions[ws.cell(row=2, column=i).column_letter].width = w
 
-        wb.save(ROSTER_EXCEL)
-        print(f"[+] Yangi Excel shablon yaratildi: {ROSTER_EXCEL} ({len(txt_students)} ta o'quvchi bilan)")
+        try:
+            wb.save(ROSTER_EXCEL)
+        except Exception:
+            pass
+        return txt_students
 
     if os.path.exists(ROSTER_EXCEL):
         students = []

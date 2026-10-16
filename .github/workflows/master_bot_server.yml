@@ -1,11 +1,9 @@
 name: 24-7 Cloud Master Bot
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '*/30 * * * *'
 concurrency:
   group: master-bot-24-7-group
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   cloud-bot:
     runs-on: windows-latest

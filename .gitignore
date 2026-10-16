@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+tmp/
+bot_orders/
+cluster_url.txt
+cluster_nodes_state.json
+cluster_tried_students.json
+cloudflared.exe

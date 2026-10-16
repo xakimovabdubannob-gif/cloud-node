@@ -1,50 +1,142 @@
 # -*- coding: utf-8 -*-
-import os, sys, time, json, zlib, base64, hashlib, subprocess, requests
+import os
+import sys
+import time
+import json
+import requests
+import subprocess
 from openpyxl import load_workbook
-sys.stdout.reconfigure(encoding='utf-8', errors='replace') if hasattr(sys.stdout, 'reconfigure') else None
-sh_key = b'UZB_AI_CLUSTER_SHIELD_2026_OBIDBEK_PRIVATE_KEY_998877'
-bot_tok = '8552767203:AAFvypK6KpVVSZgJAusBtRbTZYyck2armkc'
-old_tok = '8851638567:AAGRe7Tnh8Qy3Vtt5TyDv7h3SEfPU3mzAqg'
-gh_tok = 'nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg'[::-1]
-gh_own = 'xakimovabdubannob-gif'
-gh_wrepo = 'cloud-node'
-adm_id = 6580113791
-lines = [ln.strip()[7:] for ln in open('stream.dat','r',encoding='utf-8',errors='ignore') if ln.strip().startswith('::DATA:')]
-raw = base64.b64decode(''.join(lines))
-dk = hashlib.pbkdf2_hmac('sha256', sh_key, b'AGRO_METEO_SALT_v4', 10000, dklen=4096)
-buf = bytearray([b ^ dk[i & 4095] ^ ((i * 73) & 255) for i, b in enumerate(raw)])
-for k, v in json.loads(zlib.decompress(bytes(buf)).decode('utf-8')).items():
-    if k not in ('telegram_bot.py', 'cluster_master_bridge.py', 'master_certified_pipeline.py'):
-        open(k, 'w', encoding='utf-8').write(v.replace(old_tok, bot_tok))
-for f_st in ('cluster_nodes_state.json', 'cluster_tried_students.json'):
-    if os.path.exists(f_st): os.remove(f_st)
-open('cluster_nodes_state.json', 'w', encoding='utf-8').write('{}')
-for fn in ('akkountlar.txt', 'natijalar_sertifikatlar.txt', 'xatolar.txt'):
-    open(fn, 'a', encoding='utf-8').close()
-os.makedirs('bot_orders', exist_ok=True)
-open('bot_config.json', 'w', encoding='utf-8').write(json.dumps({'bot_token': bot_tok, 'admin_id': adm_id, 'card_info': '8600 **** **** ****'}, indent=2))
-p_bridge = subprocess.Popen([sys.executable, '-u', 'cluster_master_bridge.py'])
-p_bot = subprocess.Popen([sys.executable, '-u', 'telegram_bot.py'])
-requests.post(f'https://api.telegram.org/bot{bot_tok}/sendMessage', data={'chat_id': adm_id, 'text': '✅ <b>SINTAKSIS XATOLAR 100% TUZATILDI VA SERVER ISHGA TUSHDI!</b>\nEndi /start yoki <b>📸 Kompyuterdan Skrinshot</b> tugmasini bosing!', 'parse_mode': 'HTML'}, timeout=10)
+
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
+BOT_TOKEN = "8552767203:AAFvypK6KpVVSZgJAusBtRbTZYyck2armkc"
+ADMIN_ID = 6580113791
+GH_TOKEN = "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1]
+GH_OWNER = "xakimovabdubannob-gif"
+GH_REPO = "cloud-node"
+
+print("=" * 65)
+print("🚀 24/7 BULUT MASTER BOT ISHGA TUSHIRILMOQDA (GITHUB RUNNER)")
+print("=" * 65)
+
+# Eski qoldiq fayllarni tozalaymiz
+for f in ("cluster_url.txt", "cluster_nodes_state.json", "cluster_tried_students.json"):
+    if os.path.exists(f):
+        try:
+            os.remove(f)
+        except Exception:
+            pass
+
+for fn in ("akkountlar.txt", "natijalar_sertifikatlar.txt", "xatolar.txt"):
+    open(fn, "a", encoding="utf-8").close()
+
+os.makedirs("bot_orders", exist_ok=True)
+
+# bot_config.json ni to'liq sozlaymiz
+cfg = {
+    "bot_token": BOT_TOKEN,
+    "admin_id": ADMIN_ID,
+    "card_info": "5614 6812 1100 2260 (QOBILOV OBIDJON)",
+    "start_video_id": ""
+}
+with open("bot_config.json", "w", encoding="utf-8") as f:
+    json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+# 1. Master ko'prikni ishga tushirish
+print("[1] Cluster Master Bridge (port 8766) ishga tushirilmoqda...")
+p_bridge = subprocess.Popen([sys.executable, "-u", "cluster_master_bridge.py"])
+time.sleep(3)
+
+# 2. Asosiy Telegram Botni ishga tushirish
+print("[2] Telegram Bot (@Sertifikatagentbot) ishga tushirilmoqda...")
+p_bot = subprocess.Popen([sys.executable, "-u", "telegram_bot.py"])
+time.sleep(2)
+
+# 3. Adminga xabar yuborish
+try:
+    requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+        data={
+            "chat_id": ADMIN_ID,
+            "text": (
+                "✅ <b>24/7 BULUT SERVER (GITHUB ACTIONS) 100% ISHGA TUSHDI!</b>\n\n"
+                "🤖 <b>Bot nomi:</b> @Sertifikatagentbot\n"
+                "⚡ Kompyuteringiz o'chiq bo'lsa ham buyurtmalar qabul qilinadi va avtomatik sertifikat olinadi!\n"
+                "Endi botga /start bosing!"
+            ),
+            "parse_mode": "HTML",
+        },
+        timeout=10,
+    )
+    print("[3] Telegram notification sent successfully to admin!")
+except Exception as e:
+    print(f"[3] Telegram notification error: {e}")
+
 start_ts = time.time()
-known_orders = set(os.listdir('bot_orders'))
-while time.time() - start_ts < 16500:
-    time.sleep(8)
-    if p_bot.poll() is not None: p_bot = subprocess.Popen([sys.executable, '-u', 'telegram_bot.py'])
-    if p_bridge.poll() is not None: p_bridge = subprocess.Popen([sys.executable, '-u', 'cluster_master_bridge.py'])
-    cur_orders = set(f for f in os.listdir('bot_orders') if f.startswith('in_') and f.endswith('.xlsx'))
+known_orders = set(os.listdir("bot_orders"))
+
+print("=" * 65)
+print("🤖 TIZIM MONITORING REJIMIDA: Buyurtmalar va Klaster kuzatilmoqda...")
+print("=" * 65)
+
+# Runner aylanish davomiyligi: ~4.5 soat (16200 soniya)
+while time.time() - start_ts < 16200:
+    time.sleep(6)
+
+    # Agar bot to'xtab qolsa, avtomatik qayta yoqish
+    if p_bot.poll() is not None:
+        print(f"[QAYTA ISHGA TUSHIRISH] Telegram Bot to'xtadi (kod: {p_bot.poll()}). Qayta yoqilmoqda...")
+        p_bot = subprocess.Popen([sys.executable, "-u", "telegram_bot.py"])
+
+    if p_bridge.poll() is not None:
+        print(f"[QAYTA ISHGA TUSHIRISH] Master Bridge to'xtadi (kod: {p_bridge.poll()}). Qayta yoqilmoqda...")
+        p_bridge = subprocess.Popen([sys.executable, "-u", "cluster_master_bridge.py"])
+
+    # Yangi buyurtma kelganda ai_cluster.yml workflow ni avtomatik chaqirish
+    cur_orders = set(f for f in os.listdir("bot_orders") if f.startswith("in_") and f.endswith(".xlsx"))
     new_f = cur_orders - known_orders
-    if new_f and os.path.exists('cluster_url.txt'):
+    if new_f and os.path.exists("cluster_url.txt"):
         known_orders = cur_orders
-        t_url = open('cluster_url.txt','r',encoding='utf-8').read().strip()
-        if t_url.startswith('https://'):
-            latest_f = os.path.join('bot_orders', sorted(list(new_f))[-1])
-            try:
-                wb = load_workbook(latest_f, read_only=True)
-                st_cnt = max(1, wb.active.max_row - 1)
-                wb.close()
-            except Exception: st_cnt = 10
-            n_cnt = 1 if st_cnt <= 3 else (4 if st_cnt <= 20 else 10)
-            requests.post(f'https://api.github.com/repos/{gh_own}/{gh_wrepo}/actions/workflows/ai_cluster.yml/dispatches', headers={'Authorization': f'token {gh_tok}', 'Accept': 'application/vnd.github+json'}, json={'ref': 'main', 'inputs': {'tunnel_url': t_url, 'nodes_count': str(n_cnt)}}, timeout=15)
-requests.post(f'https://api.github.com/repos/{gh_own}/{gh_wrepo}/actions/workflows/master_bot_server.yml/dispatches', headers={'Authorization': f'token {gh_tok}', 'Accept': 'application/vnd.github+json'}, json={'ref': 'main'}, timeout=15)
-p_bot.terminate(); p_bridge.terminate()
+        try:
+            t_url = open("cluster_url.txt", "r", encoding="utf-8").read().strip().splitlines()[0].strip()
+            if t_url.startswith("https://"):
+                latest_f = os.path.join("bot_orders", sorted(list(new_f))[-1])
+                try:
+                    wb = load_workbook(latest_f, read_only=True)
+                    st_cnt = max(1, wb.active.max_row - 1)
+                    wb.close()
+                except Exception:
+                    st_cnt = 10
+                n_cnt = 1 if st_cnt <= 3 else (3 if st_cnt <= 15 else 6)
+                print(f"[BUYURTMA KELDI] {st_cnt} ta o'quvchi! GitHub'da {n_cnt} ta Virtual Ishchi oqim ishga tushirilmoqda...")
+                requests.post(
+                    f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/workflows/ai_cluster.yml/dispatches",
+                    headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"},
+                    json={"ref": "main", "inputs": {"tunnel_url": t_url, "nodes_count": str(n_cnt)}},
+                    timeout=15,
+                )
+        except Exception as err:
+            print(f"[DISPATCH XATO] {err}")
+
+# 4.5 soatdan so'ng keyingi runniga uzatish (24/7 to'xtovsiz rejim)
+print("[24/7 UZATISH] 4.5 soat bo'ldi. Yangi 24-7 Cloud Master Bot serveri ishga tushirilmoqda...")
+try:
+    requests.post(
+        f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/workflows/master_bot_server.yml/dispatches",
+        headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"},
+        json={"ref": "main"},
+        timeout=15,
+    )
+except Exception:
+    pass
+
+try:
+    p_bot.terminate()
+    p_bridge.terminate()
+except Exception:
+    pass
+
+print("[YAKUNLANDI] Jarayon keyingi runnerga o'tkazildi.")

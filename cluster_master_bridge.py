@@ -56,19 +56,7 @@ file_lock = threading.Lock()
 nodes_lock = threading.Lock()
 _excel_cache = {}
 
-cluster_nodes = {
-    "DESKTOP-EKA9GM2-60DD": {
-        "pc_name": "DESKTOP-EKA9GM2-60DD",
-        "ram_gb": 16,
-        "workers": 6,
-        "approved": True,
-        "last_seen": time.time(),
-        "last_prompt": time.time(),
-        "status": "Faol ishlamoqda...",
-        "worker_statuses": {},
-        "notified": True,
-    },
-}
+cluster_nodes = {}
 in_progress_students = {}
 pending_screen_requests = {}  # node_id -> chat_id
 _worker_assigned = {}
