@@ -1056,7 +1056,7 @@ class TelegramBotServer:
         lines.append(f"💰 <b>JAMI QOLGAN TO'LOVLAR: {total_all:,} so'm</b>")
         self.send_message(chat_id, "\n".join(lines), reply_markup={"inline_keyboard": inline_rows})
 
-    def handle_students_submission(self, chat_id, user_name, username, students):
+    def handle_students_submission(self, chat_id, user_name, username, students, orig_fname: str = "Buyurtma"):
         if not students:
             self.send_message(
                 chat_id,
@@ -1086,7 +1086,7 @@ class TelegramBotServer:
                 f"⚡ Navbatga qo'shildi va barcha 6 ta Klaster kompyuterlari bilan birgalikda taqsimlanmoqda...",
                 reply_markup=self.get_reply_keyboard(chat_id),
             )
-            self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0})
+            self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0}, orig_fname=orig_fname)
             return
 
         if not free_used and count == 1:
@@ -1101,7 +1101,7 @@ class TelegramBotServer:
                 f"<b>{students[0]['name']}</b> sertifikatini <b>BEPUL</b> tayyorlab beramiz!\n\n"
                 "⏳ Navbatga qo'shildi, har bir qadamni jonli yozib turaman...",
             )
-            self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0})
+            self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0}, orig_fname=orig_fname)
             return
 
         per_st, total_price = calculate_price(count)
@@ -1122,6 +1122,7 @@ class TelegramBotServer:
             "price": total_price,
             "user_name": user_name,
             "username": username or "",
+            "orig_fname": orig_fname,
         }
 
         self.card_info = load_config().get("card_info", self.card_info)
@@ -1156,7 +1157,7 @@ class TelegramBotServer:
         }
         self.send_message(chat_id, msg, reply_markup=client_markup)
 
-    def enqueue_order(self, chat_id, user_name, students, paid_info=None, silent=False):
+    def enqueue_order(self, chat_id, user_name, students, paid_info=None, silent=False, orig_fname: str = "Buyurtma"):
         q_pos = order_queue.qsize() + 1
         est_mins = max(3, ((q_pos - 1) * 15) + int(len(students) * 1.2))
         if not silent:
@@ -1173,6 +1174,7 @@ class TelegramBotServer:
         # Klaster va Master Bridge ko'rishi uchun buyurtmani bot_orders/ ga saqlaymiz
         try:
             os.makedirs(ORDERS_DIR, exist_ok=True)
+            clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
             recent = [f for f in os.listdir(ORDERS_DIR) if f.startswith(f"in_{chat_id}_") and f.endswith(".xlsx")]
             need_save = True
             if recent:
@@ -1180,7 +1182,7 @@ class TelegramBotServer:
                 if time.time() - latest < 10:
                     need_save = False
             if need_save:
-                save_students_to_excel(students, os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}.xlsx"))
+                save_students_to_excel(students, os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}_{clean_base}.xlsx"))
         except Exception as e:
             print(f"[SAVE_ORDER_EXCEL_ERROR] {e}")
 
@@ -1190,6 +1192,8 @@ class TelegramBotServer:
             "students": students,
             "paid_info": paid_info or {},
             "silent": silent,
+            "orig_fname": orig_fname,
+            "start_time": time.time(),
         })
         try:
             trigger_cluster_dispatch(len(students))
@@ -1437,7 +1441,26 @@ class TelegramBotServer:
                             self.shared_orders.remove(ctx)
 
             self.active_worker_status[worker_id] = ""
-            excel_path = os.path.join(ORDERS_DIR, f"Sertifikatlar_{chat_id}_{int(time.time())}.xlsx")
+            orig_fname = order.get("orig_fname", "Buyurtma")
+            clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
+            order_start_t = order.get("start_time", time.time())
+            total_sec = max(1, int(time.time() - order_start_t))
+            tot_h = total_sec // 3600
+            tot_m = (total_sec % 3600) // 60
+            tot_s = total_sec % 60
+            if tot_h > 0:
+                tot_dur_str = f"{tot_h} soat {tot_m} daqiqa"
+                file_dur_tag = f"{tot_h}soat_{tot_m}daq"
+            elif tot_m > 0:
+                tot_dur_str = f"{tot_m} daqiqa {tot_s} soniya"
+                file_dur_tag = f"{tot_m}daq_{tot_s}son"
+            else:
+                tot_dur_str = f"{tot_s} soniya"
+                file_dur_tag = f"{tot_s}son"
+
+            cur_time_str = time.strftime("%d.%m.%Y_%H-%M")
+            out_filename = f"{clean_base}_Sertifikatlar_{cur_time_str}_({file_dur_tag}).xlsx"
+            excel_path = os.path.join(ORDERS_DIR, out_filename)
             generate_results_excel(students, excel_path)
 
             done_cnt = sum(1 for s in students if s["name"] in get_completed_students())
@@ -1459,9 +1482,11 @@ class TelegramBotServer:
             summary_caption = (
                 f"📊 <b>BUYURTMA YAKUNLANDI! (TAYYOR EXCEL JADVAL)</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📁 Asl fayl nomi: <b>{orig_fname if orig_fname.endswith('.xlsx') else (orig_fname + '.xlsx')}</b>\n"
                 f"👥 Jami o'quvchilar: <b>{total} ta</b>\n"
                 f"✅ Sertifikat olindi: <b>{done_cnt} ta</b>\n"
                 f"⚠️ Oldin ro'yxatdan o'tgan (bazada paroli yo'q): <b>{unrec_cnt} ta</b>\n"
+                f"⏱ <b>Jami sarflangan vaqt: {tot_dur_str}</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"📎 Jadval ichida har bir o'quvchining <b>Email (Pochta), Parol, Sertifikat havolasi va Sertifikat ID raqami</b> to'liq yozilgan!"
                 f"{debt_footer}"
@@ -1598,10 +1623,11 @@ class TelegramBotServer:
                 rem = [s for s in sts if s["name"] not in done_set and s["name"] not in unrec_set]
                 if rem:
                     bn = os.path.basename(fpath)
-                    parts = bn.split("_")
+                    parts = bn.split("_", 3)
                     ord_cid = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else (self.admin_id or notify_chat_id)
+                    res_orig_fname = parts[3].rsplit(".", 1)[0] if len(parts) >= 4 else "Buyurtma"
                     if not self.shared_orders and order_queue.empty():
-                        self.enqueue_order(ord_cid, "Admin", sts, silent=True)
+                        self.enqueue_order(ord_cid, "Admin", sts, silent=True, orig_fname=res_orig_fname)
                     done_c = sum(1 for s in sts if s["name"] in done_set)
                     unrec_c = sum(1 for s in sts if s["name"] in unrec_set)
                     if notify_chat_id:
@@ -2009,6 +2035,7 @@ class TelegramBotServer:
             user_name,
             order_info["students"],
             paid_info={"total": total_price, "paid": paid_now, "debt": debt_added},
+            orig_fname=order_info.get("orig_fname", "Buyurtma"),
         )
 
     def process_update(self, upd):
@@ -2849,23 +2876,25 @@ class TelegramBotServer:
         # Excel yoki matn fayl kelganda:
         if "document" in msg:
             doc = msg["document"]
-            fname = doc.get("file_name", "").lower()
+            orig_fname = (doc.get("file_name") or "").strip()
+            clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
+            fname = orig_fname.lower()
             if fname.endswith(".xlsx"):
-                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}.xlsx"))
+                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}_{clean_base}.xlsx"))
                 students = parse_students_from_excel(local_p)
-                self.handle_students_submission(chat_id, user_name, username, students)
+                self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
                 return
             elif fname.endswith(".txt") or fname.endswith(".csv"):
-                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}.txt"))
+                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}_{clean_base}.txt"))
                 with open(local_p, "r", encoding="utf-8", errors="replace") as f:
                     students = parse_students_from_text(f.read())
-                self.handle_students_submission(chat_id, user_name, username, students)
+                self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
                 return
 
         if text:
             students = parse_students_from_text(text)
             if students:
-                self.handle_students_submission(chat_id, user_name, username, students)
+                self.handle_students_submission(chat_id, user_name, username, students, orig_fname="Matn_Buyurtma")
             else:
                 self.handle_smart_question(chat_id, user_name, text)
 

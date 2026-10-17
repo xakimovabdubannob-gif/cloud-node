@@ -1901,18 +1901,39 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             if status == "COMPLETED":
                 try:
                     cands = sorted(
-                        [(os.path.getmtime(os.path.join(ORDERS_DIR, fn)), os.path.join(ORDERS_DIR, fn))
+                        [(os.path.getmtime(os.path.join(ORDERS_DIR, fn)), os.path.join(ORDERS_DIR, fn), fn)
                          for fn in os.listdir(ORDERS_DIR) if fn.startswith("in_") and fn.endswith(".xlsx")],
                         reverse=True,
                     )
                     if cands:
-                        all_sts = parse_excel_students(cands[0][1])
+                        latest_mtime, latest_fpath, latest_fn = cands[0]
+                        all_sts = parse_excel_students(latest_fpath)
                         done_s = get_completed_students()
                         unrec_s = get_unrecoverable_students()
                         rem_s = [x for x in all_sts if x["name"] not in done_s and x["name"] not in unrec_s and x["name"] != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"]
                         if all_sts and not rem_s:
                             from master_certified_pipeline import export_results_to_excel
-                            out_xlsx = os.path.join(ORDERS_DIR, f"Sertifikatlar_{chat_id}_{int(time.time())}.xlsx")
+                            fn_wo_ext = os.path.splitext(latest_fn)[0]
+                            parts_fn = fn_wo_ext.split("_", 3)
+                            clean_base = parts_fn[3] if len(parts_fn) >= 4 and parts_fn[3] else "Buyurtma"
+
+                            total_sec = max(1, int(time.time() - latest_mtime))
+                            tot_h = total_sec // 3600
+                            tot_m = (total_sec % 3600) // 60
+                            tot_s = total_sec % 60
+                            if tot_h > 0:
+                                tot_dur_str = f"{tot_h} soat {tot_m} daqiqa"
+                                file_dur_tag = f"{tot_h}soat_{tot_m}daq"
+                            elif tot_m > 0:
+                                tot_dur_str = f"{tot_m} daqiqa {tot_s} soniya"
+                                file_dur_tag = f"{tot_m}daq_{tot_s}son"
+                            else:
+                                tot_dur_str = f"{tot_s} soniya"
+                                file_dur_tag = f"{tot_s}son"
+
+                            cur_time_str = time.strftime("%d.%m.%Y_%H-%M")
+                            out_filename = f"{clean_base}_Sertifikatlar_{cur_time_str}_({file_dur_tag}).xlsx"
+                            out_xlsx = os.path.join(ORDERS_DIR, out_filename)
                             export_results_to_excel(all_sts, output_file=out_xlsx)
                             cfg_b = load_bot_config()
                             tok_b = cfg_b.get("bot_token", "")
@@ -1926,9 +1947,13 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                                         "caption": (
                                             f"🏁 <b>BARCHA KOMPYUTERLARDA BUYURTMA 100% YAKUNLANDI! (YANGILANGAN TO'LIQ EXCEL)</b>\n"
                                             f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                                            f"📁 Asl fayl nomi: <b>{clean_base}.xlsx</b>\n"
                                             f"👥 Jami o'quvchilar: <b>{len(all_sts)} ta</b>\n"
                                             f"✅ Sertifikat olindi: <b>{done_c} ta</b>\n"
-                                            f"⚠️ JSHSHIR xatoli (o'tkazib yuborilgan): <b>{unrec_c} ta</b>"
+                                            f"⚠️ JSHSHIR xatoli (o'tkazib yuborilgan): <b>{unrec_c} ta</b>\n"
+                                            f"⏱ <b>Jami sarflangan vaqt: {tot_dur_str}</b>\n"
+                                            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                                            f"📎 Jadval ichida har bir o'quvchining Email, Parol, Sertifikat havolasi va ID raqami to'liq yozilgan!"
                                         ),
                                         "parse_mode": "HTML",
                                     },
