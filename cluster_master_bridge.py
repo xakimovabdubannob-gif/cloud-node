@@ -1035,8 +1035,7 @@ function updateDashboard() {
       if (data.nodes && data.nodes.length > 0) {
         data.nodes.forEach(node => {
           (node.agents || []).forEach(agent => {
-            const stClass = agent.state;
-            const stLabel = stClass === 'working' ? '🟢 Ishlamoqda' : (stClass === 'idle' ? '⚪️ Bo\'sh (Kutmoqda)' : '🔴 O\'chiq');
+            const stLabel = stClass === 'working' ? "🟢 Ishlamoqda" : (stClass === 'idle' ? "⚪️ Bo'sh (Kutmoqda)" : "🔴 O'chiq");
             
             cardsHtml += `
               <div class="agent-card ${stClass}">
@@ -1053,7 +1052,7 @@ function updateDashboard() {
                     ${renderAgentRobotSVG(stClass)}
                   </div>
                   <div class="agent-details">
-                    <div class="detail-student">${agent.current_student !== '—' ? '👤 ' + agent.current_student : 'Navbat kutilmoqda'}</div>
+                    <div class="detail-student">${agent.current_student !== '—' ? '👤 ' + agent.current_student : "Navbat kutilmoqda"}</div>
                     <div class="detail-step">${agent.current_step}</div>
                     ${stClass === 'working' ? `<div class="detail-timer">⏱ Jarayon: ${agent.duration_str}</div>` : ''}
                   </div>
@@ -1068,7 +1067,7 @@ function updateDashboard() {
           });
         });
       }
-      grid.innerHTML = cardsHtml || '<div class="empty-state">Hali faol agentlar yo\'q</div>';
+      grid.innerHTML = cardsHtml || '<div class="empty-state">Hali faol agentlar yo`q</div>';
 
       const certsBox = document.getElementById('recentCertsBox');
       let certsHtml = '';
@@ -1085,7 +1084,7 @@ function updateDashboard() {
           `;
         });
       }
-      certsBox.innerHTML = certsHtml || '<div class="empty-state">Hali yakunlangan sertifikatlar yo\'q</div>';
+      certsBox.innerHTML = certsHtml || '<div class="empty-state">Hali yakunlangan sertifikatlar yo`q</div>';
     })
     .catch(err => {
       console.error("Poll err:", err);
@@ -1493,10 +1492,15 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             with nodes_lock:
                 _state_mem_cache["ts"] = 0.0
                 _excel_cache.clear()
+                master_busy = {v for k, v in _worker_assigned.items() if k[0] == "MASTER_PC"}
+                for k in list(in_progress_students.keys()):
+                    if k not in master_busy:
+                        in_progress_students.pop(k, None)
+                for k in list(_worker_assigned.keys()):
+                    if k[0] != "MASTER_PC":
+                        _worker_assigned.pop(k, None)
+                        _sticky_workers.pop(k, None)
                 now_r = time.time()
-                stale_keys = [k for k, t in in_progress_students.items() if now_r - t > 90]
-                for k in stale_keys:
-                    in_progress_students.pop(k, None)
                 active_nodes_count = sum(1 for n in cluster_nodes.values() if (now_r - float(n.get("last_seen", 0))) < 180 and n.get("approved", True))
 
             done_s = get_completed_students()
