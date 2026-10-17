@@ -1303,7 +1303,8 @@ class TelegramBotServer:
                     lines_txt.append(f"  {pref} {h_line}")
                 self.edit_message(_cid, _mid, "\n".join(lines_txt))
 
-        result_status = process_student(st, status_callback=update_step, headless=True, worker_id=worker_id)
+        is_headless = os.environ.get("HEADLESS", "0").strip().lower() in ("1", "true", "yes")
+        result_status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=worker_id)
         try:
             requests.post("http://127.0.0.1:8766/cluster/finish_task", json={
                 "node_id": "MASTER_PC",
@@ -1543,7 +1544,8 @@ class TelegramBotServer:
                     [{"text": "⚡ Ishlarni bo'lish (Klasterga)"}, {"text": "📊 Tahlil va Jarayon"}],
                     [{"text": "⚡ Jonli Log (Console)"}, {"text": "📥 Tayyor Sertifikatlar (Excel)"}],
                     [{"text": "💰 Foyda va Kassa"}, {"text": "📸 Kompyuterdan Skrinshot"}],
-                    [{"text": "📄 Bo'sh Shablon (.xlsx)"}, {"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
+                    [{"text": "🖥 AnyDesk Jonli Ulanish"}, {"text": "📄 Bo'sh Shablon (.xlsx)"}],
+                    [{"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
                 ],
                 "resize_keyboard": True,
                 "is_persistent": True,
@@ -2447,6 +2449,53 @@ class TelegramBotServer:
                 "<i>Tanlagan kompyuteringizda hech qanday oyna ochilmaydi — rasm 100% orqa fonda olinib, 2–4 soniyada shu yerga keladi:</i>",
                 reply_markup={"inline_keyboard": rows}
             )
+            return
+
+        if text in ("🖥 AnyDesk Jonli Ulanish", "/anydesk", "/any", "/desk", "/rdp"):
+            admin_input_state.pop(chat_id, None)
+            aid = ""
+            pwd = "UzbekCoders2026!"
+            if os.path.exists("anydesk_info.json"):
+                try:
+                    d = json.load(open("anydesk_info.json", "r", encoding="utf-8"))
+                    aid = d.get("anydesk_id", "")
+                    pwd = d.get("password", pwd)
+                except Exception:
+                    pass
+            if not aid and os.path.exists("anydesk_id.txt"):
+                try:
+                    lns = open("anydesk_id.txt", "r", encoding="utf-8").read().splitlines()
+                    if lns:
+                        aid = lns[0].strip()
+                    if len(lns) > 1:
+                        pwd = lns[1].strip()
+                except Exception:
+                    pass
+
+            if aid:
+                self.send_message(
+                    chat_id,
+                    f"🖥 <b>VIRTUAL KOMPYUTERGA JONLI ULASH (ANYDESK):</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🆔 <b>AnyDesk ID:</b> <code>{aid}</code>\n"
+                    f"🔑 <b>Parol:</b> <code>{pwd}</code>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"👀 <b>Ko'rsatma:</b>\n"
+                    f"1. Kompyuteringizda <b>AnyDesk</b> dasturini oching.\n"
+                    f"2. Qidiruv qatoriga <code>{aid}</code> deb yozing va Enter bosing.\n"
+                    f"3. So'ralganda parolni kiriting: <code>{pwd}</code>\n\n"
+                    f"⚡ <b>Virtual kompyuter ekrani va ochilayotgan brauzer to'g'ridan-to'g'ri ko'zingiz oldida jonli ko'rinadi!</b>\n"
+                    f"<i>(Brauzer ochiq holda ishlaydi, har bir qadamni ko'rishingiz mumkin)</i>",
+                    reply_markup=self.get_reply_keyboard(chat_id),
+                )
+            else:
+                self.send_message(
+                    chat_id,
+                    "⏳ <b>AnyDesk ID serverda sozlanmoqda...</b>\n"
+                    "Server yuklanishi bilan AnyDesk ID avtomatik shu yerga yuboriladi!\n"
+                    "Iltimos, 15-20 soniyadan so'ng qayta bosing.",
+                    reply_markup=self.get_reply_keyboard(chat_id),
+                )
             return
 
         if text in ("⏸ To'xtatish (Pauza)", "⏸ To'xtatish", "/stop", "/pause", "/toxtat"):

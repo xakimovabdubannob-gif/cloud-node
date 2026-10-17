@@ -241,7 +241,8 @@ class ClusterWorkerNode:
 
             status = "INCOMPLETE"
             try:
-                status = process_student(st, status_callback=update_step, headless=True, worker_id=local_wid)
+                is_headless = os.environ.get("HEADLESS", "0").strip().lower() in ("1", "true", "yes")
+                status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=local_wid)
             except Exception as e:
                 print(f"[CLUSTER WORKER #{local_wid} XATO] {e}")
 
