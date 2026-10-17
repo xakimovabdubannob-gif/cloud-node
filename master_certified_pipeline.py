@@ -223,8 +223,8 @@ def login_coursera(page, email, password, full_name=""):
             pwd_inp = page.locator("input[type='password']").first
             if pwd_inp.is_visible():
                 pwd_inp.fill(password)
-                sub_btn = page.locator("div[role='dialog'] button.cds-button-primary, form button.cds-button-primary").first
-                if sub_btn.is_visible():
+                sub_btn = page.locator("button[data-e2e='login-form-submit-button'], button[type='submit'], div[role='dialog'] button.cds-button-primary, form button.cds-button-primary, button:has-text('Log In'), button:has-text('Войти')").first
+                if sub_btn.count() > 0 and sub_btn.is_visible():
                     sub_btn.click(force=True)
                 else:
                     page.keyboard.press("Enter")
@@ -269,9 +269,15 @@ def ensure_enrolled_on_coursera(page):
             safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai", wait_sec=2.5)
 
             for _ in range(12):
-                dismiss_all_popups(page)
                 if "/home/" in page.url and page.locator("a:has-text('Quiz 1')").count() > 0:
                     return True
+
+                go_btn = page.locator("a:has-text('Go to Course'), button:has-text('Go to Course'), a:has-text('Перейти к курсу'), button:has-text('Перейти к курсу')").first
+                if go_btn.count() > 0 and go_btn.is_visible():
+                    go_btn.click(force=True)
+                    time.sleep(2.5)
+                    break
+
                 enr_btn = page.locator(
                     "button[data-e2e='enroll-button'], "
                     "button:has-text('Enroll'), "
@@ -290,17 +296,24 @@ def ensure_enrolled_on_coursera(page):
                     else:
                         enr_btn.click(force=True)
                     time.sleep(2.5)
-                    dismiss_all_popups(page)
+
+                    # Dialogdagi 'Enroll in Course' / 'Go to Course' / 'Continue' ni bosamiz
                     page.evaluate("""() => {
-                        const btns = Array.from(document.querySelectorAll('div[role="dialog"] button, button, a'));
+                        const dialog = document.querySelector('div[role="dialog"], div[aria-modal="true"], div.cds-modal');
+                        const root = dialog || document;
+                        const btns = Array.from(root.querySelectorAll('button, a'));
                         const cont = btns.find(b => {
-                            const t = (b.innerText || '').toLowerCase();
-                            return t.includes('go to course') || t.includes('continue') || t.includes('start learning') ||
-                                   t.includes('продолжить') || t.includes('начать обучение') || t.includes('перейти к курсу');
+                            const t = (b.innerText || '').toLowerCase().trim();
+                            return t.includes('enroll in course') || t.includes('go to course') ||
+                                   t.includes('continue') || t.includes('start learning') ||
+                                   t.includes('продолжить') || t.includes('начать обучение') ||
+                                   t.includes('перейти к курсу') || t.includes('зарегистрироваться') ||
+                                   t === 'enroll';
                         });
                         if (cont) cont.click();
                     }""")
                     time.sleep(3.0)
+                    dismiss_all_popups(page)
                     break
                 time.sleep(0.5)
 
@@ -624,7 +637,7 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
 
             # Agar hali kursga Enroll ('Enroll Starts Oct 11') bo'lmagani uchun landing sahifaga qaytib qolgan bo'lsa, darhol Enroll qilamiz!
             enr_check = page.locator("button[data-e2e='enroll-button'], button:has-text('Enroll'), button:has-text('Зарегистрироваться')").first
-            if ("/organizations/" in page.url and "/attempt" not in page.url) or (enr_check.count() > 0 and enr_check.is_visible()):
+            if ("/organizations/" in page.url and "/attempt" not in page.url) or (enr_check.count() > 0 and enr_check.is_visible()) or page.url.rstrip("/") == "https://www.coursera.org/learn/introduction-to-generative-ai":
                 ensure_enrolled_on_coursera(page)
                 safe_navigate(page, q_url, wait_sec=2.5 * mult)
 
@@ -634,8 +647,7 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                 "button:has-text('Start assignment'), a:has-text('Start assignment'), "
                 "button:has-text('Try again'), a:has-text('Try again'), "
                 "button:has-text('Retake'), a:has-text('Retake'), "
-                "button:has-text('Resume'), button:has-text('Start'), "
-                "button:has-text('Возобновить'), button:has-text('Начать'), "
+                "button:has-text('Возобновить'), "
                 "button:has-text('Пройти тест'), button:has-text('Повторить')"
             )
             for _ in range(20 * mult):
@@ -652,6 +664,7 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                     return els.some(el => {
                         if (el.offsetWidth < 20 || el.offsetHeight < 15) return false;
                         const t = (el.innerText || '').trim().toLowerCase();
+                        if (t.includes('enroll') || t.includes('starts')) return false;
                         return t === 'start assignment' || t === 'resume assignment' || t === 'try again' ||
                                t === 'retake' || t === 'resume' || t === 'start' ||
                                t === 'начать' || t === 'возобновить' || t === 'пройти тест' || t === 'повторить';
@@ -671,6 +684,7 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                     const target = els.find(el => {
                         if (el.offsetWidth < 20 || el.offsetHeight < 15) return false;
                         const t = (el.innerText || '').trim().toLowerCase();
+                        if (t.includes('enroll') || t.includes('starts')) return false;
                         return t === 'start assignment' || t === 'resume assignment' || t === 'try again' ||
                                t === 'retake' || t === 'resume' || t === 'start' ||
                                t === 'начать' || t === 'возобновить' || t === 'пройти тест' || t === 'повторить';
@@ -689,7 +703,11 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                     act_btn = page.locator(act_selector).first
                     if act_btn.count() > 0 and act_btn.is_visible():
                         b_label = act_btn.inner_text().strip()
-                        if "пробный" in b_label.lower() or "trial" in b_label.lower():
+                        b_low = b_label.lower()
+                        if "enroll" in b_low or "starts" in b_low:
+                            ensure_enrolled_on_coursera(page)
+                            continue
+                        if "пробный" in b_low or "trial" in b_low:
                             print(f"[!] [{q_name}] Akkountda DEDC dasturi ulanmagan ('{b_label}' chiqdi)!")
                             return False
                         print(f"[{q_name}] '{b_label}' tugmasi bosilmoqda ({mult}x)...")
