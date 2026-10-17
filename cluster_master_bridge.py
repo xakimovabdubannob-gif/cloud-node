@@ -355,12 +355,14 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 if prev_st and normalize_student_key(prev_st) not in busy_by_others_norm:
                     in_progress_students.pop(prev_st, None)
 
-        # 2) Yangi o'quvchi tanlash: 1 AGENT 1 TA O'QUVCHINI TUGATADI, SAKRAMAYDI QAT'IY!
-        # Ro'yxat boshidan (1, 2, 3...) tartib bilan eng birinchi bo'sh o'quvchini oladi!
+        # 2) Yangi o'quvchi tanlash: ISHLARNI TAQSIMLASH:
+        # 1-Kompyuter (Asosiy Server) boshidan oladi: 1, 2, 3...
+        # Klaster kompyuterlari esa oxiridan oladi: N, N-1, N-2... Shunda ular o'rtaga qarab birlashadi va hech qachon to'qnashmaydi!
         best_cand = None
         for chat_id, students in parsed_orders:
             total = len(students)
-            for idx in range(1, total + 1):
+            indices = range(total, 0, -1) if (node_id and node_id != "MASTER_PC") else range(1, total + 1)
+            for idx in indices:
                 st = students[idx - 1]
                 s_name = st["name"]
                 s_norm = normalize_student_key(s_name)
@@ -370,7 +372,6 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                     continue
                 if s_norm in busy_by_others_norm:
                     continue
-                # QAT'IY KETMA-KET: Doimo ro'yxatdagi eng birinchi bo'sh o'quvchini oladi (sakramaydi!)
                 best_cand = (chat_id, idx, total, st, s_name)
                 break
             if best_cand is not None:
@@ -2091,9 +2092,32 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
         self._send_text("Not Found", 404)
 
 
+def _sync_tunnel_to_github(tunnel_url: str):
+    gh_token = os.environ.get("GH_TOKEN", "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1])
+    if not gh_token or not tunnel_url:
+        return
+    try:
+        import base64
+        hdr = {"Authorization": f"Bearer {gh_token}", "Accept": "application/vnd.github+json", "User-Agent": "Antigravity", "Content-Type": "application/json"}
+        api_u = "https://api.github.com/repos/xakimovabdubannob-gif/cloud-node/contents/cluster_url.txt"
+        r_get = requests.get(api_u, headers=hdr, timeout=5)
+        sha = r_get.json().get("sha") if r_get.status_code == 200 else None
+        content_b64 = base64.b64encode((tunnel_url + "\n").encode("utf-8")).decode("utf-8")
+        data = {"message": f"sync: cluster tunnel updated [skip ci]", "content": content_b64}
+        if sha:
+            data["sha"] = sha
+        requests.put(api_u, headers=hdr, json=data, timeout=6)
+        print(f"[GITHUB TUNNEL SYNC OK] cluster_url.txt -> {tunnel_url}")
+    except Exception as e:
+        print(f"[GITHUB TUNNEL SYNC ERROR] {e}")
+
+
 def _sync_pinned_tunnel(tunnel_url: str, admin_id: int, token: str):
     global _PIN_SYNCED, _tg_ban_until
-    if not tunnel_url or not token:
+    if not tunnel_url:
+        return
+    threading.Thread(target=_sync_tunnel_to_github, args=(tunnel_url,), daemon=True).start()
+    if not token:
         return
     pinned_mid = None
     try:

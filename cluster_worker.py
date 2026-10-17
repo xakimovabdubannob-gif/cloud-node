@@ -123,6 +123,21 @@ class ClusterWorkerNode:
             except Exception:
                 pass
 
+        # 1. Eng birinchi va eng ishonchli: GitHub Repository'dagi live cluster_url.txt
+        try:
+            r_gh = requests.get(
+                "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt",
+                headers={"Cache-Control": "no-cache"},
+                timeout=5,
+            )
+            if r_gh.status_code == 200:
+                u_gh = r_gh.text.strip().splitlines()[0].strip()
+                if u_gh.startswith("https://") and "init.trycloudflare" not in u_gh:
+                    if u_gh not in candidates:
+                        candidates.insert(0, u_gh)
+        except Exception:
+            pass
+
         # Telegram Admin Chat Pinned xabaridan asosiy kompyuter manzilini o'qiymiz
         try:
             r = requests.get(f"{self.api_url}/getChat", params={"chat_id": self.admin_id}, timeout=10).json()

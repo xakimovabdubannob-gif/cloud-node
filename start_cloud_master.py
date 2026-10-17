@@ -125,8 +125,8 @@ def sync_databases_to_github():
             subprocess.run(["git", "config", "user.name", "github-actions[bot]"])
             subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"])
             subprocess.run(["git", "config", "--unset-all", "http.https://github.com/.extraheader"])
-            subprocess.run(["git", "add", "data_store.enc"])
-            subprocess.run(["git", "commit", "-m", "sync: encrypted data store updated [skip ci]"])
+            subprocess.run(["git", "add", "data_store.enc", "bot_orders"])
+            subprocess.run(["git", "commit", "-m", "sync: encrypted data store and orders updated [skip ci]"])
             push_url = f"https://{GH_OWNER}:{GH_TOKEN}@github.com/{GH_OWNER}/{GH_REPO}.git"
             subprocess.run(["git", "pull", "--rebase", push_url, "HEAD:main"], capture_output=True, text=True)
             res = subprocess.run(["git", "push", push_url, "HEAD:main"], capture_output=True, text=True)
