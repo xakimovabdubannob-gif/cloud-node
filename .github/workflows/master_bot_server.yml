@@ -4,6 +4,9 @@ on:
 concurrency:
   group: master-bot-24-7-group
   cancel-in-progress: true
+permissions:
+  contents: write
+  actions: write
 jobs:
   cloud-bot:
     runs-on: windows-latest

@@ -1916,10 +1916,18 @@ class TelegramBotServer:
                     params={"offset": self.offset, "timeout": 20},
                     timeout=(6, 26),
                 ).json()
+                if not resp.get("ok"):
+                    err_desc = resp.get("description", "Unknown error")
+                    print(f"[POLL XATO] getUpdates ok=False: {err_desc}")
+                    time.sleep(2.0)
+                    continue
                 for upd in resp.get("result", []):
                     self.offset = upd["update_id"] + 1
+                    u_txt = (upd.get("message") or {}).get("text") or (upd.get("callback_query") or {}).get("data")
+                    print(f"[TG UPDATE] ID={upd['update_id']} | Text/Data: {str(u_txt)[:60]}")
                     threading.Thread(target=self.process_update, args=(upd,), daemon=True).start()
             except Exception as e:
+                print(f"[POLL EXCEPTION] {e}")
                 time.sleep(1.5)
 
     def approve_and_start_order(self, admin_chat_id, target_uid: int, paid_now: int, mode_label: str):
@@ -2698,38 +2706,24 @@ class TelegramBotServer:
 
 
 if __name__ == "__main__":
-    class _TeeLog:
-        def __init__(self, orig, log_path):
-            self.orig = orig
-            self.log_f = open(log_path, "a", encoding="utf-8", errors="replace")
-
-        def write(self, data):
-            try:
-                self.orig.write(data)
-                self.orig.flush()
-            except Exception:
-                pass
-            try:
-                self.log_f.write(data)
-                self.log_f.flush()
-            except Exception:
-                pass
-
-        def flush(self):
-            try:
-                self.orig.flush()
-                self.log_f.flush()
-            except Exception:
-                pass
-
     _bot_lock_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         _bot_lock_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         _bot_lock_sock.bind(("127.0.0.1", 49880))
     except Exception:
         pass
-    sys.stdout = _TeeLog(sys.stdout, "bot.log")
-    sys.stderr = _TeeLog(sys.stderr, "bot.log")
-    config = load_config()
-    bot_server = TelegramBotServer(config)
-    bot_server.run_forever()
+
+    try:
+        config = load_config()
+        bot_server = TelegramBotServer(config)
+        bot_server.run_forever()
+    except Exception as ex:
+        import traceback
+        traceback.print_exc()
+        try:
+            with open("tg_crash.log", "a", encoding="utf-8") as cf:
+                cf.write(f"\n--- CRASH AT {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+                traceback.print_exc(file=cf)
+        except Exception:
+            pass
+        sys.exit(1)
