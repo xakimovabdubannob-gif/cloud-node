@@ -1228,7 +1228,15 @@ class TelegramBotServer:
                 )
             return
 
-        if s_name in get_unrecoverable_students():
+        accs = get_existing_accounts()
+        has_acc = (
+            s_name in accs or
+            re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", s_name) in accs or
+            s_name.replace("`", "'") in accs or
+            s_name.replace("'", "`") in accs
+        )
+
+        if not has_acc and s_name in get_unrecoverable_students():
             if pass_num == 1 and not ctx.get("silent"):
                 errs = get_error_reason_map()
                 self.send_message(

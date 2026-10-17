@@ -85,6 +85,7 @@ def get_unrecoverable_students():
     """Umuman kirib bo'lmaydigan (oldin boshqa joyda ro'yxatdan o'tgan va bazada paroli yo'q) o'quvchilar ro'yxati.
     Bularga oxirida qayta urinilmaydi!"""
     with FILE_LOCK:
+        accs = get_existing_accounts()
         unrec = set()
         if os.path.exists(ERRORS_FILE):
             with open(ERRORS_FILE, "r", encoding="utf-8") as f:
@@ -93,7 +94,10 @@ def get_unrecoverable_students():
                     if "ILOJI_YOQ" in line:
                         parts = [p.strip() for p in line.split("|")]
                         if len(parts) >= 1:
-                            unrec.add(parts[0].upper())
+                            s_u = parts[0].upper()
+                            s_clean = re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", s_u)
+                            if s_u not in accs and s_clean not in accs:
+                                unrec.add(s_u)
         return unrec
 
 def save_unrecoverable_student(full_name, class_name, reason):
@@ -1756,10 +1760,6 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
         print(f"{tag}[CHECK] {full_name} allaqachon sertifikat olgan. Keyingi o'quvchiga o'tiladi.")
         return "COMPLETED"
 
-    if full_name in get_unrecoverable_students():
-        print(f"{tag}[SKIP - ILOJI YO'Q] {full_name} oldin ro'yxatdan o'tgan va bazada paroli yo'q (yoki kirib bo'lmaydi). Qayta urinilmaydi!")
-        return "UNRECOVERABLE"
-
     if student.get("email") and student.get("password"):
         acc = {"email": student["email"].strip(), "password": student["password"].strip()}
     else:
@@ -1770,6 +1770,10 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
             accounts.get(full_name.replace("'", "`")) or
             accounts.get(re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", full_name))
         )
+
+    if not acc and full_name in get_unrecoverable_students():
+        print(f"{tag}[SKIP - ILOJI YO'Q] {full_name} oldin ro'yxatdan o'tgan va bazada paroli yo'q (yoki kirib bo'lmaydi). Qayta urinilmaydi!")
+        return "UNRECOVERABLE"
 
 
     common_media_args = [
