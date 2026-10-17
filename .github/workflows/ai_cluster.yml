@@ -48,6 +48,6 @@ jobs:
           TUNNEL_URL: ${{ github.event.inputs.tunnel_url }}
           SHIELD_KEY: ${{ secrets.SHIELD_KEY }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          HEADLESS: "0"
-          GUI_MODE: "1"
+          HEADLESS: "1"
+          GUI_MODE: "0"
         run: python start_cloud_worker.py
