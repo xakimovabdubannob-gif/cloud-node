@@ -77,36 +77,38 @@ admin_input_state = {}  # admin_id -> {"action": "partial_order" | "pay_debt", "
 
 
 def load_config():
+    cfg = {}
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-                if cfg.get("bot_token"):
-                    return cfg
         except Exception:
             pass
 
-    print("=" * 70)
-    print("TELEGRAM BOT SOZLAMALARI (Bir marta kiritiladi)")
-    print("=" * 70)
-    token = os.environ.get("BOT_TOKEN", "").strip()
-    if not token:
-        token = input("1. @BotFather dan olingan BOT TOKEN ni kiriting: ").strip()
-    admin_id = os.environ.get("ADMIN_ID", "").strip()
-    if not admin_id:
-        admin_id = input("2. Admin Telegram ID raqamini kiriting (masalan 123456789, bo'sh qoldirsa birinchi yozgan odam admin bo'ladi): ").strip()
-    card_info = input("3. To'lov uchun Karta raqami va Ismni kiriting (masalan: 8600 **** **** **** - Falonchiyev F.): ").strip()
-    if not card_info:
-        card_info = f"9860 **** **** **** (Admin {ADMIN_USERNAME} orqali aniqlashtiring)"
+    token = os.environ.get("BOT_TOKEN", "").strip() or cfg.get("bot_token", "").strip()
+    import re
+    tok_match = re.search(r"(\d{8,11}:[A-Za-z0-9_-]{34,36})", token)
+    if tok_match:
+        token = tok_match.group(1).strip()
+    else:
+        token = token.strip().strip('"\'').strip()
+
+    admin_id_raw = str(os.environ.get("ADMIN_ID", "")).strip() or str(cfg.get("admin_id", "6580113791")).strip()
+    admin_id = int(admin_id_raw) if admin_id_raw.isdigit() else 6580113791
+    card_info = os.environ.get("CARD_INFO", "").strip() or cfg.get("card_info", "").strip() or "5614 6812 1100 2260 (QOBILOV OBIDJON)"
+    start_vid = cfg.get("start_video_id", "BAACAgIAAxkBAAIU3WrOPdbdiiRsTbulzMMEhGLCKddMAALeqAACJ_9hShDh7OsB9N58PQQ")
 
     cfg = {
         "bot_token": token,
-        "admin_id": int(admin_id) if admin_id.isdigit() else 0,
+        "admin_id": admin_id,
         "card_info": card_info,
-        "start_video_id": "",
+        "start_video_id": start_vid,
     }
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2, ensure_ascii=False)
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
     return cfg
 
 
@@ -1909,6 +1911,11 @@ class TelegramBotServer:
         print("Telegramdan botga /start yoki /tahlil deb yozishingiz mumkin!")
         print("=" * 70)
 
+        try:
+            requests.post(f"{self.api_url}/deleteWebhook", params={"drop_pending_updates": False}, timeout=10)
+        except Exception:
+            pass
+
         while True:
             try:
                 resp = requests.get(
@@ -1918,7 +1925,11 @@ class TelegramBotServer:
                 ).json()
                 if not resp.get("ok"):
                     err_desc = resp.get("description", "Unknown error")
-                    print(f"[POLL XATO] getUpdates ok=False: {err_desc}")
+                    err_code = resp.get("error_code")
+                    if err_code == 401:
+                        print("[POLL XATO 401] Bot token yaroqsiz! Telegram BotFather dagi yangi tokenni GitHub Secrets ga qo'yish kerak.")
+                    else:
+                        print(f"[POLL XATO] getUpdates ok=False ({err_code}): {err_desc}")
                     time.sleep(2.0)
                     continue
                 for upd in resp.get("result", []):

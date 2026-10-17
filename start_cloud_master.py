@@ -12,12 +12,21 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
-if not BOT_TOKEN and os.path.exists("bot_config.json"):
+import re
+
+raw_tok = os.environ.get("BOT_TOKEN", "").strip()
+if not raw_tok and os.path.exists("bot_config.json"):
     try:
-        BOT_TOKEN = json.load(open("bot_config.json", encoding="utf-8")).get("bot_token", "").strip()
+        raw_tok = json.load(open("bot_config.json", encoding="utf-8")).get("bot_token", "").strip()
     except Exception:
         pass
+
+tok_match = re.search(r"(\d{8,11}:[A-Za-z0-9_-]{34,36})", raw_tok)
+if tok_match:
+    BOT_TOKEN = tok_match.group(1).strip()
+else:
+    BOT_TOKEN = raw_tok.strip().strip('"\'').strip()
+
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "6580113791"))
 GH_TOKEN = os.environ.get("GH_TOKEN", "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1])
 CARD_INFO = os.environ.get("CARD_INFO", "5614 6812 1100 2260 (QOBILOV OBIDJON)")
@@ -27,6 +36,23 @@ GH_REPO = "cloud-node"
 print("=" * 65)
 print("🚀 24/7 BULUT MASTER BOT ISHGA TUSHIRILMOQDA (GITHUB RUNNER)")
 print("=" * 65)
+
+bot_me = None
+if BOT_TOKEN:
+    try:
+        # Webhook tozalash (agar webhook yoqilgan bo'lsa getUpdates ishlamaydi)
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook", params={"drop_pending_updates": False}, timeout=10)
+        r_me = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getMe", timeout=10)
+        if r_me.status_code == 200 and r_me.json().get("ok"):
+            bot_me = r_me.json()["result"]
+            print(f"🤖 [BOT TASDIQLANDI] @{bot_me.get('username')} muvaffaqiyatli ulandi! (ID: {bot_me.get('id')})")
+        else:
+            print(f"⚠️ [BOT TOKEN XATOSI] Telegram API rad etdi: {r_me.status_code} - {r_me.text}")
+    except Exception as e:
+        print(f"⚠️ [BOT ME CHECK ERROR] {e}")
+else:
+    print("⚠️ [DIQQAT] BOT_TOKEN topilmadi! GitHub Secrets -> BOT_TOKEN ni tekshiring.")
+
 
 # 0. Shifrlangan bazani ochamiz
 try:
@@ -112,21 +138,26 @@ time.sleep(2)
 
 # 3. Adminga xabar yuborish
 try:
-    requests.post(
+    bot_un = f"@{bot_me.get('username')}" if bot_me else "@Sertifikatagentbot"
+    r_ntf = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
         data={
             "chat_id": ADMIN_ID,
             "text": (
-                "✅ <b>24/7 BULUT SERVER (GITHUB ACTIONS) 100% ISHGA TUSHDI!</b>\n\n"
-                "🤖 <b>Bot nomi:</b> @Sertifikatagentbot\n"
-                "⚡ Kompyuteringiz o'chiq bo'lsa ham buyurtmalar qabul qilinadi va avtomatik sertifikat olinadi!\n"
-                "Endi botga /start bosing!"
+                "✅ <b>24/7 BULUT MASTER SERVER 100% ISHGA TUSHDI!</b>\n\n"
+                f"🤖 <b>Bot:</b> {bot_un}\n"
+                "🛡 <i>Barcha spamerlar va begona reklamalar butunlay yo'q qilindi!</i>\n"
+                "⚡ Kompyuteringiz o'chiq bo'lsa ham buyurtmalar qabul qilinadi va avtomatik sertifikat olinadi!\n\n"
+                "👇 <b>Marhamat, botga /start bosing yoki o'quvchilar ro'yxatini yuboring:</b>"
             ),
             "parse_mode": "HTML",
         },
         timeout=10,
     )
-    print("[3] Telegram notification sent successfully to admin!")
+    if r_ntf.status_code == 200 and r_ntf.json().get("ok"):
+        print("[3] Telegram notification sent successfully to admin!")
+    else:
+        print(f"[3] Telegram notification failed: {r_ntf.status_code} - {r_ntf.text}")
 except Exception as e:
     print(f"[3] Telegram notification error: {e}")
 
