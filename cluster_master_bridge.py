@@ -1112,14 +1112,16 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                             _worker_assigned[(node_id, w_id)] = st_name_clean
                     if m_em:
                         em_clean = m_em.group(1).strip().lower()
-                        new_ac_line = f"{st_name_clean} | 1-sinf | {em_clean} | @Ak101095"
+                        from master_certified_pipeline import generate_student_password
+                        pass_val = post_data.get("password") or generate_student_password(st_name_clean)
+                        new_ac_line = f"{st_name_clean} | 1-sinf | {em_clean} | {pass_val}"
                         with file_lock:
                             existing_txt = open(ACCOUNTS_FILE, "r", encoding="utf-8", errors="replace").read() if os.path.exists(ACCOUNTS_FILE) else ""
                             if st_name_clean + " |" not in existing_txt:
                                 with open(ACCOUNTS_FILE, "a", encoding="utf-8") as af:
                                     af.write(new_ac_line + "\n")
                         with nodes_lock:
-                            _state_mem_cache["accs"][st_name_clean] = {"email": em_clean, "password": "@Ak101095"}
+                            _state_mem_cache["accs"][st_name_clean] = {"email": em_clean, "password": pass_val}
                             if (node_id, w_id) in _sticky_workers:
                                 _sticky_workers[(node_id, w_id)]["account_line"] = new_ac_line
             except Exception as e:

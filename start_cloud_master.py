@@ -234,31 +234,36 @@ while time.time() - start_ts < 16200:
             wb.close()
         except Exception:
             target_st_cnt = 10
-        should_dispatch = True
+        if target_st_cnt > 3:
+            should_dispatch = True
+        else:
+            print(f"[CLUSTER DISPATCH] {target_st_cnt} ta o'quvchi uchun 1-Kompyuter (3 ta Agent) yetarli, qo'shimcha kompyuter yoqilmadi.")
     elif (time.time() - last_dispatch_ts > 180) and t_url.startswith("https://"):
-        # Failsafe: agar hali tugallanmagan o'quvchilar ko'p bo'lsa va klaster kompyuterlari ulanmagan bo'lsa
+        # Failsafe: faqat 3 tadan ko'p o'quvchi qolgan bo'lsa klaster yoqiladi
         try:
             st_resp = requests.get("http://127.0.0.1:8766/cluster/tg_status", timeout=5).json()
             rem = st_resp.get("remaining_count", 0)
             online = st_resp.get("online_nodes", 0)
-            if rem > 0 and online == 0:
-                print(f"[FAILSAFE KLASTER] {rem} ta tugallanmagan o'quvchi bor, ammo virtual klaster ulanmagan. Avtomatik ishga tushirilmoqda...")
+            if rem > 3 and online == 0:
+                print(f"[FAILSAFE KLASTER] {rem} ta tugallanmagan o'quvchi bor (4+ ta), qo'shimcha kompyuter ishga tushirilmoqda...")
                 target_st_cnt = rem
                 should_dispatch = True
         except Exception:
             pass
 
-    if should_dispatch and t_url.startswith("https://"):
+    if should_dispatch and t_url.startswith("https://") and target_st_cnt > 3:
         last_dispatch_ts = time.time()
-        # O'quvchilar soniga qarab klaster kompyuterlari sonini avtomatik belgilash
-        if target_st_cnt <= 3:
+        # O'quvchilar soniga qarab klaster kompyuterlari sonini avtomatik belgilash:
+        # 1-3 ta zakaz: 1-Kompyuterning o'zi yetarli (qo'shimcha kompyuter = 0)
+        # 4-9 ta zakaz: 1 ta qo'shimcha kompyuter (jami 2 ta kompyuter)
+        # 10-25 ta zakaz: 2 ta qo'shimcha kompyuter (jami 3 ta kompyuter)
+        # 26+ ta zakaz: 4 ta kompyuter
+        if target_st_cnt <= 9:
             n_cnt = 1
-        elif target_st_cnt <= 10:
+        elif target_st_cnt <= 25:
             n_cnt = 2
-        elif target_st_cnt <= 20:
-            n_cnt = 4
         else:
-            n_cnt = 6
+            n_cnt = 4
         print(f"[BUYURTMA KELDI] {target_st_cnt} ta o'quvchi! GitHub'da {n_cnt} ta Virtual Kompyuter (Klaster) ishga tushirilmoqda...")
         try:
             r = requests.post(

@@ -42,6 +42,18 @@ ACCOUNTS_FILE = os.path.join(SCRIPT_DIR, "akkountlar.txt")
 ROSTER_FILE = os.path.join(SCRIPT_DIR, "oquvchi.txt")
 ERRORS_FILE = os.path.join(SCRIPT_DIR, "xatolar.txt")
 
+import random
+import string
+
+def generate_student_password(name=""):
+    """Har bir o'quvchi uchun har xil, kuchli va eslab qolish oson parol yaratadi."""
+    prefixes = ["Uzbek", "Coder", "Leader", "Smart", "Tech", "Edu", "Star", "Super", "Online", "Skill"]
+    pfx = random.choice(prefixes)
+    digits = "".join(random.choices(string.digits, k=4))
+    special = random.choice(["!", "#", "$", "@"])
+    letter = random.choice(["A", "B", "C", "D", "X", "Y", "Z"])
+    return f"{pfx}{digits}{special}{letter}"
+
 COMMON_PASSWORD = "@Ak101095"
 PHONE_FORMATTED = "+998 (88) 667 10 60"
 PHONE_RAW = "886671060"
@@ -148,6 +160,23 @@ def save_certificate_result(full_name, class_name, cert_url):
 def dismiss_all_popups(page):
     try:
         page.evaluate("""() => {
+            // 1. Coursera Cookie & Privacy Banner removal
+            const acceptBtn = Array.from(document.querySelectorAll('button, a')).find(b => {
+                const t = (b.innerText || '').trim();
+                return t === 'Accept' || t === 'Accept all' || t === 'Принять все' || t === 'Принять';
+            });
+            if (acceptBtn) {
+                try { acceptBtn.click(); } catch(e) {}
+            }
+            const banners = Array.from(document.querySelectorAll('div, section, aside')).filter(el => {
+                const t = (el.innerText || '').toLowerCase();
+                return t.includes('we process your personal information') || t.includes('onetrust') || t.includes('cookie-banner');
+            });
+            banners.forEach(b => {
+                try { b.remove(); } catch(e) {}
+            });
+
+            // 2. Commitments & Welcome popups
             const labels = Array.from(document.querySelectorAll('label, span'));
             labels.forEach(l => {
                 const lt = (l.innerText || '').trim();
@@ -172,6 +201,12 @@ def dismiss_all_popups(page):
                 }
             });
         }""")
+    except Exception:
+        pass
+    try:
+        acc = page.locator("#onetrust-accept-btn-handler, button:has-text('Accept')").first
+        if acc.count() > 0 and acc.is_visible():
+            acc.click(force=True, timeout=800)
     except Exception:
         pass
 
@@ -925,16 +960,49 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                 sub_2_clicked = False
                 loops = int(modal_wait_total / 0.5)
                 for loop_idx in range(loops):
-                    # 1. Dialog ichidagi Submit tugmasini qidiramiz
-                    modal_sub = page.locator("div[role='dialog'] button:has-text('Submit'), div[role='dialog'] button:has-text('Отправить'), div[aria-modal='true'] button:has-text('Submit'), div[aria-modal='true'] button:has-text('Отправить'), div[class*='modal'] button:has-text('Submit')").first
+                    # 1. To'g'ridan-to'g'ri JavaScript orqali "Ready to submit?" modalidagi Submit tugmasini bosamiz:
+                    clicked_js = page.evaluate("""() => {
+                        const allBtns = Array.from(document.querySelectorAll('button'));
+                        // 1) Ready to submit modalidagi Submit tugmasi (yonida Cancel bor)
+                        const modalBtn = allBtns.find(b => {
+                            const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+                            if (txt !== 'submit' && txt !== 'отправить') return false;
+                            const p = b.closest('div, section') || b.parentElement;
+                            if (!p) return false;
+                            const pt = (p.innerText || '').toLowerCase();
+                            return pt.includes('ready to submit') || pt.includes('cancel') || pt.includes('отмена');
+                        });
+                        if (modalBtn) {
+                            modalBtn.focus();
+                            modalBtn.click();
+                            return true;
+                        }
+                        // 2) DOM dagi oxirgi Submit tugmasi (agar modal bo'lsa u oxirida joylashadi)
+                        const subBtns = allBtns.filter(b => {
+                            const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+                            return (txt === 'submit' || txt === 'отправить') && b.offsetParent !== null;
+                        });
+                        if (subBtns.length >= 2) {
+                            const lastBtn = subBtns[subBtns.length - 1];
+                            lastBtn.focus();
+                            lastBtn.click();
+                            return true;
+                        }
+                        return false;
+                    }""")
+                    if clicked_js:
+                        print(f"[{q_name}] 'Ready to submit?' (2-Submit) JavaScript orqali bosildi!")
+                        sub_2_clicked = True
+                        break
+
+                    # 2. Playwright locators:
+                    modal_sub = page.locator("div:has-text('Ready to submit') button:has-text('Submit'), div[role='dialog'] button:has-text('Submit'), div[aria-modal='true'] button:has-text('Submit'), div[class*='modal'] button:has-text('Submit')").last
                     if modal_sub.count() > 0 and modal_sub.is_visible():
                         print(f"[{q_name}] 'Ready to submit?' modal oynasi topildi! 2-Submit bosilmoqda...")
                         try:
-                            modal_sub.click(force=True, timeout=3000)
+                            modal_sub.click(force=True, timeout=2000)
                             sub_2_clicked = True
                         except Exception:
-                            pass
-                        if not sub_2_clicked:
                             b_box = modal_sub.bounding_box()
                             if b_box:
                                 page.mouse.click(b_box['x'] + b_box['width']/2, b_box['y'] + b_box['height']/2)
@@ -942,23 +1010,41 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                         if sub_2_clicked:
                             break
 
-                    # 2. Agar sahifadagi Submit tugmalari soni 2 yoki undan ko'p bo'lsa (oxirgisi modalniki)
                     all_submits = page.locator("button:has-text('Submit'), button:has-text('Отправить')").all()
                     if len(all_submits) >= 2:
                         sub_btn_2 = all_submits[-1]
                         print(f"[{q_name}] Sahifada 2-Submit (modal) tugmasi topildi! Bosilmoqda...")
                         try:
-                            sub_btn_2.click(force=True, timeout=3000)
+                            sub_btn_2.click(force=True, timeout=2000)
                             sub_2_clicked = True
                         except Exception:
-                            b_box = sub_btn_2.bounding_box()
-                            if b_box:
-                                page.mouse.click(b_box['x'] + b_box['width']/2, b_box['y'] + b_box['height']/2)
-                                sub_2_clicked = True
+                            pass
                         if sub_2_clicked:
                             break
 
                     time.sleep(0.5)
+
+                # 3. TEKSHIRISH: Agar "Ready to submit" modal hali ham ekranda turgan bo'lsa, 3 marta qayta bosamiz!
+                for r_click in range(3):
+                    time.sleep(1.0)
+                    has_modal = page.evaluate("() => document.body ? (document.body.innerText.includes('Ready to submit') || document.body.innerText.includes('Готовы отправить')) : false")
+                    if not has_modal:
+                        break
+                    print(f"[{q_name}] [QAYTA BOSISH #{r_click+1}/3] 'Ready to submit?' oynasi hali ham ochiq, qayta 2-Submit bosilmoqda...")
+                    page.evaluate("""() => {
+                        const btns = Array.from(document.querySelectorAll('button')).filter(b => {
+                            const t = (b.innerText || '').trim().toLowerCase();
+                            return t === 'submit' || t === 'отправить';
+                        });
+                        if (btns.length > 0) btns[btns.length - 1].click();
+                    }""")
+                    sub_last = page.locator("button:has-text('Submit'), button:has-text('Отправить')").last
+                    if sub_last.count() > 0 and sub_last.is_visible():
+                        try:
+                            sub_last.click(force=True)
+                        except Exception:
+                            pass
+                    sub_2_clicked = True
 
                 if sub_2_clicked:
                     print(f"[{q_name}] 2-Submit muvaffaqiyatli bosildi! Natija yuklanishi va baholanishi kutilmoqda...")
@@ -1025,111 +1111,112 @@ def verify_student_name_with_3_checks(page, student_name):
             time.sleep(3.5 * mult)
             dismiss_all_popups(page)
 
-            # Ism yozish maydonlari (First/Middle/Last name) ochilganini tekshiramiz
-            inp_count = page.evaluate("""() => {
-                return Array.from(document.querySelectorAll('input')).filter(i => i.type === 'text' && !i.className.includes('autosuggest') && !(i.placeholder || '').toLowerCase().includes('search')).length;
-            }""")
-            if inp_count < 2 and v_btn.is_visible():
-                v_btn.click(force=True)
-                time.sleep(3.0 * mult)
-
-            # Ism yozish maydonlari (First/Middle/Last name)
+            # 1. Ism bo'laklarini ajratib olamiz
             parts = student_name.split()
             first_name = parts[0] if len(parts) > 0 else student_name
             middle_name = parts[1] if len(parts) > 2 else ""
             last_name = " ".join(parts[2:]) if len(parts) > 2 else (parts[1] if len(parts) == 2 else "")
 
-            # Modal ichidagi matnli inputlarni olamiz
-            txt_inps = page.locator("div[role='dialog'] input[type='text'], div[aria-modal='true'] input[type='text'], div[class*='modal'] input[type='text'], form input[type='text']").all()
-            if not txt_inps:
-                txt_inps = [i for i in page.locator("input[type='text']").all() if 'search' not in (i.get_attribute('placeholder') or '').lower()]
+            # 2. Maydonlarni topish va yozish (3 marta qayta tekshirib to'ldirish):
+            for fill_try in range(3):
+                # React native value setter + JS events
+                page.evaluate("""([fn, mn, ln]) => {
+                    const inps = Array.from(document.querySelectorAll('input')).filter(i => {
+                        const t = (i.type || 'text').toLowerCase();
+                        return !['checkbox', 'radio', 'hidden', 'submit', 'button', 'search'].includes(t) && i.offsetParent !== null;
+                    });
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                    if (inps.length >= 3) {
+                        setter.call(inps[0], fn); inps[0].dispatchEvent(new Event('input', { bubbles: true })); inps[0].dispatchEvent(new Event('change', { bubbles: true }));
+                        setter.call(inps[1], mn); inps[1].dispatchEvent(new Event('input', { bubbles: true })); inps[1].dispatchEvent(new Event('change', { bubbles: true }));
+                        setter.call(inps[2], ln); inps[2].dispatchEvent(new Event('input', { bubbles: true })); inps[2].dispatchEvent(new Event('change', { bubbles: true }));
+                    } else if (inps.length === 2) {
+                        setter.call(inps[0], fn); inps[0].dispatchEvent(new Event('input', { bubbles: true })); inps[0].dispatchEvent(new Event('change', { bubbles: true }));
+                        setter.call(inps[1], (mn + ' ' + ln).trim()); inps[1].dispatchEvent(new Event('input', { bubbles: true })); inps[1].dispatchEvent(new Event('change', { bubbles: true }));
+                    } else if (inps.length === 1) {
+                        setter.call(inps[0], (fn + ' ' + mn + ' ' + ln).trim()); inps[0].dispatchEvent(new Event('input', { bubbles: true })); inps[0].dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }""", [first_name, middle_name, last_name])
 
-            if len(txt_inps) >= 3:
-                fill_react_input(txt_inps[0], first_name)
-                fill_react_input(txt_inps[1], middle_name)
-                fill_react_input(txt_inps[2], last_name)
-            elif len(txt_inps) == 2:
-                fill_react_input(txt_inps[0], first_name)
-                fill_react_input(txt_inps[1], f"{middle_name} {last_name}".strip() if (middle_name or last_name) else first_name)
-            elif len(txt_inps) == 1:
-                fill_react_input(txt_inps[0], student_name)
-            else:
-                page.keyboard.type(student_name, delay=30)
-            time.sleep(0.4)
+                # Shuningdek Playwright bilan ham bosib yozish
+                all_text_inputs = [i for i in page.locator("input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='search']):not([type='submit'])").all() if i.is_visible()]
+                if len(all_text_inputs) >= 3:
+                    for i_idx, val in enumerate([first_name, middle_name, last_name]):
+                        if not all_text_inputs[i_idx].input_value():
+                            try:
+                                all_text_inputs[i_idx].click(force=True)
+                                all_text_inputs[i_idx].fill(val)
+                            except Exception:
+                                pass
+                elif len(all_text_inputs) == 2:
+                    if not all_text_inputs[0].input_value(): all_text_inputs[0].fill(first_name)
+                    if not all_text_inputs[1].input_value(): all_text_inputs[1].fill(f"{middle_name} {last_name}".strip())
+                elif len(all_text_inputs) == 1:
+                    if not all_text_inputs[0].input_value(): all_text_inputs[0].fill(student_name)
 
-            # 4. Galichka (Checkbox) - barcha usullar bilan belgilash
-            cb = page.locator("div[role='dialog'] input[type='checkbox'], div[aria-modal='true'] input[type='checkbox'], input[type='checkbox']").first
-            for _ in range(3):
+                # Tekshirish: qiymatlar yozildimi?
+                cur_vals = page.evaluate("""() => {
+                    const inps = Array.from(document.querySelectorAll('input')).filter(i => {
+                        const t = (i.type || 'text').toLowerCase();
+                        return !['checkbox', 'radio', 'hidden', 'submit', 'button', 'search'].includes(t) && i.offsetParent !== null;
+                    });
+                    return inps.map(i => i.value);
+                }""")
+                if cur_vals and any(cur_vals):
+                    print(f"[ISMNI TASDIQLASH] Ism-sharif muvaffaqiyatli kiritildi: {cur_vals}")
+                    break
+                print(f"[ISMNI TASDIQLASH] [QAYTA #{fill_try+1}/3] Maydonlar hali bo'sh, qayta yozilmoqda...")
+                time.sleep(0.5)
+
+            # 3. Galichka (Checkbox) qo'yish va 100% tekshirish (3 marta urinish)
+            cb = page.locator("input[type='checkbox']").first
+            for cb_i in range(3):
                 if cb.count() > 0 and cb.is_checked():
+                    print("[ISMNI TASDIQLASH] Checkbox rozilik galichkasi tasdiqlandi!")
                     break
                 try:
                     cb.scroll_into_view_if_needed()
                     cb.check(force=True)
                 except Exception:
                     pass
-                if cb.count() > 0 and not cb.is_checked():
+                page.evaluate("""() => {
+                    const c = document.querySelector("input[type='checkbox']");
+                    if (c && !c.checked) {
+                        c.click();
+                        c.checked = true;
+                        c.dispatchEvent(new Event('change', { bubbles: true }));
+                        c.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    const lbl = Array.from(document.querySelectorAll('label')).find(l => l.innerText.includes('checking this box') || l.querySelector('input[type="checkbox"]'));
+                    if (lbl) lbl.click();
+                }""")
+                time.sleep(0.4)
+
+            # 4. Submit tugmasini bosish va tekshirish (3 marta urinish)
+            for sub_try in range(3):
+                sub_v = page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
+                if sub_v.count() > 0 and sub_v.is_visible():
+                    print(f"[ISMNI TASDIQLASH] [SUBMIT #{sub_try+1}/3] Submit bosilmoqda...")
                     try:
-                        box = cb.bounding_box()
-                        if box:
-                            page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
+                        sub_v.click(force=True)
                     except Exception:
                         pass
-                if cb.count() > 0 and not cb.is_checked():
-                    page.evaluate("""() => {
-                        const c = document.querySelector("input[type='checkbox']");
-                        if (c) {
-                            if (!c.checked) c.click();
-                            c.checked = true;
-                            c.dispatchEvent(new Event('change', { bubbles: true }));
-                            c.dispatchEvent(new Event('input', { bubbles: true }));
-                        }
-                        const lbls = Array.from(document.querySelectorAll("label"));
-                        for (const l of lbls) {
-                            if (l.querySelector("input[type='checkbox']") || /checking this box|удостоверении|подтверждаю|agree/i.test(l.innerText || '')) {
-                                l.click();
-                                break;
-                            }
-                        }
-                    }""")
-                time.sleep(0.3)
+                page.evaluate("""() => {
+                    const b = Array.from(document.querySelectorAll('button')).find(x => {
+                        const t = (x.innerText || '').trim().toLowerCase();
+                        return (t === 'submit' || t === 'отправить') && x.offsetParent !== null;
+                    });
+                    if (b) b.click();
+                }""")
+                time.sleep(2.0)
+                if "/user-verification" not in page.url:
+                    print("[ISMNI TASDIQLASH] Ism muvaffaqiyatli tasdiqlandi va sahifadan chiqildi!")
+                    return True
 
-            cb_ok = (cb.count() > 0 and cb.is_checked())
-            print(f"[ISMNI TASDIQLASH] Rozilik checkbox holati: {'BELGILANDI' if cb_ok else 'belgilanmadi'}")
-
-            # 5. Submit (1-urinishda: 4s, 2-urinishda: 8s, 3-urinishda: 12s kutadi)
-            sub_wait_sec = v_try * 4
-            print(f"[ISMNI TASDIQLASH] Submit tugmasi kutilmoqda ({sub_wait_sec} soniya)...")
-            sub_v = None
-            for loop_i in range(int(sub_wait_sec / 0.5)):
-                cand = page.locator("div[role='dialog'] button:has-text('Submit'), div[role='dialog'] button:has-text('Отправить'), div[aria-modal='true'] button:has-text('Submit'), button:has-text('Submit'), button:has-text('Отправить')").first
-                if cand.count() > 0 and cand.is_visible() and cand.is_enabled():
-                    sub_v = cand
-                    break
-                if loop_i % 2 == 1:
-                    page.evaluate("""() => {
-                        const c = document.querySelector("input[type='checkbox']");
-                        if (c && !c.checked) {
-                            c.click();
-                            c.checked = true;
-                            c.dispatchEvent(new Event('change', { bubbles: true }));
-                        }
-                    }""")
-                time.sleep(0.5)
-
-            if sub_v and sub_v.is_enabled():
-                print("[ISMNI TASDIQLASH] Submit tugmasi FAOL! Bosilmoqda...")
-                box_s = sub_v.bounding_box()
-                if box_s:
-                    page.mouse.click(box_s['x'] + box_s['width']/2, box_s['y'] + box_s['height']/2)
-                else:
-                    sub_v.click(force=True)
-                print("[ISMNI TASDIQLASH] Tasdiqlash muvaffaqiyatli yuborildi!")
-                time.sleep(4.0 * mult)
+            if "/user-verification" not in page.url:
                 return True
-            else:
-                print(f"[!] Verify My Name Submit tugmasi faol emas ({v_try}/3 | {sub_wait_sec}s kutilgan)...")
         except Exception as e:
-            print(f"[!] Verify My Name {v_try}-urinishda xatolik ushlandi: {e}")
+            print(f"[!] Verify My Name {v_try}-urinishda xatolik: {e}")
             time.sleep(2)
 
     return False
@@ -1673,8 +1760,8 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
     try:
         mail_svc = TempMailAPI()
         student_email = mail_svc.email
-        student_password = COMMON_PASSWORD
-        print(f"   Yangi pochta: {student_email}")
+        student_password = generate_student_password(full_name)
+        print(f"   Yangi pochta: {student_email} | Yangi parol: {student_password}")
     except Exception as e:
         print(f"[!] TempMail xatosi: {e}")
         return "RETRY", None
