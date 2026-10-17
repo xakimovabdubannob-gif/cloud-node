@@ -910,54 +910,81 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
 
             if is_en:
                 sub_btn_1.click(force=True)
-                time.sleep(1.0)
-                if page.locator("button:has-text('Submit'), button:has-text('Отправить')").count() < 2:
-                    box1 = sub_btn_1.bounding_box()
-                    if box1:
+                time.sleep(0.5)
+                box1 = sub_btn_1.bounding_box()
+                if box1:
+                    try:
                         page.mouse.click(box1['x'] + box1['width']/2, box1['y'] + box1['height']/2)
-                print(f"[{q_name}] 1-Submit bosildi! 'Ready to submit?' oynasi kutilmoqda...")
-                for _ in range(10):
-                    if page.locator("button:has-text('Submit'), button:has-text('Отправить')").count() >= 2:
-                        break
-                    time.sleep(0.25)
+                    except Exception:
+                        pass
 
-                # 2-Submit ("Ready to submit?" oynasi ichidagi Submit, Cancel tugmasi yonidagi!)
-                for modal_try in range(1, 4):
-                    if "/attempt" not in page.url:
-                        break
+                # 1-urinishda: 4s, 2-urinishda: 8s, 3-urinishda: 12s kutadi
+                modal_wait_total = check_try * 4
+                print(f"[{q_name}] 1-Submit bosildi! 'Ready to submit?' modal oynasi kutilmoqda ({modal_wait_total} soniya | Urinish #{check_try}/3)...")
+
+                sub_2_clicked = False
+                loops = int(modal_wait_total / 0.5)
+                for loop_idx in range(loops):
+                    # 1. Dialog ichidagi Submit tugmasini qidiramiz
+                    modal_sub = page.locator("div[role='dialog'] button:has-text('Submit'), div[role='dialog'] button:has-text('Отправить'), div[aria-modal='true'] button:has-text('Submit'), div[aria-modal='true'] button:has-text('Отправить'), div[class*='modal'] button:has-text('Submit')").first
+                    if modal_sub.count() > 0 and modal_sub.is_visible():
+                        print(f"[{q_name}] 'Ready to submit?' modal oynasi topildi! 2-Submit bosilmoqda...")
+                        try:
+                            modal_sub.click(force=True, timeout=3000)
+                            sub_2_clicked = True
+                        except Exception:
+                            pass
+                        if not sub_2_clicked:
+                            b_box = modal_sub.bounding_box()
+                            if b_box:
+                                page.mouse.click(b_box['x'] + b_box['width']/2, b_box['y'] + b_box['height']/2)
+                                sub_2_clicked = True
+                        if sub_2_clicked:
+                            break
+
+                    # 2. Agar sahifadagi Submit tugmalari soni 2 yoki undan ko'p bo'lsa (oxirgisi modalniki)
                     all_submits = page.locator("button:has-text('Submit'), button:has-text('Отправить')").all()
                     if len(all_submits) >= 2:
                         sub_btn_2 = all_submits[-1]
-                        print(f"[{q_name}] 2-Submit (Modal ichidagi Submit, urinish #{modal_try}) sichqoncha bilan bosilmoqda...")
+                        print(f"[{q_name}] Sahifada 2-Submit (modal) tugmasi topildi! Bosilmoqda...")
                         try:
-                            box2 = sub_btn_2.bounding_box(timeout=2500)
-                            if box2:
-                                page.mouse.click(box2['x'] + box2['width']/2, box2['y'] + box2['height']/2)
-                            else:
-                                sub_btn_2.click(force=True, timeout=2500)
+                            sub_btn_2.click(force=True, timeout=3000)
+                            sub_2_clicked = True
                         except Exception:
-                            pass
-                        for _ in range(12):
-                            time.sleep(0.45)
-                            if "/attempt" not in page.url:
-                                break
-                    else:
-                        break
+                            b_box = sub_btn_2.bounding_box()
+                            if b_box:
+                                page.mouse.click(b_box['x'] + b_box['width']/2, b_box['y'] + b_box['height']/2)
+                                sub_2_clicked = True
+                        if sub_2_clicked:
+                            break
 
-                # Natija (100% / You passed!) chiqishini kutamiz
-                for _ in range(10):
-                    after_text = page.evaluate("() => (document.body ? document.body.innerText : '')")
-                    if "You passed!" in after_text or "Your grade: 100%" in after_text or "Вы прошли!" in after_text or "You didn't pass" in after_text:
+                    time.sleep(0.5)
+
+                if sub_2_clicked:
+                    print(f"[{q_name}] 2-Submit muvaffaqiyatli bosildi! Natija baholanishi kutilmoqda...")
+                else:
+                    print(f"[!] [{q_name}] {modal_wait_total} soniya ichida modal oyna chiqmadi, qayta tekshiriladi...")
+
+                # Natija (100% / You passed!) chiqishini kutamiz (4s, 8s, 12s)
+                grade_wait_total = check_try * 4
+                for _ in range(int(grade_wait_total / 0.5)):
+                    if "/attempt" not in page.url:
                         break
-                    time.sleep(0.4)
+                    time.sleep(0.5)
+
+                for _ in range(int(grade_wait_total / 0.5)):
+                    after_text = page.evaluate("() => (document.body ? document.body.innerText : '')")
+                    if "You passed!" in after_text or "Your grade: 100%" in after_text or "Вы прошли!" in after_text:
+                        break
+                    time.sleep(0.5)
 
                 dismiss_all_popups(page)
                 after_text = page.evaluate("() => (document.body ? document.body.innerText : '')")
                 if "You passed!" in after_text or "Your grade: 100%" in after_text or "Вы прошли!" in after_text:
-                    print(f"[+] {q_name} BIRINCHI URINISHDA MUVAFFAQIYATLI 100% TOPSHIRILDI ('Your grade: 100%')!")
+                    print(f"[+] [{q_name}] BIRINCHI URINISHDA MUVAFFAQIYATLI 100% TOPSHIRILDI ('Your grade: 100%')!")
                     return True
                 else:
-                    print(f"[!] {q_name} natijasi hali 100% ko'rinmadi, qayta tekshiriladi...")
+                    print(f"[!] [{q_name}] Natija hali 100% ko'rinmadi, keyingi urinishda qayta topshiriladi...")
         except Exception as e:
             print(f"[!] [{q_name}] {check_try}-urinishda xatolik ushlandi (qayta harakat qilinadi): {e}")
             time.sleep(1.5)
@@ -1040,30 +1067,42 @@ def verify_student_name_with_3_checks(page, student_name):
 
             # 4. Galichka (Checkbox)
             cb = page.locator("input[type='checkbox']").first
-            if cb.count() > 0 and cb.is_visible():
-                box = cb.bounding_box()
-                if box:
-                    page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
-                    time.sleep(1)
+            if cb.count() > 0:
+                try:
+                    cb.scroll_into_view_if_needed()
+                    if not cb.is_checked():
+                        cb.check(force=True)
+                except Exception:
+                    pass
                 if not cb.is_checked():
                     lbl = page.locator("label:has-text('By checking this box'), label:has-text('Устанавливая этот флажок')").first
-                    if lbl.is_visible():
+                    if lbl.count() > 0 and lbl.is_visible():
                         lbl.click(force=True)
-                        time.sleep(1)
+                print(f"[ISMNI TASDIQLASH] Rozilik checkbox holati: {'BELGILANDI' if cb.is_checked() else 'belgilanmadi'}")
 
-            # 5. Submit ('Save' yozilmaydi, chunki 'Saved' tabiga bosilib ketmasligi kerak!)
-            sub_v = page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
-            if sub_v.is_visible() and sub_v.is_enabled():
+            # 5. Submit (1-urinishda: 4s, 2-urinishda: 8s, 3-urinishda: 12s kutadi)
+            sub_wait_sec = v_try * 4
+            print(f"[ISMNI TASDIQLASH] Submit tugmasi kutilmoqda ({sub_wait_sec} soniya)...")
+            sub_v = None
+            for _ in range(int(sub_wait_sec / 0.5)):
+                cand = page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
+                if cand.count() > 0 and cand.is_visible() and cand.is_enabled():
+                    sub_v = cand
+                    break
+                time.sleep(0.5)
+
+            if sub_v and sub_v.is_enabled():
+                print("[ISMNI TASDIQLASH] Submit tugmasi FAOL! Bosilmoqda...")
                 box_s = sub_v.bounding_box()
                 if box_s:
                     page.mouse.click(box_s['x'] + box_s['width']/2, box_s['y'] + box_s['height']/2)
                 else:
                     sub_v.click(force=True)
                 print("[ISMNI TASDIQLASH] Tasdiqlash muvaffaqiyatli yuborildi!")
-                time.sleep(5.0 * mult)
+                time.sleep(4.0 * mult)
                 return True
             else:
-                print(f"[!] Verify My Name Submit tugmasi faol emas, qayta tekshirilmoqda ({v_try}/3)...")
+                print(f"[!] Verify My Name Submit tugmasi faol emas ({v_try}/3 | {sub_wait_sec}s kutilgan)...")
         except Exception as e:
             print(f"[!] Verify My Name {v_try}-urinishda xatolik ushlandi: {e}")
             time.sleep(2)
