@@ -840,13 +840,36 @@ ROBOT_DASHBOARD_HTML = """<!DOCTYPE html>
   .status-pill.offline { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid #ef4444; }
   
   .workstation { display: flex; align-items: center; gap: 12px; background: #070b14; border-radius: 8px; padding: 10px; border: 1px solid #1e293b; }
-  .robot-svg-wrap { width: 54px; height: 54px; flex-shrink: 0; }
+  .robot-svg-wrap { width: 54px; height: 54px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
   
-  @keyframes typingArm { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
-  .agent-card.working .arm-left { animation: typingArm 0.3s infinite ease-in-out; }
-  .agent-card.working .arm-right { animation: typingArm 0.3s infinite ease-in-out 0.15s; }
-  @keyframes monitorPulse { 0%, 100% { fill: #0284c7; } 50% { fill: #38bdf8; } }
-  .agent-card.working .monitor-screen { animation: monitorPulse 1.5s infinite; }
+  @keyframes robotWorkBob {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-3px) scale(1.02); }
+  }
+  .agent-card.working .robot-svg-wrap {
+    animation: robotWorkBob 0.6s infinite ease-in-out;
+  }
+  @keyframes typingLeft {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-4px) rotate(-6deg); }
+  }
+  @keyframes typingRight {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-4px) rotate(6deg); }
+  }
+  .agent-card.working .arm-left {
+    animation: typingLeft 0.28s infinite ease-in-out;
+    transform-origin: 12px 32px;
+  }
+  .agent-card.working .arm-right {
+    animation: typingRight 0.28s infinite ease-in-out 0.14s;
+    transform-origin: 20px 32px;
+  }
+  @keyframes monitorPulse {
+    0%, 100% { fill: #0284c7; filter: drop-shadow(0 0 2px #38bdf8); }
+    50% { fill: #38bdf8; filter: drop-shadow(0 0 8px #38bdf8); }
+  }
+  .agent-card.working .monitor-screen { animation: monitorPulse 1.2s infinite ease-in-out; }
   
   .agent-details { flex: 1; min-width: 0; }
   .detail-student { font-size: 12px; font-weight: 700; color: #38bdf8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -869,9 +892,11 @@ ROBOT_DASHBOARD_HTML = """<!DOCTYPE html>
 <header>
   <div class="brand">
     <span>🤖 Robot Agentlar Dashboard</span>
+    <span id="livePill" style="font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(34,197,94,0.15); color:#4ade80; border:1px solid #22c55e;">● Jonli</span>
   </div>
   <div class="header-actions">
-    <a href="/web_any" class="btn btn-primary">🌐 Web Any</a>
+    <button class="btn btn-primary" onclick="updateDashboard()">🔄 Yangilash</button>
+    <a href="/web_any" class="btn">🌐 Web Any</a>
     <button class="btn btn-danger" onclick="exitDashboard()">❌ Chiqish</button>
   </div>
 </header>
@@ -987,6 +1012,16 @@ function updateDashboard() {
   fetch('/api/robot_dashboard_data?t=' + Date.now())
     .then(r => r.json())
     .then(data => {
+      const nowD = new Date();
+      const timeStr = nowD.toTimeString().split(' ')[0];
+      const pill = document.getElementById('livePill');
+      if (pill) {
+        pill.innerText = '● Jonli (' + timeStr + ')';
+        pill.style.background = 'rgba(34,197,94,0.15)';
+        pill.style.color = '#4ade80';
+        pill.style.borderColor = '#22c55e';
+      }
+
       document.getElementById('totalCount').innerText = data.boss.total_students || 0;
       document.getElementById('doneCount').innerText = data.boss.done_count || 0;
       document.getElementById('remCount').innerText = data.boss.remaining_count || 0;
@@ -1051,7 +1086,16 @@ function updateDashboard() {
       }
       certsBox.innerHTML = certsHtml || '<div class="empty-state">Hali yakunlangan sertifikatlar yo\'q</div>';
     })
-    .catch(err => console.error("Poll err:", err));
+    .catch(err => {
+      console.error("Poll err:", err);
+      const pill = document.getElementById('livePill');
+      if (pill) {
+        pill.innerText = '⚠️ Qayta ulanmoqda...';
+        pill.style.background = 'rgba(234,179,8,0.15)';
+        pill.style.color = '#facc15';
+        pill.style.borderColor = '#eab308';
+      }
+    });
 }
 
 updateDashboard();
@@ -2246,8 +2290,12 @@ def cloudflared_loop():
 
     while True:
         try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/F", "/IM", "cloudflared.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(1)
+
             proc = subprocess.Popen(
-                [cf_path, "tunnel", "--url", f"http://127.0.0.1:{CLUSTER_PORT}"],
+                [cf_path, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{CLUSTER_PORT}"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 encoding="utf-8",
@@ -2276,16 +2324,26 @@ def cloudflared_loop():
                     pass
                 print(f"[CLUSTER TUNNEL TAYYOR] {tunnel_url}")
                 _sync_pinned_tunnel(tunnel_url, admin_id, token)
+
+                fail_count = 0
                 while proc.poll() is None:
-                    time.sleep(20)
+                    time.sleep(25)
                     try:
-                        c_chk = requests.get(f"{tunnel_url}/cluster/ping", timeout=6)
-                        if c_chk.status_code != 200 or c_chk.text.strip() != "OK":
-                            proc.terminate()
-                            break
-                        _sync_pinned_tunnel(tunnel_url, admin_id, token)
+                        c_chk = requests.get(f"{tunnel_url}/cluster/ping", timeout=12)
+                        if c_chk.status_code == 200 and c_chk.text.strip() == "OK":
+                            fail_count = 0
+                            _sync_pinned_tunnel(tunnel_url, admin_id, token)
+                        else:
+                            fail_count += 1
                     except Exception:
-                        proc.terminate()
+                        fail_count += 1
+
+                    if fail_count >= 5:
+                        print(f"[CLUSTER TUNNEL] 5 marta ping o'tmadi, qayta yoqiladi...")
+                        try:
+                            proc.terminate()
+                        except Exception:
+                            pass
                         break
             proc.wait()
         except Exception as e:
