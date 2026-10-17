@@ -67,8 +67,8 @@ ADMIN_TG_URL = "https://t.me/OBIDBEK1988"
 ORDERS_DIR = "bot_orders"
 os.makedirs(ORDERS_DIR, exist_ok=True)
 
-# Core i5 / 8GB RAM uchun bir vaqtda nechta brauzer parallel ishlashi (bo'sh oqimlar bitta zakazga yordamlashadi)
-MAX_PARALLEL_WORKERS = int(os.environ.get("MAX_WORKERS", "3"))
+# Har bir agentda aynan bitta o'quvchi ketma-ket ishlaydi (1 ta agentga 1 ta o'quvchi)
+MAX_PARALLEL_WORKERS = int(os.environ.get("MAX_WORKERS", "1"))
 
 db_lock = threading.Lock()
 order_queue = queue.Queue()
