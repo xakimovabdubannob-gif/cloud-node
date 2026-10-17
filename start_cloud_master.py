@@ -128,6 +128,7 @@ def sync_databases_to_github():
             subprocess.run(["git", "add", "data_store.enc"])
             subprocess.run(["git", "commit", "-m", "sync: encrypted data store updated [skip ci]"])
             push_url = f"https://{GH_OWNER}:{GH_TOKEN}@github.com/{GH_OWNER}/{GH_REPO}.git"
+            subprocess.run(["git", "pull", "--rebase", push_url, "HEAD:main"], capture_output=True, text=True)
             res = subprocess.run(["git", "push", push_url, "HEAD:main"], capture_output=True, text=True)
             if res.returncode == 0:
                 print("[SYNC] Muvaffaqiyatli saqlandi!")
