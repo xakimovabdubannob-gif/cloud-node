@@ -34,7 +34,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-FILE_LOCK = threading.RLock()
+FILE_LOCK = threading.Lock()
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_FILE = os.path.join(SCRIPT_DIR, "natijalar_sertifikatlar.txt")
