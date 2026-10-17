@@ -1723,15 +1723,33 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
     for idx_link, inv_link in enumerate(all_invite_links, 1):
         print(f"   [2-XABAR: Coursera Join #{idx_link}/{len(all_invite_links)}] Taklifnoma ochilmoqda...")
         safe_goto_commit(page, inv_link, wait_sec=4.0)
-        return_to_url = ""
+
+        # 1. JOIN HAVOLADAN KEYIN LOGIN TUGMASINI BOSISH:
+        time.sleep(1.5)
+        for _ in range(4):
+            cookies = [c.get("name", "") for c in page.context.cookies()]
+            if any("CAUTH" in c for c in cookies):
+                break
+            login_link = page.locator(
+                "a:has-text('Already have an account? Log In'), "
+                "button:has-text('Already have an account? Log In'), "
+                "a:has-text('Log in with Coursera credentials'), "
+                "button:has-text('Log in with Coursera credentials'), "
+                "a[data-e2e='header-login-button'], "
+                "button[data-e2e='header-login-button'], "
+                "a:has-text('Log In'), button:has-text('Log In'), "
+                "a:has-text('Войти'), button:has-text('Войти')"
+            ).first
+            if login_link.count() > 0 and login_link.is_visible():
+                print("   [JOIN-LOGIN] Sahifadagi 'Log in' tugmasi bosilmoqda...")
+                login_link.click(force=True)
+                time.sleep(2.0)
+                break
+            time.sleep(0.5)
+
         for _ in range(32):
             try:
-                if "returnTo=" in page.url and not return_to_url:
-                    q_params = urllib.parse.parse_qs(urllib.parse.urlparse(page.url).query)
-                    if q_params.get("returnTo"):
-                        return_to_url = q_params["returnTo"][0]
-
-                # 1. AGAR 'Email' INPUT OCHIQ BO'LSA (Log in or create account):
+                # 2. POCHTA KIRITISH (Log in or create account):
                 em_inp = page.locator("input[type='email'], input[name='email'], input[placeholder*='email' i], input#email").first
                 if em_inp.count() > 0 and em_inp.is_visible():
                     try:
@@ -1750,29 +1768,31 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
                         time.sleep(2.0)
                         continue
 
-                # 2. AGAR 'Password' INPUT OCHIQ BO'LSA (Create password yoki Enter password):
+                # 3. FAMILYA ISM SHARIF (agar so'ralsa):
+                fn_in = page.locator("input[name='fullName'], input[placeholder*='full name' i], input[placeholder*='имя' i]").first
+                if fn_in.count() > 0 and fn_in.is_visible():
+                    try:
+                        cur_fn = fn_in.input_value().strip()
+                    except Exception:
+                        cur_fn = ""
+                    if not cur_fn and full_name:
+                        print(f"   [JOIN-NAME] Ism-Familiya kiritilmoqda: {full_name}...")
+                        fn_in.click(force=True)
+                        time.sleep(0.15)
+                        fn_in.fill(full_name.replace("`", "'"))
+                        time.sleep(0.2)
+
+                # 4. PAROL KIRITISH VA TASDIQLASH:
                 c_pwd = page.locator("input[placeholder*='password' i], input[type='password'], input[name='password']").first
                 if c_pwd.count() > 0 and c_pwd.is_visible():
-                    time.sleep(0.5)
-                    # Ism-familiya so'ralsa (agar hali to'ldirilmagan bo'lsa):
-                    fn_in = page.locator("input[name='fullName'], input[placeholder*='full name' i], input[placeholder*='имя' i]").first
-                    if fn_in.count() > 0 and fn_in.is_visible():
-                        try:
-                            cur_fn = fn_in.input_value().strip()
-                        except Exception:
-                            cur_fn = ""
-                        if not cur_fn and full_name:
-                            print(f"   [JOIN-NAME] Ism-familiya kiritilmoqda: {full_name}...")
-                            fn_in.click(force=True)
-                            time.sleep(0.15)
-                            fn_in.fill(full_name.replace("`", "'"))
-                            time.sleep(0.2)
+                    time.sleep(0.3)
                     c_pwd.click(force=True)
                     time.sleep(0.15)
                     c_pwd.fill(student_password)
                     time.sleep(0.3)
-                    set_b = page.locator("button:has-text('Set Password'), button:has-text('Log In'), button:has-text('Войти'), button:has-text('Установить пароль'), button:has-text('Продолжить'), button:has-text('Continue'), button:has-text('Создать'), button:has-text('Join Program'), button[type='submit']").first
+                    set_b = page.locator("button:has-text('Log In'), button:has-text('Войти'), button:has-text('Set Password'), button:has-text('Установить пароль'), button:has-text('Продолжить'), button:has-text('Continue'), button:has-text('Создать'), button:has-text('Join Program'), button[type='submit']").first
                     if set_b.count() > 0 and set_b.is_visible():
+                        print("   [JOIN-SUBMIT] Tasdiqlash / Log In bosilmoqda...")
                         set_b.click(force=True)
                         time.sleep(3.0)
                         cookies = [c.get("name", "") for c in page.context.cookies()]
@@ -1782,7 +1802,7 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
                             break
                         continue
 
-                # 3. AGAR 'Join Program' / 'Accept Invitation' TASDIQ TUGMASI CHIQSA:
+                # 5. AGAR 'Join Program' / 'Accept Invitation' TASDIQ TUGMASI CHIQSA:
                 join_prog_btn = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе'), button:has-text('Accept Invitation')").first
                 if join_prog_btn.count() > 0 and join_prog_btn.is_visible():
                     print("   [JOIN-PROGRAM] 'Join Program' tasdiqlandi!")
@@ -1790,52 +1810,25 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
                     time.sleep(3.0)
 
                 cookies = [c.get("name", "") for c in page.context.cookies()]
-                if any("CAUTH" in c for c in cookies) and ("/programs/" in page.url or "coursera.org" in page.url):
+                if any("CAUTH" in c for c in cookies):
                     time.sleep(2.0)
                     break
             except Exception:
                 pass
             time.sleep(0.5)
 
-        for _ in range(8):
+        for _ in range(6):
             try:
                 terms_b = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе'), button:has-text('Accept Invitation')").first
                 if terms_b.count() > 0 and terms_b.is_visible():
                     terms_b.click(force=True)
-                    time.sleep(3.0)
+                    time.sleep(2.5)
                     break
             except Exception:
                 pass
             time.sleep(0.5)
 
-        if return_to_url and "learning-program" not in page.url:
-            safe_goto_commit(page, return_to_url, wait_sec=3.5)
-            try:
-                terms_b = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе'), button:has-text('Accept Invitation')").first
-                if terms_b.count() > 0 and terms_b.is_visible():
-                    terms_b.click(force=True)
-                    time.sleep(3.0)
-            except Exception:
-                pass
-            except Exception:
-                pass
-
-    # Agar 2-xat ('invites you to learn on Coursera') hozirgina kelgan bo'lsa, uni ham tekshirib ochamiz
-    try:
-        latest_links = mail_svc.get_all_coursera_invites() if hasattr(mail_svc, "get_all_coursera_invites") else []
-        for extra_l in latest_links:
-            if extra_l not in all_invite_links:
-                safe_goto_commit(page, extra_l, wait_sec=4.0)
-                for _ in range(8):
-                    terms_b = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе'), button:has-text('Продолжить'), button:has-text('Continue')").first
-                    if terms_b.count() > 0 and terms_b.is_visible():
-                        terms_b.click(force=True)
-                        time.sleep(3.0)
-                        break
-                    time.sleep(0.5)
-    except Exception:
-        pass
-
+    # 6. ENROLL (Kursga to'g'ridan-to'g'ri yozilish va darsni boshlash):
     ensure_enrolled_on_coursera(page)
     return True
 
