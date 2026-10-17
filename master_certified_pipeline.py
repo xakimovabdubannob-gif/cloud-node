@@ -1119,26 +1119,48 @@ def verify_student_name_with_3_checks(page, student_name):
 
             # 2. Maydonlarni topish va yozish (3 marta qayta tekshirib to'ldirish):
             for fill_try in range(3):
-                # React native value setter + JS events
+                # React native value setter + aniq maydonlarni (first, middle, last) topish
                 page.evaluate("""([fn, mn, ln]) => {
                     const inps = Array.from(document.querySelectorAll('input')).filter(i => {
                         const t = (i.type || 'text').toLowerCase();
                         return !['checkbox', 'radio', 'hidden', 'submit', 'button', 'search'].includes(t) && i.offsetParent !== null;
                     });
                     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                    if (inps.length >= 3) {
-                        setter.call(inps[0], fn); inps[0].dispatchEvent(new Event('input', { bubbles: true })); inps[0].dispatchEvent(new Event('change', { bubbles: true }));
-                        setter.call(inps[1], mn); inps[1].dispatchEvent(new Event('input', { bubbles: true })); inps[1].dispatchEvent(new Event('change', { bubbles: true }));
-                        setter.call(inps[2], ln); inps[2].dispatchEvent(new Event('input', { bubbles: true })); inps[2].dispatchEvent(new Event('change', { bubbles: true }));
-                    } else if (inps.length === 2) {
-                        setter.call(inps[0], fn); inps[0].dispatchEvent(new Event('input', { bubbles: true })); inps[0].dispatchEvent(new Event('change', { bubbles: true }));
-                        setter.call(inps[1], (mn + ' ' + ln).trim()); inps[1].dispatchEvent(new Event('input', { bubbles: true })); inps[1].dispatchEvent(new Event('change', { bubbles: true }));
-                    } else if (inps.length === 1) {
-                        setter.call(inps[0], (fn + ' ' + mn + ' ' + ln).trim()); inps[0].dispatchEvent(new Event('input', { bubbles: true })); inps[0].dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    let fnInp = null, mnInp = null, lnInp = null;
+                    for (const inp of inps) {
+                        const id = inp.id || '';
+                        const name = inp.name || '';
+                        const placeholder = inp.placeholder || '';
+                        const ariaLabel = inp.getAttribute('aria-label') || '';
+                        const lbl = document.querySelector(`label[for="${id}"]`) || inp.closest('label');
+                        const lblText = lbl ? lbl.innerText.toLowerCase() : '';
+                        const combined = `${id} ${name} ${placeholder} ${ariaLabel} ${lblText}`.toLowerCase();
+                        
+                        if (combined.includes('first') || combined.includes('имя')) fnInp = inp;
+                        else if (combined.includes('middle') || combined.includes('отчество')) mnInp = inp;
+                        else if (combined.includes('last') || combined.includes('фамилия')) lnInp = inp;
+                    }
+                    
+                    if (fnInp) { setter.call(fnInp, fn); fnInp.dispatchEvent(new Event('input', { bubbles: true })); fnInp.dispatchEvent(new Event('change', { bubbles: true })); }
+                    if (mnInp) { setter.call(mnInp, mn); mnInp.dispatchEvent(new Event('input', { bubbles: true })); mnInp.dispatchEvent(new Event('change', { bubbles: true })); }
+                    if (lnInp) { setter.call(lnInp, ln); lnInp.dispatchEvent(new Event('input', { bubbles: true })); lnInp.dispatchEvent(new Event('change', { bubbles: true })); }
+                    
+                    if (!fnInp && !lnInp) {
+                        if (inps.length >= 3) {
+                            setter.call(inps[0], fn); inps[0].dispatchEvent(new Event('input', { bubbles: true })); inps[0].dispatchEvent(new Event('change', { bubbles: true }));
+                            setter.call(inps[1], mn); inps[1].dispatchEvent(new Event('input', { bubbles: true })); inps[1].dispatchEvent(new Event('change', { bubbles: true }));
+                            setter.call(inps[2], ln); inps[2].dispatchEvent(new Event('input', { bubbles: true })); inps[2].dispatchEvent(new Event('change', { bubbles: true }));
+                        } else if (inps.length === 2) {
+                            setter.call(inps[0], fn); inps[0].dispatchEvent(new Event('input', { bubbles: true })); inps[0].dispatchEvent(new Event('change', { bubbles: true }));
+                            setter.call(inps[1], (mn + ' ' + ln).trim()); inps[1].dispatchEvent(new Event('input', { bubbles: true })); inps[1].dispatchEvent(new Event('change', { bubbles: true }));
+                        } else if (inps.length === 1) {
+                            setter.call(inps[0], (fn + ' ' + mn + ' ' + ln).trim()); inps[0].dispatchEvent(new Event('input', { bubbles: true })); inps[0].dispatchEvent(new Event('change', { bubbles: true }));
+                        }
                     }
                 }""", [first_name, middle_name, last_name])
 
-                # Shuningdek Playwright bilan ham bosib yozish
+                # Shuningdek Playwright bilan ham tekshirib to'ldirish
                 all_text_inputs = [i for i in page.locator("input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='search']):not([type='submit'])").all() if i.is_visible()]
                 if len(all_text_inputs) >= 3:
                     for i_idx, val in enumerate([first_name, middle_name, last_name]):
@@ -1168,45 +1190,72 @@ def verify_student_name_with_3_checks(page, student_name):
                 print(f"[ISMNI TASDIQLASH] [QAYTA #{fill_try+1}/3] Maydonlar hali bo'sh, qayta yozilmoqda...")
                 time.sleep(0.5)
 
-            # 3. Galichka (Checkbox) qo'yish va 100% tekshirish (3 marta urinish)
-            cb = page.locator("input[type='checkbox']").first
+            # 3. Galichka (Checkbox) - BITTA BOSISH, TEKSHIRISH, BOSILGAN BO'LSA TEGMASLIK!
+            # Talab: "familya ism ochtva yozib galishkani bir necha marta bosyabdi bitta bossin tekshirsin bosgan bulsa teymasin"
             for cb_i in range(3):
-                if cb.count() > 0 and cb.is_checked():
-                    print("[ISMNI TASDIQLASH] Checkbox rozilik galichkasi tasdiqlandi!")
+                is_chk = page.evaluate("""() => {
+                    const c = document.querySelector("input[type='checkbox']");
+                    return c ? Boolean(c.checked) : false;
+                }""")
+                if is_chk:
+                    print(f"[ISMNI TASDIQLASH] Rozilik galichkasi allaqachon qo'yilgan (checked=True)! Tegilmadi.")
                     break
+
+                print(f"[ISMNI TASDIQLASH] [GALICHKA #{cb_i+1}/3] Galichka belgilanmoqda (faqat 1 marta bosish)...")
                 try:
-                    cb.scroll_into_view_if_needed()
-                    cb.check(force=True)
+                    cb = page.locator("input[type='checkbox']").first
+                    if cb.count() > 0 and not cb.is_checked():
+                        cb.scroll_into_view_if_needed()
+                        cb.check(force=True)
                 except Exception:
                     pass
+
+                # Agar check() dan keyin ham belgilanmagan bo'lsa, faqat bitta marta JS orqali xavfsiz belgilash:
                 page.evaluate("""() => {
                     const c = document.querySelector("input[type='checkbox']");
                     if (c && !c.checked) {
                         c.click();
-                        c.checked = true;
-                        c.dispatchEvent(new Event('change', { bubbles: true }));
-                        c.dispatchEvent(new Event('input', { bubbles: true }));
+                        if (!c.checked) {
+                            c.checked = true;
+                            c.dispatchEvent(new Event('change', { bubbles: true }));
+                            c.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
                     }
-                    const lbl = Array.from(document.querySelectorAll('label')).find(l => l.innerText.includes('checking this box') || l.querySelector('input[type="checkbox"]'));
-                    if (lbl) lbl.click();
                 }""")
-                time.sleep(0.4)
+                time.sleep(0.5)
 
             # 4. Submit tugmasini bosish va tekshirish (3 marta urinish)
             for sub_try in range(3):
-                sub_v = page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
+                # Submit bosishdan oldin galichka qo'yilganligini qat'iy tekshiramiz
+                is_chk_final = page.evaluate("""() => {
+                    const c = document.querySelector("input[type='checkbox']");
+                    return c ? Boolean(c.checked) : false;
+                }""")
+                if not is_chk_final:
+                    print("[ISMNI TASDIQLASH] Submit dan oldin galichka belgilanmagan, bir martalik belgilash...")
+                    try:
+                        page.locator("input[type='checkbox']").first.check(force=True)
+                    except Exception:
+                        pass
+                    time.sleep(0.3)
+
+                print(f"[ISMNI TASDIQLASH] [SUBMIT #{sub_try+1}/3] Submit tugmasi bosilmoqda...")
+                sub_v = page.locator("button:has-text('Submit'), button:has-text('Отправить'), button[type='submit']").first
                 if sub_v.count() > 0 and sub_v.is_visible():
-                    print(f"[ISMNI TASDIQLASH] [SUBMIT #{sub_try+1}/3] Submit bosilmoqda...")
                     try:
                         sub_v.click(force=True)
                     except Exception:
                         pass
+
                 page.evaluate("""() => {
                     const b = Array.from(document.querySelectorAll('button')).find(x => {
                         const t = (x.innerText || '').trim().toLowerCase();
                         return (t === 'submit' || t === 'отправить') && x.offsetParent !== null;
-                    });
-                    if (b) b.click();
+                    }) || document.querySelector("button[type='submit']");
+                    if (b) {
+                        b.removeAttribute('disabled');
+                        b.click();
+                    }
                 }""")
                 time.sleep(2.0)
                 if "/user-verification" not in page.url:
