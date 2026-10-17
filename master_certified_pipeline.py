@@ -1574,18 +1574,28 @@ def pick_date_aileaders(page, birth_date: str):
 
 def safe_goto_commit(page, url, wait_sec=3.0):
     """Hech qachon TimeoutError berib to'xtab qolmaydigan xavfsiz o'tish funksiyasi!"""
-    try:
-        page.goto(url, wait_until="domcontentloaded", timeout=25000)
-        time.sleep(wait_sec)
-        return True
-    except Exception:
+    for _ in range(2):
         try:
-            page.goto(url, wait_until="commit", timeout=20000)
-            time.sleep(wait_sec + 2.0)
-            return True
-        except Exception as e:
-            print(f"   [Ogohlantirish] Sahifa yuklanishida kechikish: {str(e)[:80]}")
-            time.sleep(2.0)
+            page.goto(url, wait_until="domcontentloaded", timeout=25000)
+            time.sleep(wait_sec)
+        except Exception:
+            try:
+                page.goto(url, wait_until="commit", timeout=20000)
+                time.sleep(wait_sec + 2.0)
+            except Exception as e:
+                print(f"   [Ogohlantirish] Sahifa yuklanishida kechikish: {str(e)[:80]}")
+                time.sleep(2.0)
+
+        # Next.js Application error (client-side exception) bo'lsa darhol reload qilamiz:
+        try:
+            body_txt = (page.inner_text("body") or "").lower()
+            if "client-side exception" in body_txt or "application error" in body_txt:
+                print("   [!] Next.js client-side exception aniqlandi, sahifa qayta yuklanmoqda (reload)...")
+                page.reload(wait_until="domcontentloaded", timeout=20000)
+                time.sleep(wait_sec + 1.0)
+        except Exception:
+            pass
+        return True
     return False
 
 def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, student_password):
@@ -1651,6 +1661,19 @@ def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, stu
         print("   Coursera 'Generativ AI' kursi biriktirilmoqda...")
         safe_goto_commit(page, "https://aileaders.uz/courses", wait_sec=2.8)
         time.sleep(1.0)
+
+        # Agar Aileaders da Next.js exception chiqsa, reload qilamiz:
+        for _ in range(3):
+            try:
+                b_txt = (page.inner_text("body") or "").lower()
+                if "client-side exception" in b_txt or "application error" in b_txt:
+                    print("   [!] Aileaders courses xatosi aniqlandi, sahifa yangilanmoqda (reload)...")
+                    page.reload(wait_until="domcontentloaded", timeout=20000)
+                    time.sleep(2.5)
+                else:
+                    break
+            except Exception:
+                break
         # 1. Telegram yoki boshqa modalni yopish
         page.evaluate("""() => {
             const btns = Array.from(document.querySelectorAll('button'));
