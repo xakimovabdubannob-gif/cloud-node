@@ -38,12 +38,18 @@ from master_certified_pipeline import (
     RESULTS_FILE,
     ERRORS_FILE,
 )
-from telegram_bot import parse_students_from_text, parse_students_from_excel, get_certificate_map, get_error_reason_map
+from telegram_bot import parse_students_from_text, get_certificate_map, get_error_reason_map
 
 if sys.platform == "win32":
     try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        if sys.stdout is None or not hasattr(sys.stdout, "write"):
+            sys.stdout = open("cluster_master.log", "a", buffering=1, encoding="utf-8", errors="replace")
+        else:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if sys.stderr is None or not hasattr(sys.stderr, "write"):
+            sys.stderr = open("cluster_master.log", "a", buffering=1, encoding="utf-8", errors="replace")
+        else:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
         import ctypes
         ctypes.windll.kernel32.SetThreadExecutionState(0x80000001)
     except Exception:
@@ -56,19 +62,27 @@ file_lock = threading.Lock()
 nodes_lock = threading.Lock()
 _excel_cache = {}
 
-cluster_nodes = {}
+cluster_nodes = {
+    "DESKTOP-EKA9GM2-60DD": {
+        "pc_name": "DESKTOP-EKA9GM2-60DD",
+        "ram_gb": 16,
+        "workers": 6,
+        "approved": True,
+        "last_seen": time.time(),
+        "last_prompt": time.time(),
+        "status": "Faol ishlamoqda...",
+        "worker_statuses": {},
+        "notified": True,
+    },
+}
 in_progress_students = {}
 pending_screen_requests = {}  # node_id -> chat_id
+pending_node_actions = {}     # node_id -> list of action dicts
+latest_node_screens = {}      # node_id -> (bytes, timestamp, w, h)
 _worker_assigned = {}
+is_cluster_paused = False
 _sticky_workers = {}
 _last_nodes_save_ts = 0.0
-
-
-def normalize_student_key(name: str) -> str:
-    if not name:
-        return ""
-    s = re.sub(r"[`'ʻʼ’]", "", str(name).strip().upper())
-    return " ".join(s.split())
 
 if os.path.exists(NODES_STATE_FILE):
     try:
@@ -134,15 +148,15 @@ def load_bot_config():
         except Exception:
             pass
     return {
-        "bot_token": os.environ.get("BOT_TOKEN", ""),
-        "admin_id": int(os.environ.get("ADMIN_ID", "6580113791")),
+        "bot_token": "8851638567:AAGRe7Tnh8Qy3Vtt5TyDv7h3SEfPU3mzAqg",
+        "admin_id": 6580113791,
     }
 
 
 _tg_rate_lock = threading.Lock()
 _last_tg_call_ts = 0.0
 _tg_ban_until = 0.0
-_PIN_SYNCED = True
+_PIN_SYNCED = False
 _queued_tg_msgs = []
 
 
@@ -155,7 +169,7 @@ def send_tg(chat_id, text, reply_markup=None, priority_pin=False):
                     _queued_tg_msgs.append((chat_id, text, reply_markup))
         return {}
     cfg = load_bot_config()
-    token = cfg.get("bot_token") or os.environ.get("BOT_TOKEN", "")
+    token = cfg.get("bot_token", "8851638567:AAGRe7Tnh8Qy3Vtt5TyDv7h3SEfPU3mzAqg")
     data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
@@ -197,23 +211,46 @@ def parse_excel_students(xlsx_path: str):
     except Exception:
         mtime = 0
 
+    students = []
     try:
-        students = parse_students_from_excel(xlsx_path)
+        wb = load_workbook(xlsx_path, data_only=True, read_only=True)
+        ws = wb.active
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            cells = []
+            for v in row:
+                if v is None:
+                    continue
+                if hasattr(v, "strftime"):
+                    cells.append(v.strftime("%d.%m.%Y"))
+                else:
+                    s = str(v).strip()
+                    if s:
+                        cells.append(s)
+            if not cells:
+                continue
+            if cells and (cells[0].isdigit() or cells[0] in ("№", "#", "N", "No", "T/r")) and len(cells) >= 2:
+                cells = cells[1:]
+            line_joined = " ".join(cells)
+            if any(w in line_joined.lower() for w in ("ism", "familiya", "f.i.sh", "tug'ilgan", "seriya", "coursera")):
+                continue
+            st_list = parse_students_from_text(" | ".join(cells))
+            if st_list:
+                students.extend(st_list)
+        wb.close()
         if students:
             _excel_cache[xlsx_path] = (mtime, students)
-        return students
     except Exception:
-        return []
+        pass
+    return students
 
 
 _state_mem_cache = {"ts": 0.0, "done": set(), "unrec": set(), "accs": {}, "orders": []}
+_student_claimed_by = {}  # student_name -> worker_tag (QAT'IY QOIDA: 1 o'quvchiga 1 agent)
 _last_tried_save_ts = 0.0
 
 
 def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
     global _last_tried_save_ts
-    if os.path.exists("cluster_pause_state.txt"):
-        return {"has_task": False, "all_done": False, "reason": "system_paused"}
     now = time.time()
     if now - _state_mem_cache["ts"] > 2.0:
         done_set = get_completed_students()
@@ -225,7 +262,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 if fn.startswith("in_") and fn.endswith(".xlsx"):
                     full_p = os.path.join(ORDERS_DIR, fn)
                     mt = os.path.getmtime(full_p)
-                    if mt > 0:
+                    if mt >= 1791790000:
                         candidates_files.append((mt, fn, full_p))
         candidates_files.sort(key=lambda x: x[0])
         parsed_orders = []
@@ -247,69 +284,37 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         parsed_orders = _state_mem_cache["orders"]
 
     with nodes_lock:
-        # Uzilgan nodelarni cluster_nodes dan tozalaymiz (zombi kompyuter raqamlari yig'ilmasligi uchun)
-        dead_nodes = [nid for nid, ninf in list(cluster_nodes.items()) if now - ninf.get("last_seen", 0) > 180]
-        for nid in dead_nodes:
-            cluster_nodes.pop(nid, None)
-
         # Uzilgan kompyuterlarning band qilgan o'quvchilarini bo'shatamiz
         for (_wnid, _wwid), _wst in list(_worker_assigned.items()):
-            if _wnid == "MASTER_PC":
-                # Master PC mahalliy host - faqat 45 daqiqa mutlaqo javob bo'lmasa tozalaymiz
-                if now - in_progress_students.get(_wst, 0) > 2700:
-                    _worker_assigned.pop((_wnid, _wwid), None)
-                    _sticky_workers.pop((_wnid, _wwid), None)
-                    in_progress_students.pop(_wst, None)
-                continue
             _nlast = cluster_nodes.get(_wnid, {}).get("last_seen", 0)
             if now - _nlast > 180:
                 _worker_assigned.pop((_wnid, _wwid), None)
                 _sticky_workers.pop((_wnid, _wwid), None)
                 in_progress_students.pop(_wst, None)
 
-        # Hozir tirik agentlarga biriktirilgan barcha o'quvchilar
-        active_assigned_norm = set()
-        for (_wn, _ww), _st in _worker_assigned.items():
-            if _wn == "MASTER_PC" or (now - cluster_nodes.get(_wn, {}).get("last_seen", 0) <= 180):
-                active_assigned_norm.add(normalize_student_key(_st))
-
-        # Agar o'quvchi faol agentga biriktirilgan bo'lsa, in_progress_students dan HECH QACHON o'chirilmaydi!
-        expired = [k for k, t in in_progress_students.items() if (now - t > 600 and normalize_student_key(k) not in active_assigned_norm)]
+        expired = [k for k, t in in_progress_students.items() if now - t > 240]
         for k in expired:
             in_progress_students.pop(k, None)
 
-        # Hozir boshqa faol agentlar ishlayotgan o'quvchilar to'plami (Qat'iy 1 o'quvchi = 1 agent!)
+        # Hozir boshqa faol agentlar ishlayotgan o'quvchilar to'plami
         w_key = (node_id, str(worker_id)) if (node_id and worker_id) else None
-        busy_by_others_norm = set()
+        busy_by_others = set()
         for _ok, _ost in _worker_assigned.items():
-            if _ok != w_key:
-                _ok_nid = _ok[0]
-                if _ok_nid == "MASTER_PC" or (now - cluster_nodes.get(_ok_nid, {}).get("last_seen", 0) <= 180):
-                    busy_by_others_norm.add(normalize_student_key(_ost))
+            if _ok != w_key and _ost in in_progress_students and (now - in_progress_students.get(_ost, 0) <= 240):
+                busy_by_others.add(_ost)
 
-        for _st_k, _st_t in in_progress_students.items():
-            if now - _st_t <= 600:
-                # Agar aynan shu worker ga tegishli bo'lmasa, busy_by_others ga kiradi
-                if not (w_key and normalize_student_key(_worker_assigned.get(w_key, "")) == normalize_student_key(_st_k)):
-                    busy_by_others_norm.add(normalize_student_key(_st_k))
-
-        done_norm = {normalize_student_key(d) for d in done_set}
-        unrec_norm = {normalize_student_key(u) for u in unrec_set}
-
-        # 1) QAT'IY QOIDA: 1 AGENT 1 TA O'QUVCHINI TUGATADI!
-        # Agar shu agent o'ziga biriktirilgan o'quvchini hali oxirigacha (COMPLETED/UNRECOVERABLE) yetkazmagan bo'lsa,
-        # SHU AGENTNING O'ZI oxirigacha ishlaydi, hech qachon boshqa o'quvchiga sakramaydi!
+        # 1) Agar shu agent o'ziga biriktirilgan o'quvchini hali oxirigacha (COMPLETED/UNRECOVERABLE) yetkazmagan bo'lsa,
+        # va u o'quvchi boshqa agentda band bo'lmasa, 3 urinishgacha qayta beramiz
         if w_key:
             sticky = _sticky_workers.get(w_key)
             if sticky:
                 st_sticky = sticky["student"]
                 sn_sticky = st_sticky["name"]
-                sn_norm = normalize_student_key(sn_sticky)
                 if (
-                    sn_norm not in done_norm
-                    and sn_norm not in unrec_norm
-                    and sn_norm not in busy_by_others_norm
-                    and sticky.get("tries", 1) < 10
+                    sn_sticky not in done_set
+                    and sn_sticky not in unrec_set
+                    and sn_sticky not in busy_by_others
+                    and sticky.get("tries", 1) < 3
                 ):
                     sticky["tries"] = sticky.get("tries", 1) + 1
                     in_progress_students[sn_sticky] = now
@@ -332,69 +337,71 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 else:
                     _sticky_workers.pop(w_key, None)
                     prev_st = _worker_assigned.pop(w_key, None)
-                    if prev_st and normalize_student_key(prev_st) not in busy_by_others_norm:
+                    if prev_st and prev_st not in busy_by_others:
                         in_progress_students.pop(prev_st, None)
                     tried_cluster_set.add(sn_sticky)
             else:
                 prev_st = _worker_assigned.pop(w_key, None)
-                if prev_st and normalize_student_key(prev_st) not in busy_by_others_norm:
+                if prev_st and prev_st not in busy_by_others:
                     in_progress_students.pop(prev_st, None)
 
-        # 2) Yangi o'quvchi tanlash: 1 AGENT 1 TA O'QUVCHINI TUGATADI, SAKRAMAYDI QAT'IY!
-        # Ro'yxat boshidan (1, 2, 3...) tartib bilan eng birinchi bo'sh o'quvchini oladi!
-        best_cand = None
-        for chat_id, students in parsed_orders:
-            total = len(students)
-            for idx in range(1, total + 1):
-                st = students[idx - 1]
-                s_name = st["name"]
-                s_norm = normalize_student_key(s_name)
-                if s_norm in done_norm or s_norm in unrec_norm:
-                    continue
-                if s_norm == normalize_student_key("MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"):
-                    continue
-                if s_norm in busy_by_others_norm:
-                    continue
-                # QAT'IY KETMA-KET: Doimo ro'yxatdagi eng birinchi bo'sh o'quvchini oladi (sakramaydi!)
-                best_cand = (chat_id, idx, total, st, s_name)
-                break
-            if best_cand is not None:
-                break
+        # 2) Yangi o'quvchi tanlash: QAT'IY QOIDA — 1 O'QUVCHIGA FAQAT 1 TA AGENT!
+        # Har bir o'quvchiga aynan bitta agent biriktiriladi, ortiqcha agentlar boshqa o'quvchini oladi!
+        for pass_mode in ("FREE_ONLY",):
+            best_cand = None
+            for chat_id, students in parsed_orders:
+                total = len(students)
+                for idx in range(total, 0, -1):
+                    st = students[idx - 1]
+                    s_name = st["name"]
+                    if s_name in done_set or s_name in unrec_set:
+                        continue
+                    if s_name == "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
+                        continue
+                    # QAT'IY: Agar o'quvchi boshqa agentda ishlanayotgan yoki band qilingan bo'lsa, ustiga kirmaymiz!
+                    if s_name in busy_by_others or s_name in in_progress_students or s_name in _student_claimed_by:
+                        continue
+                    tries_c = _state_mem_cache.setdefault("try_counts", {}).get(s_name, 0)
+                    last_t = in_progress_students.get(s_name, 0.0)
+                    has_ac_prio = 0 if s_name in accs else 1
+                    sort_key = (tries_c, last_t, has_ac_prio, -idx)
+                    if best_cand is None or sort_key < best_cand[0]:
+                        best_cand = (sort_key, chat_id, idx, total, st, s_name)
 
-        if best_cand is not None:
-            chat_id, idx, total, st, s_name = best_cand
-            _state_mem_cache.setdefault("try_counts", {})[s_name] = _state_mem_cache["try_counts"].get(s_name, 0) + 1
-            in_progress_students[s_name] = now
-            acc_line = ""
-            if s_name in accs:
-                ac = accs[s_name]
-                acc_line = f"{s_name} | {st.get('class_name', '')} | {ac.get('email', '')} | {ac.get('password', '')}"
-            if w_key:
-                _worker_assigned[w_key] = s_name
-                _sticky_workers[w_key] = {
+            if best_cand is not None:
+                _, chat_id, idx, total, st, s_name = best_cand
+                _state_mem_cache.setdefault("try_counts", {})[s_name] = _state_mem_cache["try_counts"].get(s_name, 0) + 1
+                in_progress_students[s_name] = now
+                w_tag = f"{node_id}_w{worker_id}" if (node_id and worker_id) else "CLUSTER_WORKER"
+                _student_claimed_by[s_name] = w_tag
+                acc_line = ""
+                if s_name in accs:
+                    ac = accs[s_name]
+                    acc_line = f"{s_name} | {st.get('class_name', '')} | {ac.get('email', '')} | {ac.get('password', '')}"
+                if w_key:
+                    _worker_assigned[w_key] = s_name
+                    _sticky_workers[w_key] = {
+                        "chat_id": chat_id,
+                        "idx": idx,
+                        "total": total,
+                        "student": st,
+                        "tries": 1,
+                        "account_line": acc_line,
+                    }
+                return {
+                    "has_task": True,
+                    "task_id": f"task_{idx}_{int(now)}",
                     "chat_id": chat_id,
                     "idx": idx,
                     "total": total,
                     "student": st,
-                    "tries": 1,
                     "account_line": acc_line,
                 }
-            return {
-                "has_task": True,
-                "task_id": f"task_{idx}_{int(now)}",
-                "chat_id": chat_id,
-                "idx": idx,
-                "total": total,
-                "student": st,
-                "account_line": acc_line,
-            }
 
         # Agar barcha qolgan o'quvchilar hozir faol agentlar tomonidan ishlanayotgan bo'lsa (all_done=False!),
         # ortiqcha agentlar ustiga kirib xalaqit bermasdan 10 soniya kutib turadi
         has_any_remaining = any(
-            normalize_student_key(s["name"]) not in done_norm
-            and normalize_student_key(s["name"]) not in unrec_norm
-            and normalize_student_key(s["name"]) != normalize_student_key("MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI")
+            s["name"] not in done_set and s["name"] not in unrec_set and s["name"] != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"
             for _, sts in parsed_orders
             for s in sts
         )
@@ -402,6 +409,162 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
             return {"has_task": False, "all_done": False, "reason": "all_remaining_in_progress"}
 
     return {"has_task": False, "all_done": True}
+
+
+import io
+import ctypes
+try:
+    from PIL import Image
+except Exception:
+    pass
+
+class BITMAPINFOHEADER(ctypes.Structure):
+    _fields_ = [
+        ('biSize', ctypes.c_uint32),
+        ('biWidth', ctypes.c_int32),
+        ('biHeight', ctypes.c_int32),
+        ('biPlanes', ctypes.c_uint16),
+        ('biBitCount', ctypes.c_uint16),
+        ('biCompression', ctypes.c_uint32),
+        ('biSizeImage', ctypes.c_uint32),
+        ('biXPelsPerMeter', ctypes.c_int32),
+        ('biYPelsPerMeter', ctypes.c_int32),
+        ('biClrUsed', ctypes.c_uint32),
+        ('biClrImportant', ctypes.c_uint32)
+    ]
+
+def fast_capture_screen_jpeg(quality=70):
+    try:
+        from telegram_bot import ensure_interactive_desktop
+        ensure_interactive_desktop()
+        user32 = ctypes.windll.user32
+        gdi32 = ctypes.windll.gdi32
+        w = user32.GetSystemMetrics(0)
+        h = user32.GetSystemMetrics(1)
+        hdc_screen = user32.GetDC(0)
+        hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
+        hbmp = gdi32.CreateCompatibleBitmap(hdc_screen, w, h)
+        gdi32.SelectObject(hdc_mem, hbmp)
+        gdi32.BitBlt(hdc_mem, 0, 0, w, h, hdc_screen, 0, 0, 0x00CC0020)
+
+        bmi = BITMAPINFOHEADER()
+        bmi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        bmi.biWidth = w
+        bmi.biHeight = -h
+        bmi.biPlanes = 1
+        bmi.biBitCount = 32
+        bmi.biCompression = 0
+
+        buf = (ctypes.c_char * (w * h * 4))()
+        gdi32.GetDIBits(hdc_mem, hbmp, 0, h, buf, ctypes.byref(bmi), 0)
+
+        im = Image.frombuffer('RGBA', (w, h), buf, 'raw', 'BGRA', 0, 1).convert('RGB')
+        out = io.BytesIO()
+        im.save(out, format='JPEG', quality=quality)
+        data = out.getvalue()
+
+        gdi32.DeleteDC(hdc_mem)
+        user32.ReleaseDC(0, hdc_screen)
+        gdi32.DeleteObject(hbmp)
+        return data, w, h
+    except Exception:
+        try:
+            from telegram_bot import take_silent_screenshot
+            p = take_silent_screenshot()
+            if p and os.path.exists(p):
+                with open(p, "rb") as f:
+                    d = f.read()
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+                return d, 1366, 768
+        except Exception:
+            pass
+        return None, 1366, 768
+
+def fast_remote_action(action, x=None, y=None, text="", key=""):
+    try:
+        from telegram_bot import ensure_interactive_desktop
+        ensure_interactive_desktop()
+        user32 = ctypes.windll.user32
+        if x is not None and y is not None:
+            user32.SetCursorPos(int(x), int(y))
+            time.sleep(0.02)
+
+        if action == "click":
+            user32.mouse_event(0x0002, 0, 0, 0, 0)
+            time.sleep(0.02)
+            user32.mouse_event(0x0004, 0, 0, 0, 0)
+        elif action == "dclick":
+            user32.mouse_event(0x0002, 0, 0, 0, 0)
+            user32.mouse_event(0x0004, 0, 0, 0, 0)
+            time.sleep(0.06)
+            user32.mouse_event(0x0002, 0, 0, 0, 0)
+            user32.mouse_event(0x0004, 0, 0, 0, 0)
+        elif action == "rclick":
+            user32.mouse_event(0x0008, 0, 0, 0, 0)
+            time.sleep(0.02)
+            user32.mouse_event(0x0010, 0, 0, 0, 0)
+        elif action == "type" and text:
+            class KEYBDINPUT(ctypes.Structure):
+                _fields_ = [
+                    ('wVk', ctypes.c_ushort),
+                    ('wScan', ctypes.c_ushort),
+                    ('dwFlags', ctypes.c_ulong),
+                    ('time', ctypes.c_ulong),
+                    ('dwExtraInfo', ctypes.POINTER(ctypes.c_ulong))
+                ]
+            class INPUT_I(ctypes.Union):
+                _fields_ = [('ki', KEYBDINPUT)]
+            class INPUT(ctypes.Structure):
+                _fields_ = [('type', ctypes.c_ulong), ('ii', INPUT_I)]
+
+            for ch in text:
+                val = ord(ch)
+                i1 = INPUT(); i1.type = 1; i1.ii.ki.wVk = 0; i1.ii.ki.wScan = val; i1.ii.ki.dwFlags = 0x0004
+                i2 = INPUT(); i2.type = 1; i2.ii.ki.wVk = 0; i2.ii.ki.wScan = val; i2.ii.ki.dwFlags = 0x0004 | 0x0002
+                events = (INPUT * 2)(i1, i2)
+                user32.SendInput(2, events, ctypes.sizeof(INPUT))
+                time.sleep(0.01)
+        elif action == "key" and key:
+            k_map = {
+                "enter": 0x0D, "backspace": 0x08, "tab": 0x09, "esc": 0x1B,
+                "space": 0x20, "up": 0x26, "down": 0x28, "left": 0x25,
+                "right": 0x27, "win": 0x5B
+            }
+            k_l = key.lower()
+            if k_l in k_map:
+                vk = k_map[k_l]
+                user32.keybd_event(vk, 0, 0, 0)
+                time.sleep(0.02)
+                user32.keybd_event(vk, 0, 2, 0)
+            elif k_l == "ctrl+a":
+                user32.keybd_event(0x11, 0, 0, 0)
+                user32.keybd_event(ord('A'), 0, 0, 0)
+                time.sleep(0.02)
+                user32.keybd_event(ord('A'), 0, 2, 0)
+                user32.keybd_event(0x11, 0, 2, 0)
+            elif k_l == "ctrl+c":
+                user32.keybd_event(0x11, 0, 0, 0)
+                user32.keybd_event(ord('C'), 0, 0, 0)
+                time.sleep(0.02)
+                user32.keybd_event(ord('C'), 0, 2, 0)
+                user32.keybd_event(0x11, 0, 2, 0)
+            elif k_l == "ctrl+v":
+                user32.keybd_event(0x11, 0, 0, 0)
+                user32.keybd_event(ord('V'), 0, 0, 0)
+                time.sleep(0.02)
+                user32.keybd_event(ord('V'), 0, 2, 0)
+                user32.keybd_event(0x11, 0, 2, 0)
+            elif k_l == "alt+tab":
+                user32.keybd_event(0x12, 0, 0, 0)
+                user32.keybd_event(0x09, 0, 0, 0)
+                time.sleep(0.03)
+                user32.keybd_event(0x09, 0, 2, 0)
+                user32.keybd_event(0x12, 0, 2, 0)
+    except Exception:
+        pass
 
 
 class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
@@ -455,9 +618,85 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
         path = parsed.path
         qs = urllib.parse.parse_qs(parsed.query)
 
+        if path == "/remote":
+            html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "remote_desktop.html")
+            if os.path.exists(html_path):
+                with open(html_path, "r", encoding="utf-8") as hf:
+                    html_content = hf.read()
+                self._send_html(html_content)
+            else:
+                self._send_html("<h2>remote_desktop.html topilmadi</h2>", 404)
+            return
+
+        if path == "/remote/screen.jpg":
+            img_data, _, _ = fast_capture_screen_jpeg(quality=70)
+            if img_data:
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Content-Length", str(len(img_data)))
+                    self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    self.send_header("Pragma", "no-cache")
+                    self.send_header("Expires", "0")
+                    self.end_headers()
+                    self.wfile.write(img_data)
+                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
+                    pass
+            else:
+                self._send_text("Capture failed", 500)
+            return
+
         if path == "/cluster/ping":
             self._send_text("OK")
             return
+
+        if path == "/cluster/pause":
+            global is_cluster_paused
+            st = qs.get("state", ["1"])[0]
+            is_cluster_paused = (st == "1" or st.lower() == "true")
+            self._send_json({"ok": True, "is_paused": is_cluster_paused})
+            return
+
+        if path == "/cluster/clear_orders":
+            with nodes_lock:
+                _excel_cache.clear()
+                _student_claimed_by.clear()
+                in_progress_students.clear()
+                _worker_assigned.clear()
+                _sticky_workers.clear()
+                _state_mem_cache["orders"] = []
+                _state_mem_cache["ts"] = 0.0
+                for nid in cluster_nodes:
+                    cluster_nodes[nid]["status"] = "🟡 Bo'sh (Buyurtma olib tashlandi)"
+                    cluster_nodes[nid]["worker_statuses"] = {}
+                save_nodes_state(force=True)
+            self._send_json({"ok": True})
+            return
+
+        if path == "/cluster/clear_cache":
+            with file_lock:
+                _excel_cache.clear()
+                _student_claimed_by.clear()
+                in_progress_students.clear()
+                _worker_assigned.clear()
+                _sticky_workers.clear()
+                _state_mem_cache["orders"] = []
+                _state_mem_cache["ts"] = 0.0
+                if os.path.exists(ERRORS_FILE):
+                    try:
+                        with open(ERRORS_FILE, "w", encoding="utf-8") as ef:
+                            ef.write("# Xatolar kesh tozalandi\n")
+                    except Exception:
+                        pass
+            with nodes_lock:
+                for nid in cluster_nodes:
+                    cluster_nodes[nid]["status"] = "🟡 Bo'sh (Kesh tozalandi)"
+                    cluster_nodes[nid]["worker_statuses"] = {}
+                save_nodes_state(force=True)
+            self._send_json({"ok": True})
+            return
+
+
 
         if path == "/cluster/request_screenshot":
             node_id = qs.get("node", [""])[0]
@@ -489,9 +728,15 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 return
             with nodes_lock:
                 pending_screen_requests[node_id] = chat_id
+            self._send_json({"ok": True, "node_id": node_id, "take_screenshot": True})
+            return
+
+        if path == "/cluster/poll_node_commands":
+            node_id = qs.get("node", [""])[0]
             with nodes_lock:
+                acts = pending_node_actions.pop(node_id, [])
                 need_s = node_id in pending_screen_requests
-            self._send_json({"ok": True, "take_screenshot": need_s})
+            self._send_json({"take_screenshot": need_s, "actions": acts})
             return
 
         if path == "/cluster/check_screen_req":
@@ -499,6 +744,32 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             with nodes_lock:
                 need_scr = node_id in pending_screen_requests
             self._send_json({"take_screenshot": need_scr})
+            return
+
+        if path == "/cluster/worker_version":
+            self._send_json({"version": 3, "timestamp": time.time()})
+            return
+
+        if path == "/cluster/get_worker_py":
+            w_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cluster_worker.py")
+            if os.path.exists(w_path):
+                with open(w_path, "r", encoding="utf-8") as wf:
+                    self._send_text(wf.read())
+            else:
+                self._send_text("# Not found", 404)
+            return
+
+        if path == "/update":
+            ps_script = (
+                "$work = [System.IO.Path]::Combine($env:USERPROFILE, 'UzbekCoders_Cluster_Node');\n"
+                "if (-not (Test-Path $work)) { New-Item -ItemType Directory -Path $work -Force | Out-Null };\n"
+                "Invoke-WebRequest -Uri 'http://192.168.1.5:8766/cluster/get_worker_py' -OutFile \"$work\\cluster_worker.py\";\n"
+                "Get-CimInstance Win32_Process -Filter \"Name='python.exe' or Name='pythonw.exe'\" | Where-Object { $_.CommandLine -like '*cluster_worker.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force };\n"
+                "Start-Sleep -Seconds 1;\n"
+                "Start-Process -FilePath 'pythonw.exe' -ArgumentList '-X utf8 -u cluster_worker.py' -WorkingDirectory $work -WindowStyle Hidden;\n"
+                "Write-Host '[MUVAFFAQIYATLI YANGILANDI!] Endi Telegram orqali ekranni toliq boshqarishingiz mumkin!' -ForegroundColor Green;\n"
+            )
+            self._send_text(ps_script)
             return
 
         if path == "/cluster/v2_ping":
@@ -513,115 +784,46 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             node_id = qs.get("node", [""])[0]
             w_cnt = int(qs.get("w", ["4"])[0])
             act = qs.get("act", ["yes"])[0]
+            cfg = load_bot_config()
+            admin_id = cfg.get("admin_id", 6580113791)
 
-            if act == "no" or w_cnt == 0:
+            if act == "no":
                 with nodes_lock:
-                    if node_id in cluster_nodes:
-                        cluster_nodes[node_id]["approved"] = False
-                        cluster_nodes[node_id]["workers"] = 0
-                        cluster_nodes[node_id]["status"] = "🔴 To'xtatilgan (0 Agent)"
-                        pc_name = cluster_nodes[node_id].get("pc_name", node_id)
-                    else:
-                        pc_name = node_id
-                    save_nodes_state(force=True)
-
-                # Chala qolgan vazifalarni darhol boshqa kompyuterlar uchun bo'shatamiz:
-                with task_lock:
-                    released = []
-                    for (n, w), s_name in list(_worker_assigned.items()):
-                        if n == node_id:
-                            _worker_assigned.pop((n, w), None)
-                            _sticky_workers.pop((n, w), None)
-                            in_progress_students.pop(s_name, None)
-                            released.append(s_name)
-                    if released:
-                        print(f"[REASSIGN] {node_id} to'xtatildi. {len(released)} ta o'quvchi navbatga qaytarildi: {released}")
-
-                self._send_json({"ok": True, "action": "stopped", "node_id": node_id})
+                    pc_name = cluster_nodes.get(node_id, {}).get("pc_name", node_id)
+                    cluster_nodes.pop(node_id, None)
+                send_tg(admin_id, f"❌ <b>{pc_name}</b> kompyuteri rad etildi.")
+                self._send_html("<h2 style='font-family:sans-serif;color:#d9534f;text-align:center;margin-top:50px;'>❌ Rad etildi! Telegramga qaytishingiz mumkin.</h2>")
                 return
 
             with nodes_lock:
                 if node_id in cluster_nodes:
                     cluster_nodes[node_id]["approved"] = True
                     cluster_nodes[node_id]["workers"] = w_cnt
-                    cluster_nodes[node_id]["status"] = "🟢 Faol ishlamoqda..."
                     pc_name = cluster_nodes[node_id].get("pc_name", node_id)
                 else:
-                    cluster_nodes[node_id] = {"pc_name": node_id, "ram_gb": 16, "workers": w_cnt, "approved": True, "last_seen": time.time(), "status": "🟢 Faol ishlamoqda..."}
+                    cluster_nodes[node_id] = {"pc_name": node_id, "ram_gb": 16, "workers": w_cnt, "approved": True, "last_seen": time.time()}
                     pc_name = node_id
-                save_nodes_state(force=True)
 
-            self._send_json({"ok": True, "action": "started", "node_id": node_id, "workers": w_cnt})
-            return
-
-        if path == "/cluster/stop_all":
-            with nodes_lock:
-                for nid in cluster_nodes:
-                    cluster_nodes[nid]["approved"] = False
-                    cluster_nodes[nid]["workers"] = 0
-                    cluster_nodes[nid]["status"] = "🔴 To'xtatilgan (0 Agent)"
-                save_nodes_state(force=True)
-            with task_lock:
-                _worker_assigned.clear()
-                _sticky_workers.clear()
-                in_progress_students.clear()
-            self._send_json({"ok": True, "action": "stopped_all"})
-            return
-
-        if path == "/cluster/start_all":
-            with nodes_lock:
-                for nid in cluster_nodes:
-                    cluster_nodes[nid]["approved"] = True
-                    cluster_nodes[nid]["workers"] = 4
-                    cluster_nodes[nid]["status"] = "🟢 Faol ishlamoqda..."
-                save_nodes_state(force=True)
-            self._send_json({"ok": True, "action": "started_all"})
+            send_tg(
+                admin_id,
+                f"✅ <b>BOTINGIZGA YANGI AI AGENTLAR QO'SHILDI!</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💻 Qo'shilgan kompyuter: <b>{pc_name}</b>\n"
+                f"🤖 Qo'shilgan parallel AI Agentlar: <b>+{w_cnt} ta Agent</b>\n"
+                f"🚀 Asosiy kompyuter (3 ta Agent) + {pc_name} ({w_cnt} ta Agent) = <b>Jami {3 + w_cnt} ta AI Agent</b> orqa fonda bo'linib ishni boshladi!",
+            )
+            self._send_html(
+                f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'></head>"
+                f"<body style='background:#0f172a;color:#22c55e;font-family:sans-serif;text-align:center;padding-top:60px;'>"
+                f"<h1>✅ {pc_name} ({w_cnt} ta AI Agent) muvaffaqiyatli qo'shildi!</h1>"
+                f"<p style='color:#cbd5e1;font-size:18px;'>Orqa fonda barcha buyurtmalarni bo'lishib bajarishni boshladi.<br>Ushbu oynani yopib Telegramga qaytishingiz mumkin.</p>"
+                f"<script>setTimeout(function(){{window.close();}}, 2500);</script></body></html>"
+            )
             return
 
         if path == "/cluster/nodes":
             with nodes_lock:
                 self._send_json(cluster_nodes)
-            return
-
-        if path == "/cluster/clear_cache":
-            with nodes_lock:
-                _state_mem_cache["ts"] = 0.0
-                _state_mem_cache["unrec"] = set()
-                _state_mem_cache["orders"] = []
-                _excel_cache.clear()
-                _worker_assigned.clear()
-                _sticky_workers.clear()
-                in_progress_students.clear()
-                tried_cluster_set.clear()
-                if os.path.exists(ERRORS_FILE):
-                    try:
-                        with open(ERRORS_FILE, "w", encoding="utf-8") as ef:
-                            ef.write("# Xatolar kesh tozalandi\n")
-                    except Exception:
-                        pass
-            self._send_json({"ok": True, "action": "cleared_all_cache"})
-            return
-
-        if path == "/cluster/rebalance":
-            with nodes_lock:
-                _state_mem_cache["ts"] = 0.0
-                _excel_cache.clear()
-                now_r = time.time()
-                stale_keys = [k for k, t in in_progress_students.items() if now_r - t > 90]
-                for k in stale_keys:
-                    in_progress_students.pop(k, None)
-                active_nodes_count = sum(1 for n in cluster_nodes.values() if (now_r - float(n.get("last_seen", 0))) < 180 and n.get("approved", True))
-
-            done_s = get_completed_students()
-            unrec_s = get_unrecoverable_students()
-            rem_count = 0
-            if os.path.exists(ORDERS_DIR):
-                for fn in os.listdir(ORDERS_DIR):
-                    if fn.startswith("in_") and fn.endswith(".xlsx"):
-                        sts = parse_excel_students(os.path.join(ORDERS_DIR, fn))
-                        rem_count += sum(1 for s in sts if s.get("name") and s["name"] not in done_s and s["name"] not in unrec_s and s["name"] != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI")
-
-            self._send_json({"ok": True, "active_nodes": active_nodes_count, "remaining_tasks": rem_count})
             return
 
         if path == "/cluster/tg_status":
@@ -637,17 +839,15 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     [(os.path.getmtime(os.path.join(ORDERS_DIR, fn)), os.path.join(ORDERS_DIR, fn)) for fn in os.listdir(ORDERS_DIR) if fn.startswith("in_") and fn.endswith(".xlsx")],
                     reverse=True,
                 )
-                seen_rem = set()
-                for _, fpath in c_files:
-                    sts = parse_excel_students(fpath)
+                if c_files:
+                    sts = parse_excel_students(c_files[0][1])
                     for i_s, s_obj in enumerate(sts, 1):
-                        sn = s_obj.get("name", "")
-                        if sn and sn not in done_s and sn not in unrec_s and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI" and sn not in seen_rem:
-                            seen_rem.add(sn)
+                        sn = s_obj["name"]
+                        if sn not in done_s and sn not in unrec_s and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
                             rem_list.append(f"[{i_s}/{len(sts)}] {sn} ({accs_s.get(sn, {}).get('email', 'yangi')})")
             self._send_json({
                 "tunnel_url": public_tunnel_url,
-                "pin_synced": True,
+                "pin_synced": _PIN_SYNCED,
                 "tg_ban_remaining_sec": max(0, int(_tg_ban_until - now_t)),
                 "online_nodes": online_c,
                 "total_certs": len(done_s),
@@ -758,25 +958,99 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         path = self.path.split("?")[0]
 
+        if path == "/remote/action":
+            data = self._read_body()
+            act = data.get("action", "click")
+            x = data.get("x")
+            y = data.get("y")
+            txt = data.get("text", "")
+            key = data.get("key", "")
+            fast_remote_action(act, x=x, y=y, text=txt, key=key)
+            self._send_json({"ok": True, "action": act, "x": x, "y": y})
+            return
+
+        if path == "/cluster/queue_node_action":
+            data = self._read_body()
+            node_id = data.get("node_id", "")
+            chat_id = data.get("chat_id") or load_bot_config().get("admin_id", 6580113791)
+            with nodes_lock:
+                if node_id not in pending_node_actions:
+                    pending_node_actions[node_id] = []
+                pending_node_actions[node_id].append(data)
+                pending_screen_requests[node_id] = chat_id
+            self._send_json({"ok": True, "node_id": node_id})
+            return
+
         if path == "/cluster/upload_screenshot":
             data = self._read_body()
             node_id = data.get("node_id", "")
             pc_name = data.get("pc_name", node_id)
             img_b64 = data.get("image_b64", "")
+            w = data.get("width", 1366)
+            h = data.get("height", 768)
             with nodes_lock:
                 chat_id = pending_screen_requests.pop(node_id, load_bot_config().get("admin_id", 6580113791))
             if img_b64:
                 try:
                     raw_img = base64.b64decode(img_b64)
+                    with nodes_lock:
+                        latest_node_screens[node_id] = (raw_img, time.time(), w, h)
                     tok = load_bot_config().get("bot_token", "")
+                    tun_url = public_tunnel_url or ""
+                    remote_url = f"{tun_url}/remote?node={node_id}" if tun_url else ""
+                    inline_ctrl = {
+                        "inline_keyboard": [
+                            [
+                                {"text": "🔄 Yangilash (Skrin)", "callback_data": f"cl_scr|{node_id}"},
+                                {"text": "📱 Web AnyDesk (Sensor)", "web_app": {"url": remote_url}} if remote_url else {"text": "🔄 Qayta olish", "callback_data": f"cl_scr|{node_id}"}
+                            ],
+                            [
+                                {"text": "↖️ Tepa-Chap", "callback_data": f"n_clk|{node_id}|200|150"},
+                                {"text": "⬆️ Tepa-Markaz", "callback_data": f"n_clk|{node_id}|683|150"},
+                                {"text": "↗️ Tepa-O'ng", "callback_data": f"n_clk|{node_id}|1160|150"}
+                            ],
+                            [
+                                {"text": "⬅️ O'rta-Chap", "callback_data": f"n_clk|{node_id}|200|384"},
+                                {"text": "🎯 MARKAZ KLIK", "callback_data": f"n_clk|{node_id}|683|384"},
+                                {"text": "➡️ O'rta-O'ng", "callback_data": f"n_clk|{node_id}|1160|384"}
+                            ],
+                            [
+                                {"text": "↙️ Past-Chap", "callback_data": f"n_clk|{node_id}|200|620"},
+                                {"text": "⬇️ Past-Markaz", "callback_data": f"n_clk|{node_id}|683|620"},
+                                {"text": "↘️ Past-O'ng", "callback_data": f"n_clk|{node_id}|1160|620"}
+                            ],
+                            [
+                                {"text": "🖱 2x Klik", "callback_data": f"n_dclk|{node_id}|683|384"},
+                                {"text": "🖱 O'ng tugma", "callback_data": f"n_rclk|{node_id}|683|384"}
+                            ],
+                            [
+                                {"text": "⏎ Enter", "callback_data": f"n_key|{node_id}|enter"},
+                                {"text": "⌫ Back", "callback_data": f"n_key|{node_id}|backspace"},
+                                {"text": "⎋ Esc", "callback_data": f"n_key|{node_id}|esc"},
+                                {"text": "🪟 Win", "callback_data": f"n_key|{node_id}|win"}
+                            ],
+                            [
+                                {"text": "🌐 Brauzerda Ochish", "url": remote_url} if remote_url else {"text": "💻 Boshqa kompyuterlar", "callback_data": "scr_list"}
+                            ]
+                        ]
+                    }
+                    caption = (
+                        f"🖥 <b>Kompyuter [{pc_name}] Ekrani (Masofaviy)</b>\n"
+                        f"⏱ Vaqt: <code>{time.strftime('%H:%M:%S')}</code> | 📐 O'lcham: <code>{w}x{h}</code>\n\n"
+                        f"🎮 <b>Quyidagi knopkalar orqali ushbu kompyuterni boshqaring:</b>\n"
+                        f"• <b>9 ta hudud:</b> Tepa, Markaz, Past, Chap, O'ng\n"
+                        f"• <b>Maxsus:</b> 2x Klik, O'ng tugma, Enter, Back, Esc, Win\n"
+                        f"• <b>Aniq bosish:</b> <code>/click_{node_id[:8]} 500 300</code>"
+                    )
                     requests.post(
                         f"https://api.telegram.org/bot{tok}/sendPhoto",
                         data={
                             "chat_id": chat_id,
-                            "caption": f"📸 <b>Kompyuter [{pc_name}] ekrani (Orqa fonda olindi)</b>\n⏱ Vaqt: <code>{time.strftime('%Y-%m-%d %H:%M:%S')}</code>",
-                            "parse_mode": "HTML"
+                            "caption": caption,
+                            "parse_mode": "HTML",
+                            "reply_markup": json.dumps(inline_ctrl)
                         },
-                        files={"photo": ("screen.png", raw_img, "image/png")},
+                        files={"photo": ("screen.jpg", raw_img, "image/jpeg")},
                         timeout=30
                     )
                 except Exception as e:
@@ -852,49 +1126,23 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         ],
                     ]
                 }
-                if force_prompt:
-                    threading.Thread(
-                        target=send_tg,
-                        args=(
-                            admin_id,
-                            f"🖥 <b>YANGI ({pc_idx_reg}-) KOMPYUTER BOTGA ULANDI!</b>\n"
-                            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                            f"💻 {pc_idx_reg}-Kompyuter: <b>{pc_name}</b> ({ram_gb} GB)\n"
-                            f"🤖 <b>{def_workers} ta parallel AI Agent</b> bilan ishga tushirildi!",
-                            markup,
-                        ),
-                        daemon=True,
-                    ).start()
-                else:
-                    threading.Thread(
-                        target=send_tg,
-                        args=(
-                            admin_id,
-                            f"🟢 <b>{pc_idx_reg}-Kompyuter [{pc_name}]</b> ulandi va <b>{def_workers} ta AI Agent</b> bilan ishga tushdi!",
-                        ),
-                        daemon=True,
-                    ).start()
+                threading.Thread(
+                    target=send_tg,
+                    args=(
+                        admin_id,
+                        f"🖥 <b>YANGI ({pc_idx_reg}-) KOMPYUTER BOTGA ULANDI!</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"💻 {pc_idx_reg}-Kompyuter: <b>{pc_name}</b>\n"
+                        f"🧠 Operativka (RAM): <b>{ram_gb} GB</b>\n"
+                        f"🤖 Tavsiya etilgan: <b>{def_workers} ta parallel AI Agent</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"❓ <b>Nechta AI Agent bo'lib beray? (Telefondan yoki kompyuterdan bitta bosing — havola ochmasdan darhol ishga tushadi!)</b>",
+                        markup,
+                    ),
+                    daemon=True,
+                ).start()
 
             self._send_json({"approved": approved, "workers": workers})
-            return
-
-        if path == "/cluster/claim_task":
-            data = self._read_body()
-            s_name = " ".join(data.get("student_name", "").strip().upper().split())
-            s_norm = normalize_student_key(s_name)
-            node_id = data.get("node_id", "MASTER_PC")
-            w_id = str(data.get("worker_id", "1"))
-            now_t = time.time()
-            with nodes_lock:
-                for (nid, wid), st_assigned in list(_worker_assigned.items()):
-                    if normalize_student_key(st_assigned) == s_norm and (nid, wid) != (node_id, w_id):
-                        is_alive = (nid == "MASTER_PC" or (now_t - cluster_nodes.get(nid, {}).get("last_seen", 0) <= 180))
-                        if is_alive:
-                            self._send_json({"ok": False, "busy_by": f"{nid} #{wid}"})
-                            return
-                in_progress_students[s_name] = now_t
-                _worker_assigned[(node_id, w_id)] = s_name
-                self._send_json({"ok": True})
             return
 
         if path == "/cluster/pop_task":
@@ -905,6 +1153,9 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 node_info = cluster_nodes.get(node_id, {})
                 if node_id in cluster_nodes:
                     cluster_nodes[node_id]["last_seen"] = time.time()
+            if is_cluster_paused:
+                self._send_json({"has_task": False, "is_paused": True, "reason": "Jarayon vaqtincha to'xtatilgan (PAUZA)"})
+                return
             if not node_info.get("approved", False):
                 self._send_json({"has_task": False, "reason": "not_approved"})
                 return
@@ -923,17 +1174,19 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         cluster_nodes[node_id]["worker_statuses"] = {}
                     cluster_nodes[node_id]["worker_statuses"][worker_id] = init_st
                     save_nodes_state(force=False)
-                    pc_idx_reg = (list(cluster_nodes.keys()).index(node_id) + 2) if node_id in cluster_nodes else 2
-                    pc_name_reg = cluster_nodes[node_id].get("pc_name", node_id)
-
-                cid = task.get("chat_id") or load_bot_config().get("admin_id", 6580113791)
-                pc_tg_tag = f"💻 {pc_idx_reg}-Kompyuter [{pc_name_reg}] | 🤖 Agent #{worker_id}"
-                start_msg = (
-                    f"⏳ <b>[{idx_v}/{tot_v}] {st_n}</b>\n"
-                    f"└ <b>{pc_tg_tag}</b>\n"
-                    f"└ 🚀 Jarayon boshlanmoqda..."
-                )
-                threading.Thread(target=send_tg, args=(cid, start_msg), daemon=True).start()
+                if task.get("chat_id") and not task.get("silent"):
+                    try:
+                        pc_idx_tag = (list(cluster_nodes.keys()).index(node_id) + 2) if node_id in cluster_nodes else 2
+                        pc_n_show = cluster_nodes.get(node_id, {}).get("pc_name", node_id)
+                        pc2_tag = f"💻 {pc_idx_tag}-Kompyuter [{pc_n_show}] | 🤖 Agent #{worker_id}"
+                        msg_start = (
+                            f"⏳ <b>[{idx_v}/{tot_v}] {st_n}</b>\n"
+                            f"└ {pc2_tag}\n"
+                            f"└ 🚀 Jarayon boshlanmoqda..."
+                        )
+                        threading.Thread(target=send_tg, args=(task.get("chat_id"), msg_start), daemon=True).start()
+                    except Exception:
+                        pass
             elif task.get("all_done") and node_id in cluster_nodes:
                 with nodes_lock:
                     cluster_nodes[node_id]["status"] = "🟡 Bo'sh (Yangi buyurtma kutilmoqda)"
@@ -1016,33 +1269,20 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             num_prefix = f"[{idx_val}/{tot_val}] " if (idx_val and tot_val) else ""
             pc2_tag = f"💻 {pc_idx_fin}-Kompyuter [{pc_name}] | 🤖 Agent #{worker_id}"
 
-            # Faqat masofaviy klaster kompyuterlari uchun Telegram xabari yuboramiz.
-            # 1-Kompyuter (MASTER_PC) uchun asosiy telegram_bot.py o'zi allaqachon to'g'ridan-to'g'ri xabar beradi!
-            if node_id != "MASTER_PC":
-                if status == "COMPLETED":
-                    certs = get_certificate_map()
-                    accs = get_existing_accounts()
-                    ac = accs.get(s_name, {})
-                    c_url = certs.get(s_name, "Havola faylda")
-                    msg_done = (
-                        f"🎉 <b>{num_prefix}MUVAFFAQIYATLI OLINDI!</b>\n"
-                        f"🖥 <b>{pc2_tag}</b>\n"
-                        f"👤 <b>{s_name}</b>\n"
-                        f"📧 Login: <code>{ac.get('email', '—')}</code>\n"
-                        f"🔑 Parol: <code>{ac.get('password', '—')}</code>\n"
-                        f"🏅 Sertifikat: {c_url}"
-                    )
-                    threading.Thread(target=send_tg, args=(chat_id, msg_done), daemon=True).start()
-                elif status == "UNRECOVERABLE":
-                    errs = get_error_reason_map()
-                    msg_skip = (
-                        f"⚠️ <b>{num_prefix}{s_name} — O'TKAZIB YUBORILDI! ({pc2_tag})</b>\n"
-                        f"Sababi: <i>{errs.get(s_name, 'Oldin boshqa joyda roʻyxatdan oʻtgan')}</i>"
-                    )
-                    threading.Thread(target=send_tg, args=(chat_id, msg_skip), daemon=True).start()
-
-            # Agar bu o'quvchi oxirgisi bo'lsa va buyurtma to'liq yakunlangan bo'lsa, umumiy Excelni yuboramiz
             if status == "COMPLETED":
+                certs = get_certificate_map()
+                accs = get_existing_accounts()
+                ac = accs.get(s_name, {})
+                c_url = certs.get(s_name, "Havola faylda")
+                msg_done = (
+                    f"🎉 <b>{num_prefix}MUVAFFAQIYATLI OLINDI!</b>\n"
+                    f"🖥 <b>{pc2_tag}</b>\n"
+                    f"👤 <b>{s_name}</b>\n"
+                    f"📧 Login: <code>{ac.get('email', '—')}</code>\n"
+                    f"🔑 Parol: <code>{ac.get('password', '—')}</code>\n"
+                    f"🏅 Sertifikat: {c_url}"
+                )
+                threading.Thread(target=send_tg, args=(chat_id, msg_done), daemon=True).start()
                 try:
                     cands = sorted(
                         [(os.path.getmtime(os.path.join(ORDERS_DIR, fn)), os.path.join(ORDERS_DIR, fn))
@@ -1081,7 +1321,55 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                                 )
                 except Exception:
                     pass
+            elif status == "UNRECOVERABLE":
+                errs = get_error_reason_map()
+                msg_skip = (
+                    f"⚠️ <b>{num_prefix}{s_name} — O'TKAZIB YUBORILDI! ({pc2_tag})</b>\n"
+                    f"Sababi: <i>{errs.get(s_name, 'Oldin boshqa joyda roʻyxatdan oʻtgan')}</i>"
+                )
+                threading.Thread(target=send_tg, args=(chat_id, msg_skip), daemon=True).start()
 
+            self._send_json({"ok": True})
+        if path == "/cluster/claim_student":
+            data = self._read_body()
+            s_name = " ".join(data.get("student_name", "").strip().upper().split())
+            w_tag = data.get("worker_tag", "UNKNOWN")
+            now_t = time.time()
+            with nodes_lock:
+                done_set = get_completed_students()
+                unrec_set = get_unrecoverable_students()
+                if s_name in done_set or s_name in unrec_set:
+                    self._send_json({"ok": False, "reason": "already_done"})
+                    return
+                cur_claimed_by = _student_claimed_by.get(s_name)
+                cur_claimed_time = in_progress_students.get(s_name, 0)
+                is_master = w_tag.startswith("MASTER_PC")
+                if cur_claimed_by and cur_claimed_by != w_tag:
+                    if is_master and (not cur_claimed_by.startswith("MASTER_PC") or (now_t - cur_claimed_time > 60)):
+                        # Master PC asosiy ustuvorlikka ega, boshqa kompyuterdan o'ziga oladi
+                        pass
+                    elif now_t - cur_claimed_time < 300:
+                        self._send_json({"ok": False, "reason": "already_claimed", "claimed_by": cur_claimed_by})
+                        return
+                # Aks holda faqat shu agentga biriktiramiz
+                _student_claimed_by[s_name] = w_tag
+                in_progress_students[s_name] = now_t
+                self._send_json({"ok": True, "claimed_by": w_tag})
+
+            return
+
+        if path == "/cluster/release_student":
+            data = self._read_body()
+            s_name = " ".join(data.get("student_name", "").strip().upper().split())
+            w_tag = data.get("worker_tag", "")
+            status = data.get("status", "")
+            with nodes_lock:
+                if status in ("COMPLETED", "UNRECOVERABLE"):
+                    _student_claimed_by.pop(s_name, None)
+                    in_progress_students.pop(s_name, None)
+                elif not w_tag or _student_claimed_by.get(s_name) == w_tag:
+                    _student_claimed_by.pop(s_name, None)
+                    in_progress_students.pop(s_name, None)
             self._send_json({"ok": True})
             return
 
@@ -1153,7 +1441,7 @@ def _sync_pinned_tunnel(tunnel_url: str, admin_id: int, token: str):
     except Exception:
         pass
 
-    _PIN_SYNCED = True
+    _PIN_SYNCED = False
     pin_html = (
         f"🌐 <b>MULTI-PC KLASTER TIZIMI YOQILDI!</b>\n"
         f"🔗 Maxfiy aloqa ko'prigi: <code>{tunnel_url}</code>\n"
@@ -1642,12 +1930,12 @@ if __name__ == "__main__":
             except Exception:
                 pass
 
+    _bridge_lock_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        _bridge_lock_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         _bridge_lock_sock.bind(("127.0.0.1", 49882))
         os.set_handle_inheritable(_bridge_lock_sock.fileno(), False)
-    except Exception:
-        pass
+    except OSError:
+        sys.exit(0)
 
     for _tmp_f in ("decoded_cw.txt", "decoded_mcp.txt"):
         try:
@@ -1669,6 +1957,14 @@ if __name__ == "__main__":
 
     sys.stdout = _TeeLog(sys.stdout, os.path.join(os.path.dirname(os.path.abspath(__file__)), "cluster_bridge_4w.log"))
     sys.stderr = _TeeLog(sys.stderr, os.path.join(os.path.dirname(os.path.abspath(__file__)), "cluster_bridge_4w.log"))
+
+    # Agar yangilangan (v2) ko'prik allaqachon ishlab turgan bo'lsa, ortiqcha oyna xato chiqarmasdan yopiladi
+    try:
+        _r = requests.get(f"http://127.0.0.1:{CLUSTER_PORT}/cluster/v2_ping", timeout=2)
+        if _r.status_code == 200 and _r.text.strip() == "OK_V2":
+            sys.exit(0)
+    except Exception:
+        pass
 
     def _free_port_8766(kill_cf: bool = False):
         if kill_cf:
@@ -1711,7 +2007,7 @@ if __name__ == "__main__":
     time.sleep(0.5)
 
     save_nodes_state()
-    http.server.ThreadingHTTPServer.allow_reuse_address = True
+    http.server.ThreadingHTTPServer.allow_reuse_address = False
     server = None
     for _attempt in range(15):
         try:
