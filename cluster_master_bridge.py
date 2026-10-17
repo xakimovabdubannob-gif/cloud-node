@@ -502,6 +502,7 @@ WEB_ANY_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>🌐 Web AnyDesk — UzbekCoders</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
@@ -511,7 +512,7 @@ WEB_ANY_HTML = """<!DOCTYPE html>
   .info-bar { font-size: 12px; color: #94a3b8; text-align: center; padding: 6px 10px; background: #0b1120; border-bottom: 1px solid #1e293b; }
   .screen-wrap { flex: 1; display: flex; justify-content: center; align-items: center; padding: 8px; background: #020617; position: relative; overflow: auto; }
   .screen-container { position: relative; display: inline-block; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.8); border-radius: 8px; overflow: hidden; border: 1px solid #334155; }
-  #screenImg { display: block; max-width: 100%; height: auto; cursor: crosshair; user-select: none; -webkit-user-drag: none; touch-action: none; }
+  #screenImg { display: block; max-width: 100%; height: auto; cursor: crosshair; user-select: none; -webkit-user-drag: none; touch-action: manipulation; }
   .click-ripple { position: absolute; width: 24px; height: 24px; border-radius: 50%; background: rgba(56, 189, 248, 0.6); border: 2px solid #38bdf8; transform: translate(-50%, -50%) scale(0); animation: ripple 0.4s ease-out forwards; pointer-events: none; }
   @keyframes ripple { 0% { transform: translate(-50%, -50%) scale(0.2); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; } }
   .controls { background: #1e293b; padding: 8px 12px; border-top: 1px solid #334155; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; position: sticky; bottom: 0; z-index: 50; }
@@ -520,6 +521,7 @@ WEB_ANY_HTML = """<!DOCTYPE html>
   button:active, .btn:active { transform: scale(0.96); }
   .btn-primary { background: #0284c7; border-color: #0369a1; color: white; }
   .btn-success { background: #16a34a; border-color: #15803d; color: white; }
+  .btn-danger { background: #dc2626; border-color: #b91c1c; color: white; }
   .input-group { display: flex; gap: 4px; }
   .input-group input { background: #0f172a; border: 1px solid #475569; color: #fff; padding: 6px 8px; border-radius: 6px; font-size: 12px; outline: none; width: 130px; }
   .input-group input:focus { border-color: #38bdf8; }
@@ -528,7 +530,10 @@ WEB_ANY_HTML = """<!DOCTYPE html>
 <body>
 <header>
   <div class="title"><span>🌐 Web AnyDesk</span></div>
-  <div class="status-badge" id="statusBadge">🟢 Jonli Ekran</div>
+  <div style="display:flex; align-items:center; gap:8px;">
+    <div class="status-badge" id="statusBadge">🟢 Jonli Ekran</div>
+    <button class="btn btn-danger" onclick="exitWebAny()" style="padding:4px 8px; font-size:11px;">❌ Chiqish</button>
+  </div>
 </header>
 
 <div class="info-bar" id="statusBar">👆 Ekranning istalgan joyiga bosing — sichqoncha aynan o'sha kordinataga bosiladi!</div>
@@ -560,6 +565,22 @@ const img = document.getElementById('screenImg');
 const box = document.getElementById('screenBox');
 const statusBadge = document.getElementById('statusBadge');
 const statusBar = document.getElementById('statusBar');
+
+function exitWebAny() {
+  if (window.Telegram && window.Telegram.WebApp) {
+    try { window.Telegram.WebApp.close(); } catch(e) {}
+  }
+  try { window.history.back(); } catch(e) {}
+  try { window.close(); } catch(e) {}
+}
+
+if (window.Telegram && window.Telegram.WebApp) {
+  try {
+    window.Telegram.WebApp.ready();
+    window.Telegram.WebApp.BackButton.show();
+    window.Telegram.WebApp.BackButton.onClick(exitWebAny);
+  } catch(e) {}
+}
 
 function refreshScreen() {
   if (refreshing) return;

@@ -1548,7 +1548,7 @@ class TelegramBotServer:
                     [{"text": "📄 Bo'sh Shablon (.xlsx)"}, {"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
                 ],
                 "resize_keyboard": True,
-                "is_persistent": True,
+                "is_persistent": False,
             }
         return {
             "keyboard": [
@@ -1556,7 +1556,7 @@ class TelegramBotServer:
                 [{"text": "💰 Narxlar va 50% Avans"}, {"text": "👨‍💼 Admin bilan aloqa"}],
             ],
             "resize_keyboard": True,
-            "is_persistent": True,
+            "is_persistent": False,
         }
 
     def resume_latest_unfinished_order(self, notify_chat_id: int = 0, manual: bool = False):
