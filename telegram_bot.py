@@ -1452,7 +1452,8 @@ class TelegramBotServer:
             order_queue.task_done()
 
     def clear_and_archive_old_orders(self):
-        """Eski buyurtmalarni arxivlaydi, shunda yangi Excel/matn kelganda faqat yangisi bilan ishlanadi!"""
+        """Eski buyurtmalarni va xatolarni tozalaydi/arxivlaydi.
+        FAQAT akkountlar.txt (Login/Parollar) va natijalar_sertifikatlar.txt (Tayyor sertifikatlar) saqlanadi!"""
         import shutil
         if os.path.exists(ORDERS_DIR):
             arch_dir = os.path.join(ORDERS_DIR, "archived")
@@ -1465,6 +1466,17 @@ class TelegramBotServer:
                         shutil.move(src, dst)
                     except Exception:
                         pass
+
+        # Xatolar ro'yxatini tozalaymiz (zaxirasini arxivga olamiz)
+        if os.path.exists(ERRORS_FILE):
+            try:
+                err_bkp = f"xatolar_archived_{int(time.time())}.txt"
+                shutil.copy(ERRORS_FILE, err_bkp)
+                with open(ERRORS_FILE, "w", encoding="utf-8") as ef:
+                    ef.write("# Xatolar kesh tozalandi\n")
+            except Exception:
+                pass
+
         with self.shared_lock:
             self.shared_orders.clear()
         while not order_queue.empty():

@@ -1301,10 +1301,10 @@ def pick_date_aileaders(page, birth_date: str):
         parts = birth_date.split("/")
         if len(parts[0]) == 4:
             year_str, month_idx, day_int = parts[0], int(parts[1]) - 1, int(parts[2])
-        elif int(parts[0]) > 12:
-            day_int, month_idx, year_str = int(parts[0]), int(parts[1]) - 1, str(parts[2])
-        else:
+        elif int(parts[1]) > 12:
             month_idx, day_int, year_str = int(parts[0]) - 1, int(parts[1]), str(parts[2])
+        else:
+            day_int, month_idx, year_str = int(parts[0]), int(parts[1]) - 1, str(parts[2])
     else:
         day_str, month_str, year_str = birth_date.split(".")
         day_int, month_idx = int(day_str), int(month_str) - 1

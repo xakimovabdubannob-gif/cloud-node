@@ -583,6 +583,25 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json(cluster_nodes)
             return
 
+        if path == "/cluster/clear_cache":
+            with nodes_lock:
+                _state_mem_cache["ts"] = 0.0
+                _state_mem_cache["unrec"] = set()
+                _state_mem_cache["orders"] = []
+                _excel_cache.clear()
+                _worker_assigned.clear()
+                _sticky_workers.clear()
+                in_progress_students.clear()
+                tried_cluster_set.clear()
+                if os.path.exists(ERRORS_FILE):
+                    try:
+                        with open(ERRORS_FILE, "w", encoding="utf-8") as ef:
+                            ef.write("# Xatolar kesh tozalandi\n")
+                    except Exception:
+                        pass
+            self._send_json({"ok": True, "action": "cleared_all_cache"})
+            return
+
         if path == "/cluster/rebalance":
             with nodes_lock:
                 _state_mem_cache["ts"] = 0.0
