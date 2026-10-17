@@ -1557,7 +1557,7 @@ def cluster_assist_loop(assist_slot: int = 1):
                     edit_tg(_cid, _mid, "\n".join(lines_txt))
 
             already_had_cert = s_name in get_completed_students()
-            is_headless = os.environ.get("HEADLESS", "0").strip().lower() in ("1", "true", "yes")
+            is_headless = os.environ.get("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
             res_status = process_student(target_st, status_callback=assist_update_step, headless=is_headless, worker_id=target_wid)
 
             if res_status == "COMPLETED":

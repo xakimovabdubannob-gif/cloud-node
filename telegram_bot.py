@@ -1303,7 +1303,7 @@ class TelegramBotServer:
                     lines_txt.append(f"  {pref} {h_line}")
                 self.edit_message(_cid, _mid, "\n".join(lines_txt))
 
-        is_headless = os.environ.get("HEADLESS", "0").strip().lower() in ("1", "true", "yes")
+        is_headless = os.environ.get("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
         result_status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=worker_id)
         try:
             requests.post("http://127.0.0.1:8766/cluster/finish_task", json={
