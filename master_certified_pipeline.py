@@ -1111,16 +1111,6 @@ def verify_student_name_with_3_checks(page, student_name):
             time.sleep(3.5 * mult)
             dismiss_all_popups(page)
 
-            # Agar user-verification yangi ochilgan tabda bo'lsa, uni topib ishlaymiz:
-            v_page = page
-            try:
-                for p in page.context.pages:
-                    if "/user-verification" in p.url:
-                        v_page = p
-                        break
-            except Exception:
-                pass
-
             # 1. Ism bo'laklarini ajratib olamiz
             parts = student_name.split()
             first_name = parts[0] if len(parts) > 0 else student_name
@@ -1130,7 +1120,7 @@ def verify_student_name_with_3_checks(page, student_name):
             # 2. Maydonlarni topish va yozish (3 marta qayta tekshirib to'ldirish):
             for fill_try in range(3):
                 # React native value setter + aniq maydonlarni (first, middle, last) topish
-                v_page.evaluate("""([fn, mn, ln]) => {
+                page.evaluate("""([fn, mn, ln]) => {
                     const inps = Array.from(document.querySelectorAll('input')).filter(i => {
                         const t = (i.type || 'text').toLowerCase();
                         return !['checkbox', 'radio', 'hidden', 'submit', 'button', 'search'].includes(t) && i.offsetParent !== null;
@@ -1171,7 +1161,7 @@ def verify_student_name_with_3_checks(page, student_name):
                 }""", [first_name, middle_name, last_name])
 
                 # Shuningdek Playwright bilan ham tekshirib to'ldirish
-                all_text_inputs = [i for i in v_page.locator("input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='search']):not([type='submit'])").all() if i.is_visible()]
+                all_text_inputs = [i for i in page.locator("input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='search']):not([type='submit'])").all() if i.is_visible()]
                 if len(all_text_inputs) >= 3:
                     for i_idx, val in enumerate([first_name, middle_name, last_name]):
                         if not all_text_inputs[i_idx].input_value():
@@ -1187,7 +1177,7 @@ def verify_student_name_with_3_checks(page, student_name):
                     if not all_text_inputs[0].input_value(): all_text_inputs[0].fill(student_name)
 
                 # Tekshirish: qiymatlar yozildimi?
-                cur_vals = v_page.evaluate("""() => {
+                cur_vals = page.evaluate("""() => {
                     const inps = Array.from(document.querySelectorAll('input')).filter(i => {
                         const t = (i.type || 'text').toLowerCase();
                         return !['checkbox', 'radio', 'hidden', 'submit', 'button', 'search'].includes(t) && i.offsetParent !== null;
@@ -1203,7 +1193,7 @@ def verify_student_name_with_3_checks(page, student_name):
             # 3. Galichka (Checkbox) - BITTA BOSISH, TEKSHIRISH, BOSILGAN BO'LSA TEGMASLIK!
             # Talab: "familya ism ochtva yozib galishkani bir necha marta bosyabdi bitta bossin tekshirsin bosgan bulsa teymasin"
             for cb_i in range(3):
-                is_chk = v_page.evaluate("""() => {
+                is_chk = page.evaluate("""() => {
                     const c = document.querySelector("input[type='checkbox']");
                     return c ? Boolean(c.checked) : false;
                 }""")
@@ -1213,7 +1203,7 @@ def verify_student_name_with_3_checks(page, student_name):
 
                 print(f"[ISMNI TASDIQLASH] [GALICHKA #{cb_i+1}/3] Galichka belgilanmoqda (faqat 1 marta bosish)...")
                 try:
-                    cb = v_page.locator("input[type='checkbox']").first
+                    cb = page.locator("input[type='checkbox']").first
                     if cb.count() > 0 and not cb.is_checked():
                         cb.scroll_into_view_if_needed()
                         cb.check(force=True)
@@ -1221,7 +1211,7 @@ def verify_student_name_with_3_checks(page, student_name):
                     pass
 
                 # Agar check() dan keyin ham belgilanmagan bo'lsa, faqat bitta marta JS orqali xavfsiz belgilash:
-                v_page.evaluate("""() => {
+                page.evaluate("""() => {
                     const c = document.querySelector("input[type='checkbox']");
                     if (c && !c.checked) {
                         c.click();
@@ -1237,27 +1227,27 @@ def verify_student_name_with_3_checks(page, student_name):
             # 4. Submit tugmasini bosish va tekshirish (3 marta urinish)
             for sub_try in range(3):
                 # Submit bosishdan oldin galichka qo'yilganligini qat'iy tekshiramiz
-                is_chk_final = v_page.evaluate("""() => {
+                is_chk_final = page.evaluate("""() => {
                     const c = document.querySelector("input[type='checkbox']");
                     return c ? Boolean(c.checked) : false;
                 }""")
                 if not is_chk_final:
                     print("[ISMNI TASDIQLASH] Submit dan oldin galichka belgilanmagan, bir martalik belgilash...")
                     try:
-                        v_page.locator("input[type='checkbox']").first.check(force=True)
+                        page.locator("input[type='checkbox']").first.check(force=True)
                     except Exception:
                         pass
                     time.sleep(0.3)
 
                 print(f"[ISMNI TASDIQLASH] [SUBMIT #{sub_try+1}/3] Submit tugmasi bosilmoqda...")
-                sub_v = v_page.locator("button:has-text('Submit'), button:has-text('Отправить'), button[type='submit']").first
+                sub_v = page.locator("button:has-text('Submit'), button:has-text('Отправить'), button[type='submit']").first
                 if sub_v.count() > 0 and sub_v.is_visible():
                     try:
                         sub_v.click(force=True)
                     except Exception:
                         pass
 
-                v_page.evaluate("""() => {
+                page.evaluate("""() => {
                     const b = Array.from(document.querySelectorAll('button')).find(x => {
                         const t = (x.innerText || '').trim().toLowerCase();
                         return (t === 'submit' || t === 'отправить') && x.offsetParent !== null;
@@ -1268,23 +1258,11 @@ def verify_student_name_with_3_checks(page, student_name):
                     }
                 }""")
                 time.sleep(2.0)
-                if "/user-verification" not in v_page.url:
+                if "/user-verification" not in page.url:
                     print("[ISMNI TASDIQLASH] Ism muvaffaqiyatli tasdiqlandi va sahifadan chiqildi!")
-                    if v_page != page:
-                        try:
-                            v_page.close()
-                            page.bring_to_front()
-                        except Exception:
-                            pass
                     return True
 
-            if "/user-verification" not in v_page.url:
-                if v_page != page:
-                    try:
-                        v_page.close()
-                        page.bring_to_front()
-                    except Exception:
-                        pass
+            if "/user-verification" not in page.url:
                 return True
         except Exception as e:
             print(f"[!] Verify My Name {v_try}-urinishda xatolik: {e}")
@@ -1574,28 +1552,18 @@ def pick_date_aileaders(page, birth_date: str):
 
 def safe_goto_commit(page, url, wait_sec=3.0):
     """Hech qachon TimeoutError berib to'xtab qolmaydigan xavfsiz o'tish funksiyasi!"""
-    for _ in range(2):
-        try:
-            page.goto(url, wait_until="domcontentloaded", timeout=25000)
-            time.sleep(wait_sec)
-        except Exception:
-            try:
-                page.goto(url, wait_until="commit", timeout=20000)
-                time.sleep(wait_sec + 2.0)
-            except Exception as e:
-                print(f"   [Ogohlantirish] Sahifa yuklanishida kechikish: {str(e)[:80]}")
-                time.sleep(2.0)
-
-        # Next.js Application error (client-side exception) bo'lsa darhol reload qilamiz:
-        try:
-            body_txt = (page.inner_text("body") or "").lower()
-            if "client-side exception" in body_txt or "application error" in body_txt:
-                print("   [!] Next.js client-side exception aniqlandi, sahifa qayta yuklanmoqda (reload)...")
-                page.reload(wait_until="domcontentloaded", timeout=20000)
-                time.sleep(wait_sec + 1.0)
-        except Exception:
-            pass
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=25000)
+        time.sleep(wait_sec)
         return True
+    except Exception:
+        try:
+            page.goto(url, wait_until="commit", timeout=20000)
+            time.sleep(wait_sec + 2.0)
+            return True
+        except Exception as e:
+            print(f"   [Ogohlantirish] Sahifa yuklanishida kechikish: {str(e)[:80]}")
+            time.sleep(2.0)
     return False
 
 def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, student_password):
@@ -1661,19 +1629,6 @@ def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, stu
         print("   Coursera 'Generativ AI' kursi biriktirilmoqda...")
         safe_goto_commit(page, "https://aileaders.uz/courses", wait_sec=2.8)
         time.sleep(1.0)
-
-        # Agar Aileaders da Next.js exception chiqsa, reload qilamiz:
-        for _ in range(3):
-            try:
-                b_txt = (page.inner_text("body") or "").lower()
-                if "client-side exception" in b_txt or "application error" in b_txt:
-                    print("   [!] Aileaders courses xatosi aniqlandi, sahifa yangilanmoqda (reload)...")
-                    page.reload(wait_until="domcontentloaded", timeout=20000)
-                    time.sleep(2.5)
-                else:
-                    break
-            except Exception:
-                break
         # 1. Telegram yoki boshqa modalni yopish
         page.evaluate("""() => {
             const btns = Array.from(document.querySelectorAll('button'));
