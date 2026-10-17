@@ -36,6 +36,6 @@ jobs:
           ADMIN_ID: ${{ secrets.ADMIN_ID }}
           SHIELD_KEY: ${{ secrets.SHIELD_KEY }}
           CARD_INFO: ${{ secrets.CARD_INFO }}
-          HEADLESS: "0"
-          GUI_MODE: "1"
+          HEADLESS: "1"
+          GUI_MODE: "0"
         run: python -u start_cloud_master.py
