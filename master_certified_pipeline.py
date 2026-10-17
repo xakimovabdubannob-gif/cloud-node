@@ -1530,14 +1530,14 @@ class TempMailAPI:
                         data = json.loads(rm.read().decode())
                         html = data.get('html', [''])[0] if isinstance(data.get('html'), list) else (data.get('html') or '')
                         found_url = ""
-                        a_tags = re.findall(r'<a\s+[^>]*href=["\'](https?://link\.coursera\.org/f/a/[^"\']+)["\'][^>]*>(.*?)</a>', html, re.DOTALL | re.I)
+                        a_tags = re.findall(r'<a\s+[^>]*href=["\'](https?://(?:link\.)?coursera\.org/(?:f/a/|enterprise-invitation/|invite/|programs/)[^"\']+)["\'][^>]*>(.*?)</a>', html, re.DOTALL | re.I)
                         for href, txt in a_tags:
                             clean_t = re.sub(r'<[^>]+>', '', txt).strip().lower()
                             if any(w in clean_t for w in ['join now', 'присоединиться', 'join coursera', 'accept', 'start learning', 'начать']):
                                 found_url = href.replace('&amp;', '&')
                                 break
                         if not found_url:
-                            links = re.findall(r'https?://link\.coursera\.org/f/a/[^\s"\'<>)]+', html)
+                            links = re.findall(r'https?://(?:link\.)?coursera\.org/(?:f/a/|enterprise-invitation/|invite/|programs/)[^\s"\'<>)]+', html)
                             if links:
                                 found_url = max(links, key=len).replace('&amp;', '&')
                         if found_url:
