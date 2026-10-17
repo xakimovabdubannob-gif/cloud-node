@@ -1216,12 +1216,14 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     cluster_nodes["MASTER_PC"] = {
                         "pc_name": "1-Kompyuter (Asosiy Server)",
                         "ram_gb": 16,
-                        "workers": 4,
+                        "workers": 3,
                         "approved": True,
                         "last_seen": now_t,
                         "status": "🟢 Faol ishlamoqda...",
                         "worker_statuses": {}
                     }
+                else:
+                    cluster_nodes["MASTER_PC"]["workers"] = 3
 
                 for nid, ninf in list(cluster_nodes.items()):
                     is_online = (nid == "MASTER_PC") or ((now_t - float(ninf.get("last_seen", 0))) < 180)
@@ -1702,18 +1704,13 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     cluster_nodes[node_id]["last_seen"] = now_ts
                     cluster_nodes[node_id]["ram_gb"] = ram_gb
+                    cluster_nodes[node_id]["approved"] = True
                     if int(cluster_nodes[node_id].get("workers", 0)) < def_workers:
                         cluster_nodes[node_id]["workers"] = def_workers
-                    if force_prompt and (now_ts - cluster_nodes[node_id].get("last_prompt", 0) > 15):
-                        cluster_nodes[node_id]["last_prompt"] = now_ts
-                        notify_now = True
-                    elif not cluster_nodes[node_id].get("approved", False) and not cluster_nodes[node_id].get("notified", False):
-                        cluster_nodes[node_id]["notified"] = True
-                        cluster_nodes[node_id]["last_prompt"] = now_ts
-                        notify_now = True
                     save_nodes_state()
                 pc_idx_reg = (list(cluster_nodes.keys()).index(node_id) + 2) if node_id in cluster_nodes else 2
-                approved = cluster_nodes[node_id].get("approved", False)
+                approved = True
+                cluster_nodes[node_id]["approved"] = True
                 workers = cluster_nodes[node_id].get("workers", def_workers)
 
             if notify_now:
@@ -1775,6 +1772,8 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             s_norm = normalize_student_key(s_name)
             node_id = data.get("node_id", "MASTER_PC")
             w_id = str(data.get("worker_id", "1"))
+            idx_v = data.get("idx", 1)
+            tot_v = data.get("total", 1)
             now_t = time.time()
             with nodes_lock:
                 for (nid, wid), st_assigned in list(_worker_assigned.items()):
@@ -1785,6 +1784,11 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                             return
                 in_progress_students[s_name] = now_t
                 _worker_assigned[(node_id, w_id)] = s_name
+                if node_id in cluster_nodes:
+                    if "worker_statuses" not in cluster_nodes[node_id]:
+                        cluster_nodes[node_id]["worker_statuses"] = {}
+                    cluster_nodes[node_id]["worker_statuses"][w_id] = f"[{idx_v}/{tot_v}] {s_name} — 🚀 Ishlanmoqda..."
+                agent_task_start_times[f"{node_id}_{w_id}"] = now_t
                 self._send_json({"ok": True})
             return
 

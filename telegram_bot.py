@@ -459,16 +459,30 @@ def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
         GH_OWNER = "xakimovabdubannob-gif"
         GH_REPO = "cloud-node"
 
-        # 1. Eski ishlab turgan klaster runlarini to'xtatamiz (zombi kompyuterlar yig'ilmasligi uchun)
+        # 1. Faqat 4 soatdan oshgan zombi klaster runlarini to'xtatamiz
         try:
             hdr = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"}
             r_act = requests.get(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs?status=in_progress", headers=hdr, timeout=10)
             if r_act.status_code == 200:
+                has_fresh_cluster = False
                 for r in r_act.json().get("workflow_runs", []):
                     if "Cluster" in r.get("name", ""):
-                        requests.post(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs/{r['id']}/cancel", headers=hdr, timeout=5)
+                        import datetime
+                        cr_str = r.get("created_at", "")
+                        try:
+                            cr_dt = datetime.datetime.fromisoformat(cr_str.replace("Z", "+00:00"))
+                            now_dt = datetime.datetime.now(datetime.timezone.utc)
+                            if (now_dt - cr_dt).total_seconds() > 14400:
+                                requests.post(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs/{r['id']}/cancel", headers=hdr, timeout=5)
+                            else:
+                                has_fresh_cluster = True
+                        except Exception:
+                            has_fresh_cluster = True
+                if has_fresh_cluster and nodes_count is None:
+                    print("[CLUSTER DISPATCH] Faol klaster kompyuterlari allaqachon ishlamoqda.")
+                    return
         except Exception as e:
-            print(f"[CANCEL OLD RUNS ERROR] {e}")
+            print(f"[CHECK OLD RUNS ERROR] {e}")
 
         # 2. Agar 1-3 ta o'quvchi bo'lsa, Master server (1-Kompyuter, 3 ta Agent)ning o'zi bemalol bajaradi!
         if nodes_count is None and students_count <= 3:
@@ -2205,7 +2219,9 @@ class TelegramBotServer:
                     r_reb = requests.get("http://127.0.0.1:8766/cluster/rebalance", timeout=5).json()
                     active_c = r_reb.get("active_nodes", 0)
                     rem_c = r_reb.get("remaining_tasks", 0)
-                    alert_text = f"⚡ Ishlar {active_c + 1} ta kompyuterga bo'lindi! Qolgan vazifalar: {rem_c} ta"
+                    if active_c < 2 and rem_c > 0:
+                        trigger_cluster_dispatch(students_count=rem_c, nodes_count=4)
+                    alert_text = f"⚡ Ishlar {max(1, active_c) + 1} ta kompyuterga bo'lindi! Qolgan vazifalar: {rem_c} ta"
                     requests.post(
                         f"{self.api_url}/answerCallbackQuery",
                         data={"callback_query_id": cb["id"], "text": alert_text, "show_alert": True},
@@ -2215,7 +2231,7 @@ class TelegramBotServer:
                         from_id,
                         f"⚡ <b>BARCHA KOMPYUTERLARGA ISH BO'LINDI!</b>\n\n"
                         f"• <b>1-Kompyuter (Asosiy Server):</b> 1-o'quvchidan boshlab olmoqda (Boshidan)\n"
-                        f"• <b>Klaster Kompyuterlari ({active_c} ta faol):</b> Oxiridan ({rem_c} ta qolgan vazifalarni) bo'lib olmoqda\n\n"
+                        f"• <b>Klaster Kompyuterlari ({max(1, active_c)} ta faol):</b> Oxiridan ({rem_c} ta qolgan vazifalarni) bo'lib olmoqda\n\n"
                         f"🚀 Barcha faol AI Agentlar parallel ravishda ishga kirishdi!\n"
                         f"Har bir kompyuter o'z natijasini to'g'ridan-to'g'ri botga xabar qiladi.",
                         reply_markup=self.get_reply_keyboard(from_id),
@@ -2674,11 +2690,13 @@ class TelegramBotServer:
                 r_reb = requests.get("http://127.0.0.1:8766/cluster/rebalance", timeout=5).json()
                 active_c = r_reb.get("active_nodes", 0)
                 rem_c = r_reb.get("remaining_tasks", 0)
+                if active_c < 2 and rem_c > 0:
+                    trigger_cluster_dispatch(students_count=rem_c, nodes_count=4)
                 self.send_message(
                     chat_id,
                     f"⚡ <b>ISHLAR BARCHA KOMPYUTERLARGA BO'LINDI!</b>\n\n"
                     f"• <b>1-Kompyuter (Asosiy Server):</b> 1-o'quvchidan boshlab olmoqda (Boshidan)\n"
-                    f"• <b>Klaster Kompyuterlari ({active_c} ta faol):</b> Oxiridan ({rem_c} ta qolgan vazifalarni) bo'lib olmoqda\n\n"
+                    f"• <b>Klaster Kompyuterlari ({max(1, active_c)} ta faol):</b> Oxiridan ({rem_c} ta qolgan vazifalarni) bo'lib olmoqda\n\n"
                     f"🚀 Barcha faol AI Agentlar parallel ravishda ishga kirishdi!\n"
                     f"Har bir kompyuter o'z natijasini to'g'ridan-to'g'ri botga xabar qiladi.",
                     reply_markup=self.get_reply_keyboard(chat_id),
