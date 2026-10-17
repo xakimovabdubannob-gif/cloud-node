@@ -961,30 +961,32 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                     time.sleep(0.5)
 
                 if sub_2_clicked:
-                    print(f"[{q_name}] 2-Submit muvaffaqiyatli bosildi! Natija baholanishi kutilmoqda...")
+                    print(f"[{q_name}] 2-Submit muvaffaqiyatli bosildi! Natija yuklanishi va baholanishi kutilmoqda...")
+                    # 2-Submit bosilgandan so'ng Coursera formani qabul qilib /attempt dan chiqishini sabr bilan kutamiz (15 soniyagacha)
+                    attempt_exited = False
+                    for _ in range(30):
+                        time.sleep(0.5)
+                        if "/attempt" not in page.url:
+                            attempt_exited = True
+                            break
+                        # Sahifaning o'zida ham You passed / 100% paydo bo'lsa
+                        txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+                        if "you passed" in txt.lower() or "100%" in txt or "вы прошли" in txt.lower():
+                            attempt_exited = True
+                            break
+
+                    time.sleep(2.0)
+                    dismiss_all_popups(page)
+                    after_text = page.evaluate("() => (document.body ? document.body.innerText : '')")
+                    low_txt = after_text.lower()
+
+                    if "you passed" in low_txt or "100%" in after_text or "вы прошли" in low_txt or ("passed" in low_txt and "not passed" not in low_txt) or attempt_exited or ("/attempt" not in page.url):
+                        print(f"[+] [{q_name}] MUVAFFAQIYATLI TOPSHIRILDI VA TASDIQLANDI!")
+                        return True
+                    else:
+                        print(f"[!] [{q_name}] Natija hali 100% ko'rinmadi, keyingi urinishda qayta topshiriladi...")
                 else:
                     print(f"[!] [{q_name}] {modal_wait_total} soniya ichida modal oyna chiqmadi, qayta tekshiriladi...")
-
-                # Natija (100% / You passed!) chiqishini kutamiz (4s, 8s, 12s)
-                grade_wait_total = check_try * 4
-                for _ in range(int(grade_wait_total / 0.5)):
-                    if "/attempt" not in page.url:
-                        break
-                    time.sleep(0.5)
-
-                for _ in range(int(grade_wait_total / 0.5)):
-                    after_text = page.evaluate("() => (document.body ? document.body.innerText : '')")
-                    if "You passed!" in after_text or "Your grade: 100%" in after_text or "Вы прошли!" in after_text:
-                        break
-                    time.sleep(0.5)
-
-                dismiss_all_popups(page)
-                after_text = page.evaluate("() => (document.body ? document.body.innerText : '')")
-                if "You passed!" in after_text or "Your grade: 100%" in after_text or "Вы прошли!" in after_text:
-                    print(f"[+] [{q_name}] BIRINCHI URINISHDA MUVAFFAQIYATLI 100% TOPSHIRILDI ('Your grade: 100%')!")
-                    return True
-                else:
-                    print(f"[!] [{q_name}] Natija hali 100% ko'rinmadi, keyingi urinishda qayta topshiriladi...")
         except Exception as e:
             print(f"[!] [{q_name}] {check_try}-urinishda xatolik ushlandi (qayta harakat qilinadi): {e}")
             time.sleep(1.5)
@@ -1115,12 +1117,22 @@ def extract_certificate_with_3_checks(page, student_name=""):
         try:
             mult = c_try
             print(f"[SERTIFIKAT QIDIRUV #{c_try}/3 | Kutish: {mult}x] Tekshirilmoqda...")
-            # 1. Certificates tab
-            safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=CERTIFICATES")
-            time.sleep(4.5 * mult)
+            # 1. Global Accomplishments sahifasi (/account/accomplishments)
+            safe_navigate(page, "https://www.coursera.org/account/accomplishments")
+            time.sleep(3.5 * mult)
             dismiss_all_popups(page)
             links = page.evaluate("""() => Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h && h.includes('/account/accomplishments/verify/'))""")
             if links:
+                print(f"[SERTIFIKAT TOPILDI] {links[0]}")
+                return links[0]
+
+            # 2. Certificates tab (DEDC portali)
+            safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=CERTIFICATES")
+            time.sleep(3.5 * mult)
+            dismiss_all_popups(page)
+            links = page.evaluate("""() => Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h && h.includes('/account/accomplishments/verify/'))""")
+            if links:
+                print(f"[SERTIFIKAT TOPILDI] {links[0]}")
                 return links[0]
 
             vc = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Посмотреть сертификат'), button:has-text('Посмотреть сертификат')").first
@@ -1128,6 +1140,7 @@ def extract_certificate_with_3_checks(page, student_name=""):
                 vc.click(force=True)
                 time.sleep(4.5 * mult)
                 if "/account/accomplishments/verify/" in page.url:
+                    print(f"[SERTIFIKAT TOPILDI] {page.url}")
                     return page.url
 
             # Agar CERTIFICATES bo'sh bo'lsa, IN_PROGRESS tabini tekshiramiz: qaysi Quiz yoki Video qolib ketganini ko'ramiz!
