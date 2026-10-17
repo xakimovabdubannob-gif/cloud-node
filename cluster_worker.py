@@ -257,7 +257,7 @@ class ClusterWorkerNode:
             status = "INCOMPLETE"
             t_work_start = time.time()
             try:
-                is_headless = os.environ.get("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
+                is_headless = os.environ.get("HEADLESS", "0").strip().lower() in ("1", "true", "yes")
                 status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=local_wid)
             except Exception as e:
                 print(f"[CLUSTER WORKER #{local_wid} XATO] {e}")
@@ -286,11 +286,131 @@ class ClusterWorkerNode:
                 except Exception:
                     time.sleep(2)
 
+    def _capture_screen_jpeg_b64(self):
+        try:
+            tmp_p = os.path.join(os.environ.get("TEMP", "."), f"cw_scr_{int(time.time()*1000)}.jpg")
+            ps_p = tmp_p.replace("\\", "/")
+            ps_c = (
+                "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; "
+                "$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; "
+                "$bmp = New-Object System.Drawing.Bitmap($b.Width, $b.Height); "
+                "$g = [System.Drawing.Graphics]::FromImage($bmp); "
+                "$g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size); "
+                f"$bmp.Save('{ps_p}', [System.Drawing.Imaging.ImageFormat]::Jpeg); "
+                "$g.Dispose(); $bmp.Dispose();"
+            )
+            subprocess.run(
+                ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_c],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                creationflags=0x08000000 if os.name == "nt" else 0
+            )
+            if os.path.exists(tmp_p):
+                import base64
+                with open(tmp_p, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode("ascii")
+                try:
+                    os.remove(tmp_p)
+                except Exception:
+                    pass
+                return b64
+        except Exception:
+            pass
+        return ""
+
+    def _execute_remote_action(self, act):
+        try:
+            import ctypes
+            u32 = ctypes.windll.user32
+            atype = act.get("type")
+            if atype == "click":
+                x = int(act.get("x", 0))
+                y = int(act.get("y", 0))
+                btn = act.get("btn", "left")
+                u32.SetCursorPos(x, y)
+                time.sleep(0.02)
+                if btn == "right":
+                    u32.mouse_event(0x0008, 0, 0, 0, 0)
+                    time.sleep(0.04)
+                    u32.mouse_event(0x0010, 0, 0, 0, 0)
+                else:
+                    u32.mouse_event(0x0002, 0, 0, 0, 0)
+                    time.sleep(0.04)
+                    u32.mouse_event(0x0004, 0, 0, 0, 0)
+            elif atype == "key":
+                vk_map = {"enter": 0x0D, "backspace": 0x08, "tab": 0x09, "esc": 0x1B, "space": 0x20}
+                vk = vk_map.get(str(act.get("key", "")).lower())
+                if vk:
+                    u32.keybd_event(vk, 0, 0, 0)
+                    time.sleep(0.04)
+                    u32.keybd_event(vk, 0, 2, 0)
+            elif atype == "type":
+                txt = str(act.get("text", ""))
+                escaped = txt.replace("'", "''").replace("{", "{{}").replace("}", "{}}")
+                ps = f"$w = New-Object -ComObject WScript.Shell; $w.SendKeys('{escaped}')"
+                subprocess.run(["powershell", "-NoProfile", "-Command", ps], timeout=5)
+            elif atype == "hotkey":
+                combo = str(act.get("combo", "")).lower()
+                if combo in ("ctrl+a", "^a"):
+                    u32.keybd_event(0x11, 0, 0, 0)
+                    time.sleep(0.04)
+                    u32.keybd_event(0x41, 0, 0, 0)
+                    time.sleep(0.04)
+                    u32.keybd_event(0x41, 0, 2, 0)
+                    time.sleep(0.04)
+                    u32.keybd_event(0x11, 0, 2, 0)
+                elif combo in ("ctrl+v", "^v"):
+                    u32.keybd_event(0x11, 0, 0, 0)
+                    time.sleep(0.04)
+                    u32.keybd_event(0x56, 0, 0, 0)
+                    time.sleep(0.04)
+                    u32.keybd_event(0x56, 0, 2, 0)
+                    time.sleep(0.04)
+                    u32.keybd_event(0x11, 0, 2, 0)
+                elif combo in ("ctrl+c", "^c"):
+                    u32.keybd_event(0x11, 0, 0, 0)
+                    time.sleep(0.04)
+                    u32.keybd_event(0x43, 0, 0, 0)
+                    time.sleep(0.04)
+                    u32.keybd_event(0x43, 0, 2, 0)
+                    time.sleep(0.04)
+                    u32.keybd_event(0x11, 0, 2, 0)
+            elif atype == "scroll":
+                delta = 360 if act.get("dir") == "up" else -360
+                u32.mouse_event(0x0800, 0, 0, delta, 0)
+        except Exception as e:
+            print(f"[EXECUTE REMOTE ACTION ERROR] {e}")
+
+    def _remote_desktop_agent(self):
+        need_screen = False
+        while True:
+            time.sleep(0.7 if need_screen else 1.2)
+            if not self.master_url:
+                continue
+            try:
+                body = {"node_id": self.node_id}
+                if need_screen:
+                    b64 = self._capture_screen_jpeg_b64()
+                    if b64:
+                        body["image_b64"] = b64
+                r = requests.post(f"{self.master_url}/cluster/node_remote_sync", json=body, timeout=8)
+                if r.status_code == 200:
+                    resp = r.json()
+                    need_screen = bool(resp.get("need_screen", False))
+                    actions = resp.get("actions", [])
+                    for act in actions:
+                        self._execute_remote_action(act)
+            except Exception:
+                pass
+
     def run_forever(self):
         print("=" * 70)
         print(f"🖥 UNIVERSAL CLUSTER WORKER ISHGA TUSHDI: {self.pc_name} (RAM: {self.ram_gb} GB)")
         print("Asosiy bot serveri qidirilmoqda...")
         print("=" * 70)
+
+        threading.Thread(target=self._remote_desktop_agent, daemon=True).start()
 
         first_reg = True
         started_workers = set()
