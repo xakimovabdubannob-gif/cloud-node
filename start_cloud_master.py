@@ -12,7 +12,12 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8552767203:AAHk6KsW5r7PY6MC69A1ibYrz1c6aTmjLxM")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+if not BOT_TOKEN and os.path.exists("bot_config.json"):
+    try:
+        BOT_TOKEN = json.load(open("bot_config.json", encoding="utf-8")).get("bot_token", "").strip()
+    except Exception:
+        pass
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "6580113791"))
 GH_TOKEN = os.environ.get("GH_TOKEN", "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1])
 CARD_INFO = os.environ.get("CARD_INFO", "5614 6812 1100 2260 (QOBILOV OBIDJON)")
@@ -44,12 +49,19 @@ for fn in ("akkountlar.txt", "natijalar_sertifikatlar.txt", "xatolar.txt"):
 
 os.makedirs("bot_orders", exist_ok=True)
 
+existing_vid = ""
+if os.path.exists("bot_config.json"):
+    try:
+        existing_vid = json.load(open("bot_config.json", encoding="utf-8")).get("start_video_id", "")
+    except Exception:
+        pass
+
 # bot_config.json ni to'liq sozlaymiz
 cfg = {
     "bot_token": BOT_TOKEN,
     "admin_id": ADMIN_ID,
     "card_info": CARD_INFO,
-    "start_video_id": ""
+    "start_video_id": existing_vid or "BAACAgIAAxkBAAIU3WrOPdbdiiRsTbulzMMEhGLCKddMAALeqAACJ_9hShDh7OsB9N58PQQ"
 }
 with open("bot_config.json", "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2, ensure_ascii=False)
