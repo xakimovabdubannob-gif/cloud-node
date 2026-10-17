@@ -360,7 +360,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         best_cand = None
         for chat_id, students in parsed_orders:
             total = len(students)
-            indices = range(total, 0, -1) if (node_id and node_id != "MASTER_PC") else range(1, total + 1)
+            indices = range(1, total + 1)
             for idx in indices:
                 st = students[idx - 1]
                 s_name = st.get("name", "")
@@ -380,7 +380,6 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
 
         if best_cand is not None:
             chat_id, idx, total, st, s_name = best_cand
-            _state_mem_cache.setdefault("try_counts", {})[s_name] = _state_mem_cache["try_counts"].get(s_name, 0) + 1
             in_progress_students[s_name] = now
             acc_line = ""
             if s_name in accs:
