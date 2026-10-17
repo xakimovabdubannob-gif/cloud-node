@@ -1304,13 +1304,19 @@ class TelegramBotServer:
                 self.edit_message(_cid, _mid, "\n".join(lines_txt))
 
         is_headless = os.environ.get("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
+        t_proc_start = time.time()
         result_status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=worker_id)
+        dur_sec = max(1, int(time.time() - t_proc_start))
+        dur_m = dur_sec // 60
+        dur_s = dur_sec % 60
+        dur_str = f"{dur_m} daqiqa {dur_s} soniya" if dur_m > 0 else f"{dur_s} soniya"
         try:
             requests.post("http://127.0.0.1:8766/cluster/finish_task", json={
                 "node_id": "MASTER_PC",
                 "worker_id": worker_id,
                 "status": result_status,
                 "student": st,
+                "duration_sec": dur_sec,
             }, timeout=2)
         except Exception:
             pass
@@ -1327,6 +1333,7 @@ class TelegramBotServer:
                 f"🎉 <b>[{idx}/{total}] MUVAFFAQIYATLI OLINDI!</b>\n"
                 f"🖥 <b>{pc1_tag}</b>\n"
                 f"👤 <b>{s_name}</b>\n"
+                f"⏱ Sarflangan vaqt: <b>{dur_str}</b>\n"
                 f"📧 Login: <code>{ac.get('email', '—')}</code>\n"
                 f"🔑 Parol: <code>{ac.get('password', '—')}</code>\n"
                 f"🏅 Sertifikat: {c_url}",
@@ -1540,12 +1547,13 @@ class TelegramBotServer:
             return {
                 "keyboard": [
                     [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
+                    [{"text": "🤖 Robot Agentlar Dashboard"}, {"text": "🌐 Web Any (Brauzerda)"}],
                     [{"text": "🧹 Keshni tozalash (Yangi buyurtma)"}, {"text": "🖥 Klaster (Kompyuterlar holati)"}],
                     [{"text": "⚡ Ishlarni bo'lish (Klasterga)"}, {"text": "📊 Tahlil va Jarayon"}],
                     [{"text": "⚡ Jonli Log (Console)"}, {"text": "📥 Tayyor Sertifikatlar (Excel)"}],
                     [{"text": "💰 Foyda va Kassa"}, {"text": "📸 Kompyuterdan Skrinshot"}],
-                    [{"text": "🖥 AnyDesk Jonli Ulanish"}, {"text": "🌐 Web Any (Brauzerda)"}],
-                    [{"text": "📄 Bo'sh Shablon (.xlsx)"}, {"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
+                    [{"text": "🖥 AnyDesk Jonli Ulanish"}, {"text": "📄 Bo'sh Shablon (.xlsx)"}],
+                    [{"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
                 ],
                 "resize_keyboard": True,
                 "is_persistent": False,
@@ -2498,11 +2506,11 @@ class TelegramBotServer:
                 )
             return
 
-        if text in ("🌐 Web Any (Brauzerda)", "🌐 Web Any", "/webany", "/web_any", "/anyweb", "web any", "webany"):
+        if text in ("🤖 Robot Agentlar Dashboard", "🤖 Dashboard", "/dashboard", "/robots", "/agentlar"):
             admin_input_state.pop(chat_id, None)
             tunnel_url = ""
             try:
-                r = requests.get("http://127.0.0.1:8766/cluster/dashboard_data", timeout=3)
+                r = requests.get("http://127.0.0.1:8766/cluster/tg_status", timeout=3)
                 if r.status_code == 200:
                     tunnel_url = r.json().get("tunnel_url", "")
             except Exception:
@@ -2514,23 +2522,76 @@ class TelegramBotServer:
                     pass
 
             if tunnel_url:
+                dash_url = f"{tunnel_url}/dashboard"
                 web_url = f"{tunnel_url}/web_any"
                 inline_markup = {
                     "inline_keyboard": [
-                        [{"text": "🌐 Web AnyDesk ni Brauzerda Ochish", "url": web_url}],
-                        [{"text": "🔄 Yangilash", "callback_data": "refresh_tahlil"}]
+                        [{"text": "🤖 Robot Dashboardni Ochish (Mini App)", "web_app": {"url": dash_url}}],
+                        [{"text": "🔗 Maxfiy Havolada Ochish", "url": dash_url}],
+                        [{"text": "🌐 Web Any (Jonli Ekran)", "web_app": {"url": web_url}}]
+                    ]
+                }
+                self.send_message(
+                    chat_id,
+                    f"🤖 <b>ROBOT AGENTLAR JONLI DASHBOARD:</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"👑 <b>Bosh Ish Beruvchi Robot:</b> Barcha kompyuterlar va navbatdagi ishlarni nazorat qiladi\n"
+                    f"💼 <b>Agentlar Holati:</b> Har bir robotning qaysi o'quvchini ishlayotgani (klaviaturada yozish animatsiyasi), bo'sh yoki o'chiqligi\n"
+                    f"⏱ <b>Tezlik va Sertifikatlar:</b> Har bir agent nechta sertifikat olgani va oxirgi sertifikatni necha minutda bajargani real vaqtda ko'rsatiladi!\n\n"
+                    f"👇 Quyidagi tugmani bosing:",
+                    reply_markup=inline_markup
+                )
+            else:
+                self.send_message(
+                    chat_id,
+                    "⏳ <b>Dashboard tunnel tayyorlanmoqda...</b>\n"
+                    "Cloudflare tunnel ulanishi bilan ochiladi. Iltimos, 10-15 soniyadan so'ng qayta bosing.",
+                    reply_markup=self.get_reply_keyboard(chat_id)
+                )
+            return
+
+        if text in ("🌐 Web Any (Brauzerda)", "🌐 Web Any", "/webany", "/web_any", "/anyweb", "web any", "webany"):
+            admin_input_state.pop(chat_id, None)
+            tunnel_url = ""
+            try:
+                r = requests.get("http://127.0.0.1:8766/cluster/dashboard_data", timeout=3)
+                if r.status_code == 200:
+                    tunnel_url = r.json().get("tunnel_url", "")
+            except Exception:
+                pass
+            if not tunnel_url:
+                try:
+                    r2 = requests.get("http://127.0.0.1:8766/cluster/tg_status", timeout=3)
+                    if r2.status_code == 200:
+                        tunnel_url = r2.json().get("tunnel_url", "")
+                except Exception:
+                    pass
+            if not tunnel_url and os.path.exists("cluster_url.txt"):
+                try:
+                    tunnel_url = open("cluster_url.txt", "r", encoding="utf-8").read().strip()
+                except Exception:
+                    pass
+
+            if tunnel_url:
+                web_url = f"{tunnel_url}/web_any"
+                dash_url = f"{tunnel_url}/dashboard"
+                inline_markup = {
+                    "inline_keyboard": [
+                        [{"text": "🌐 Web AnyDesk (Mini App)", "web_app": {"url": web_url}}],
+                        [{"text": "🔗 Brauzerda ochish", "url": web_url}],
+                        [{"text": "🤖 Robot Agentlar Dashboard", "web_app": {"url": dash_url}}]
                     ]
                 }
                 self.send_message(
                     chat_id,
                     f"🌐 <b>WEB ANYDESK — JONLI EKRAN VA BOSHQARUV:</b>\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"AnyDesk ilovasi o'rnatilishi shart emas! To'g'ridan-to'g'ri telefoningiz yoki kompyuteringiz brauzerida ochiladi.\n\n"
+                    f"AnyDesk ilovasi o'rnatilishi shart emas! To'g'ridan-to'g'ri Telegram Mini App yoki brauzeringizda ochiladi.\n\n"
                     f"🔗 <b>Jonli havola:</b>\n{web_url}\n\n"
                     f"📱 <b>Qulayliklari:</b>\n"
                     f"• Ekranni har 1 soniyada jonli ko'rsatib turadi\n"
-                    f"• Barmog'ingiz bilan rasmning istalgan joyiga bossangiz — virtual kompyuterda aynan o'sha kordinata bosiladi!\n"
-                    f"• Scroll qilish, matn yozish va Enter tugmalari mavjud.",
+                    f"• Barmog'ingiz bilan rasmning istalgan joyiga bossangiz — virtual kompyuterda ko'rinadigan sichqoncha bilan kordinata bosiladi!\n"
+                    f"• Qulay yozish paneli, parol, Tab, Ctrl+A, Ctrl+V tugmalari mavjud.",
                     reply_markup=inline_markup
                 )
             else:

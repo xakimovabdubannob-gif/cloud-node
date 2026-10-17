@@ -103,6 +103,10 @@ if os.path.exists(NODES_STATE_FILE):
 public_tunnel_url = ""
 TRIED_CLUSTER_FILE = "cluster_tried_students.json"
 tried_cluster_set = {"MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"}
+agent_cert_counts = {}
+agent_task_start_times = {}
+agent_last_durations = {}
+recent_completed_records = []
 
 
 def save_tried_cluster():
@@ -496,6 +500,42 @@ def web_any_type(text):
     except Exception:
         return False
 
+def web_any_hotkey(combo):
+    try:
+        import ctypes
+        u32 = ctypes.windll.user32
+        combo = str(combo).lower().strip()
+        if combo in ("ctrl+a", "^a"):
+            u32.keybd_event(0x11, 0, 0, 0)
+            time.sleep(0.04)
+            u32.keybd_event(0x41, 0, 0, 0)
+            time.sleep(0.04)
+            u32.keybd_event(0x41, 0, 2, 0)
+            time.sleep(0.04)
+            u32.keybd_event(0x11, 0, 2, 0)
+            return True
+        elif combo in ("ctrl+v", "^v"):
+            u32.keybd_event(0x11, 0, 0, 0)
+            time.sleep(0.04)
+            u32.keybd_event(0x56, 0, 0, 0)
+            time.sleep(0.04)
+            u32.keybd_event(0x56, 0, 2, 0)
+            time.sleep(0.04)
+            u32.keybd_event(0x11, 0, 2, 0)
+            return True
+        elif combo in ("ctrl+c", "^c"):
+            u32.keybd_event(0x11, 0, 0, 0)
+            time.sleep(0.04)
+            u32.keybd_event(0x43, 0, 0, 0)
+            time.sleep(0.04)
+            u32.keybd_event(0x43, 0, 2, 0)
+            time.sleep(0.04)
+            u32.keybd_event(0x11, 0, 2, 0)
+            return True
+    except Exception as e:
+        print(f"[HOTKEY ERROR] {e}")
+    return False
+
 WEB_ANY_HTML = """<!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -540,6 +580,11 @@ WEB_ANY_HTML = """<!DOCTYPE html>
 
 <div class="screen-wrap">
   <div class="screen-container" id="screenBox">
+    <div id="virtualMouse" style="position: absolute; width: 22px; height: 26px; pointer-events: none; transition: left 0.1s ease-out, top 0.1s ease-out; z-index: 100; display: none;">
+      <svg viewBox="0 0 24 24" width="22" height="26" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));">
+        <path fill="#38bdf8" stroke="#ffffff" stroke-width="1.5" d="M3 3l7 18 3-7 7-3L3 3z"/>
+      </svg>
+    </div>
     <img id="screenImg" src="/api/screen" alt="Virtual Screen">
   </div>
 </div>
@@ -551,6 +596,10 @@ WEB_ANY_HTML = """<!DOCTYPE html>
   <button onclick="sendKey('backspace')">⌫ O'chirish</button>
   <button onclick="sendScroll('up')">⬆️ Scroll</button>
   <button onclick="sendScroll('down')">⬇️ Scroll</button>
+  <button onclick="quickType('@Ak101095')">📋 Parol</button>
+  <button onclick="sendKey('tab')">⇥ Tab</button>
+  <button onclick="quickHotkey('ctrl+a')">Ctrl+A</button>
+  <button onclick="quickHotkey('ctrl+v')">Ctrl+V</button>
   
   <div class="input-group">
     <input type="text" id="textInput" placeholder="Matn yozish..." onkeydown="if(event.key==='Enter') sendText()">
@@ -636,6 +685,17 @@ function handlePointerClick(e) {
   const realX = Math.round(clickX * scaleX);
   const realY = Math.round(clickY * scaleY);
   
+  // Virtual mouse cursor joylashtirish
+  const vMouse = document.getElementById('virtualMouse');
+  if (vMouse) {
+    vMouse.style.left = clickX + 'px';
+    vMouse.style.top = clickY + 'px';
+    vMouse.style.display = 'block';
+    vMouse.style.transform = 'scale(0.8)';
+    setTimeout(() => vMouse.style.transform = 'scale(1.0)', 150);
+  }
+
+  // Ripple animatsiyasi
   const ripple = document.createElement('div');
   ripple.className = 'click-ripple';
   ripple.style.left = clickX + 'px';
@@ -643,12 +703,12 @@ function handlePointerClick(e) {
   box.appendChild(ripple);
   setTimeout(() => ripple.remove(), 400);
   
-  statusBar.innerText = `👆 Bosilmoqda: (${realX}, ${realY})...`;
+  statusBar.innerText = `👆 Sichqoncha bosilmoqda: (${realX}, ${realY})...`;
   
   fetch(`/api/click?x=${realX}&y=${realY}&t=${Date.now()}`)
     .then(r => r.json())
     .then(res => {
-      statusBar.innerText = `✅ Bosildi: (${realX}, ${realY})`;
+      statusBar.innerText = `✅ Bosildi: (${realX}, ${realY}) | Kerak bo'lsa pastdan matn yozing`;
       setTimeout(forceRefresh, 250);
     })
     .catch(err => {
@@ -690,6 +750,301 @@ function sendText() {
       setTimeout(forceRefresh, 300);
     });
 }
+
+function quickType(val) {
+  statusBar.innerText = `⌨️ Kiritilmoqda: ${val}...`;
+  fetch(`/api/type?text=${encodeURIComponent(val)}&t=${Date.now()}`)
+    .then(r => r.json())
+    .then(() => {
+      statusBar.innerText = `✅ Kiritildi: ${val}`;
+      setTimeout(forceRefresh, 300);
+    });
+}
+
+function quickHotkey(combo) {
+  statusBar.innerText = `⌨️ ${combo}...`;
+  fetch(`/api/hotkey?combo=${combo}&t=${Date.now()}`)
+    .then(r => r.json())
+    .then(() => {
+      statusBar.innerText = `✅ ${combo} bosildi`;
+      setTimeout(forceRefresh, 300);
+    });
+}
+</script>
+</body>
+</html>
+"""
+
+# =============================================================================
+# ROBOT AGENTLAR JONLI DASHBOARD (SVG + CSS ANIMATSIYALI)
+# =============================================================================
+ROBOT_DASHBOARD_HTML = """<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🤖 Robot Agentlar Dashboard — UzbekCoders</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #070b14; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
+  header { background: #0f172a; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; position: sticky; top: 0; z-index: 50; }
+  .brand { font-size: 15px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
+  .header-actions { display: flex; align-items: center; gap: 8px; }
+  .btn { background: #1e293b; color: #f8fafc; border: 1px solid #334155; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; user-select: none; }
+  .btn:hover { background: #334155; border-color: #475569; }
+  .btn:active { transform: scale(0.96); }
+  .btn-primary { background: #0284c7; border-color: #0369a1; color: white; }
+  .btn-danger { background: #dc2626; border-color: #b91c1c; color: white; }
+  .container { max-width: 1200px; margin: 0 auto; width: 100%; padding: 14px; display: flex; flex-direction: column; gap: 16px; }
+  
+  .boss-card { background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); border: 1px solid #38bdf8; border-radius: 12px; padding: 18px 14px; box-shadow: 0 10px 30px -10px rgba(56, 189, 248, 0.25); display: flex; flex-direction: column; align-items: center; text-align: center; position: relative; overflow: hidden; }
+  .boss-avatar-wrap { position: relative; width: 100px; height: 100px; margin-bottom: 10px; animation: float 3s ease-in-out infinite; }
+  @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+  .boss-badge { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid #0284c7; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .boss-title { font-size: 17px; font-weight: 800; color: #fff; margin-bottom: 4px; }
+  .boss-subtitle { font-size: 12px; color: #94a3b8; margin-bottom: 14px; max-width: 520px; }
+  
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; width: 100%; }
+  .stat-box { background: rgba(15, 23, 42, 0.7); border: 1px solid #334155; border-radius: 8px; padding: 10px 8px; display: flex; flex-direction: column; align-items: center; }
+  .stat-val { font-size: 20px; font-weight: 800; color: #38bdf8; }
+  .stat-val.done { color: #4ade80; }
+  .stat-val.rem { color: #facc15; }
+  .stat-label { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+  
+  .section-title { font-size: 15px; font-weight: 700; color: #cbd5e1; display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .agents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  
+  .agent-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; position: relative; transition: all 0.2s ease; }
+  .agent-card.working { border-color: #0284c7; box-shadow: 0 4px 20px -2px rgba(2, 132, 199, 0.3); }
+  .agent-card.idle { border-color: #334155; opacity: 0.85; }
+  .agent-card.offline { border-color: #1e293b; opacity: 0.5; }
+  
+  .agent-header { display: flex; justify-content: space-between; align-items: center; }
+  .agent-name { font-size: 13px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 6px; }
+  
+  .status-pill { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; }
+  .status-pill.working { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid #22c55e; }
+  .status-pill.idle { background: rgba(248, 250, 252, 0.1); color: #cbd5e1; border: 1px solid #475569; }
+  .status-pill.offline { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid #ef4444; }
+  
+  .workstation { display: flex; align-items: center; gap: 12px; background: #070b14; border-radius: 8px; padding: 10px; border: 1px solid #1e293b; }
+  .robot-svg-wrap { width: 54px; height: 54px; flex-shrink: 0; }
+  
+  @keyframes typingArm { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+  .agent-card.working .arm-left { animation: typingArm 0.3s infinite ease-in-out; }
+  .agent-card.working .arm-right { animation: typingArm 0.3s infinite ease-in-out 0.15s; }
+  @keyframes monitorPulse { 0%, 100% { fill: #0284c7; } 50% { fill: #38bdf8; } }
+  .agent-card.working .monitor-screen { animation: monitorPulse 1.5s infinite; }
+  
+  .agent-details { flex: 1; min-width: 0; }
+  .detail-student { font-size: 12px; font-weight: 700; color: #38bdf8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .detail-step { font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .detail-timer { font-size: 11px; font-weight: 700; color: #a855f7; margin-top: 4px; display: inline-flex; align-items: center; gap: 4px; }
+  
+  .agent-metrics { display: flex; justify-content: space-between; font-size: 11px; padding-top: 6px; border-top: 1px solid #1e293b; color: #94a3b8; }
+  .agent-metrics b { color: #f1f5f9; }
+  
+  .recent-certs-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; }
+  .cert-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 6px; border-bottom: 1px solid #1e293b; font-size: 12px; }
+  .cert-item:last-child { border-bottom: none; }
+  .cert-info b { color: #f8fafc; }
+  .cert-info span { color: #94a3b8; }
+  .cert-dur { font-weight: 700; color: #4ade80; }
+  .empty-state { text-align: center; color: #64748b; padding: 20px; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span>🤖 Robot Agentlar Dashboard</span>
+  </div>
+  <div class="header-actions">
+    <a href="/web_any" class="btn btn-primary">🌐 Web Any</a>
+    <button class="btn btn-danger" onclick="exitDashboard()">❌ Chiqish</button>
+  </div>
+</header>
+
+<div class="container">
+  <!-- BOSH ISH BERUVCHI ROBOT -->
+  <div class="boss-card">
+    <div class="boss-badge">👑 Bosh Ish Beruvchi Robot (Master Commander)</div>
+    
+    <div class="boss-avatar-wrap">
+      <svg viewBox="0 0 100 100" width="100" height="100">
+        <line x1="50" y1="20" x2="50" y2="8" stroke="#38bdf8" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="50" cy="7" r="5" fill="#38bdf8" filter="drop-shadow(0 0 6px #38bdf8)"/>
+        <rect x="18" y="32" width="6" height="16" rx="3" fill="#0284c7"/>
+        <rect x="76" y="32" width="6" height="16" rx="3" fill="#0284c7"/>
+        <rect x="22" y="20" width="56" height="42" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="2.5"/>
+        <rect x="28" y="28" width="44" height="22" rx="6" fill="#0b1120"/>
+        <circle cx="40" cy="39" r="5" fill="#38bdf8" filter="drop-shadow(0 0 4px #38bdf8)"/>
+        <circle cx="60" cy="39" r="5" fill="#38bdf8" filter="drop-shadow(0 0 4px #38bdf8)"/>
+        <line x1="38" y1="54" x2="62" y2="54" stroke="#475569" stroke-width="2" stroke-linecap="round"/>
+        <path d="M30 64 L70 64 L78 86 L22 86 Z" fill="#0f172a" stroke="#0284c7" stroke-width="2"/>
+        <circle cx="50" cy="75" r="6" fill="#22c55e" filter="drop-shadow(0 0 6px #22c55e)"/>
+      </svg>
+    </div>
+
+    <div class="boss-title">Barcha Kompyuterlar Va Agentlar Nazorati</div>
+    <div class="boss-subtitle">Buyurtmalar avtomatik navbat bilan taqsimlanadi, robotlar mustaqil test topshiradi va sertifikat oladi.</div>
+
+    <div class="stats-grid">
+      <div class="stat-box">
+        <span class="stat-val" id="totalCount">0</span>
+        <span class="stat-label">📦 Jami O'quvchilar</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-val done" id="doneCount">0</span>
+        <span class="stat-label">🏆 Olingan Sertifikatlar</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-val rem" id="remCount">0</span>
+        <span class="stat-label">⏳ Kutilayotgan Navbat</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-val" id="activeAgents">0</span>
+        <span class="stat-label">🤖 Faol Ishchi Robotlar</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-val" id="avgSpeed">~2 daqiqa</span>
+        <span class="stat-label">⚡️ O'rtacha Tezlik</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROBOT AGENTLAR GRID -->
+  <div class="section-title">
+    <span>🤖 Kompyuterlarda Ishlayotgan Robot Agentlar</span>
+  </div>
+
+  <div class="agents-grid" id="agentsGrid">
+    <div class="empty-state">Agentlar holati yuklanmoqda...</div>
+  </div>
+
+  <!-- OXIRGI OLINGAN SERTIFIKATLAR -->
+  <div class="section-title">
+    <span>🏆 Oxirgi Olingan Sertifikatlar (Necha minutda olingani bilan)</span>
+  </div>
+
+  <div class="recent-certs-box" id="recentCertsBox">
+    <div class="empty-state">Hali yakunlangan sertifikatlar yo'q</div>
+  </div>
+</div>
+
+<script>
+function exitDashboard() {
+  if (window.Telegram && window.Telegram.WebApp) {
+    try { window.Telegram.WebApp.close(); } catch(e) {}
+  }
+  try { window.history.back(); } catch(e) {}
+  try { window.close(); } catch(e) {}
+}
+
+if (window.Telegram && window.Telegram.WebApp) {
+  try {
+    window.Telegram.WebApp.ready();
+    window.Telegram.WebApp.BackButton.show();
+    window.Telegram.WebApp.BackButton.onClick(exitDashboard);
+  } catch(e) {}
+}
+
+function renderAgentRobotSVG(state) {
+  const isWork = state === 'working';
+  const isIdle = state === 'idle';
+  const headColor = isWork ? '#1e293b' : (isIdle ? '#1e293b' : '#0f172a');
+  const eyeColor = isWork ? '#22c55e' : (isIdle ? '#facc15' : '#475569');
+  const monitorColor = isWork ? '#0284c7' : (isIdle ? '#334155' : '#0b1120');
+
+  return `
+    <svg viewBox="0 0 60 60" width="54" height="54">
+      <rect x="4" y="46" width="52" height="4" rx="2" fill="#334155"/>
+      <rect x="30" y="24" width="22" height="17" rx="3" fill="#0b1120" stroke="#475569" stroke-width="1.5"/>
+      <rect x="32" y="26" width="18" height="13" rx="2" fill="${monitorColor}" class="${isWork ? 'monitor-screen' : ''}"/>
+      <line x1="41" y1="41" x2="41" y2="46" stroke="#475569" stroke-width="2"/>
+      <rect x="10" y="14" width="16" height="14" rx="4" fill="${headColor}" stroke="${eyeColor}" stroke-width="1.5"/>
+      <circle cx="16" cy="20" r="2" fill="${eyeColor}"/>
+      <circle cx="21" cy="20" r="2" fill="${eyeColor}"/>
+      <path d="M12 28 L24 28 L26 44 L10 44 Z" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+      <line x1="12" y1="32" x2="28" y2="42" stroke="${isWork ? '#38bdf8' : '#64748b'}" stroke-width="2" stroke-linecap="round" class="arm-left"/>
+      <line x1="20" y1="32" x2="34" y2="43" stroke="${isWork ? '#38bdf8' : '#64748b'}" stroke-width="2" stroke-linecap="round" class="arm-right"/>
+    </svg>
+  `;
+}
+
+function updateDashboard() {
+  fetch('/api/robot_dashboard_data?t=' + Date.now())
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('totalCount').innerText = data.boss.total_students || 0;
+      document.getElementById('doneCount').innerText = data.boss.done_count || 0;
+      document.getElementById('remCount').innerText = data.boss.remaining_count || 0;
+      document.getElementById('activeAgents').innerText = (data.boss.active_agents || 0) + ' / ' + (data.boss.total_agents || 0);
+      document.getElementById('avgSpeed').innerText = data.boss.avg_speed || '~2 daq';
+
+      const grid = document.getElementById('agentsGrid');
+      let cardsHtml = '';
+      
+      if (data.nodes && data.nodes.length > 0) {
+        data.nodes.forEach(node => {
+          (node.agents || []).forEach(agent => {
+            const stClass = agent.state;
+            const stLabel = stClass === 'working' ? '🟢 Ishlamoqda' : (stClass === 'idle' ? '⚪️ Bo\'sh (Kutmoqda)' : '🔴 O\'chiq');
+            
+            cardsHtml += `
+              <div class="agent-card ${stClass}">
+                <div class="agent-header">
+                  <div class="agent-name">
+                    <span>💻 ${node.pc_name}</span>
+                    <span style="color:#38bdf8;">[${agent.agent_title}]</span>
+                  </div>
+                  <span class="status-pill ${stClass}">${stLabel}</span>
+                </div>
+                
+                <div class="workstation">
+                  <div class="robot-svg-wrap">
+                    ${renderAgentRobotSVG(stClass)}
+                  </div>
+                  <div class="agent-details">
+                    <div class="detail-student">${agent.current_student !== '—' ? '👤 ' + agent.current_student : 'Navbat kutilmoqda'}</div>
+                    <div class="detail-step">${agent.current_step}</div>
+                    ${stClass === 'working' ? `<div class="detail-timer">⏱ Jarayon: ${agent.duration_str}</div>` : ''}
+                  </div>
+                </div>
+
+                <div class="agent-metrics">
+                  <span>Olingan sertifikatlar: <b>${agent.certs_count} ta</b></span>
+                  <span>Oxirgi tezlik: <b>${agent.last_duration}</b></span>
+                </div>
+              </div>
+            `;
+          });
+        });
+      }
+      grid.innerHTML = cardsHtml || '<div class="empty-state">Hali faol agentlar yo\'q</div>';
+
+      const certsBox = document.getElementById('recentCertsBox');
+      let certsHtml = '';
+      if (data.recent_certs && data.recent_certs.length > 0) {
+        data.recent_certs.forEach(c => {
+          certsHtml += `
+            <div class="cert-item">
+              <div class="cert-info">
+                <div>🎉 <b>${c.student}</b> <span>(${c.node_name} | Agent #${c.worker})</span></div>
+                <div style="font-size:11px; color:#64748b; margin-top:2px;">Soat: ${c.time} ${c.url ? `| <a href="${c.url}" target="_blank" style="color:#38bdf8;">Sertifikat havolasi</a>` : ''}</div>
+              </div>
+              <div class="cert-dur">⏱ ${c.dur_str}da olindi!</div>
+            </div>
+          `;
+        });
+      }
+      certsBox.innerHTML = certsHtml || '<div class="empty-state">Hali yakunlangan sertifikatlar yo\'q</div>';
+    })
+    .catch(err => console.error("Poll err:", err));
+}
+
+updateDashboard();
+setInterval(updateDashboard, 2000);
 </script>
 </body>
 </html>
@@ -761,6 +1116,139 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
 
         if path in ("/web_any", "/web_anydesk", "/any", "/live", "/stream"):
             self._send_html(WEB_ANY_HTML)
+            return
+
+        if path in ("/dashboard", "/cluster/dashboard", "/robots"):
+            self._send_html(ROBOT_DASHBOARD_HTML)
+            return
+
+        if path == "/api/robot_dashboard_data":
+            now_t = time.time()
+            done_s = get_completed_students()
+            unrec_s = get_unrecoverable_students()
+
+            total_s_count = 0
+            rem_s_count = 0
+            if os.path.exists(ORDERS_DIR):
+                seen_names = set()
+                for fn in os.listdir(ORDERS_DIR):
+                    if fn.startswith("in_") and fn.endswith(".xlsx"):
+                        sts = parse_excel_students(os.path.join(ORDERS_DIR, fn))
+                        for s in sts:
+                            sn = s.get("name")
+                            if sn and sn not in seen_names:
+                                seen_names.add(sn)
+                                total_s_count += 1
+                                if sn not in done_s and sn not in unrec_s and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
+                                    rem_s_count += 1
+
+            if recent_completed_records:
+                durs = [r.get("dur_sec", 120) for r in recent_completed_records if r.get("dur_sec")]
+                if durs:
+                    avg_sec = sum(durs) // len(durs)
+                    avg_speed_str = f"~{avg_sec // 60} daq {avg_sec % 60} son" if avg_sec >= 60 else f"~{avg_sec} soniya"
+                else:
+                    avg_speed_str = "~2 daqiqa"
+            else:
+                avg_speed_str = "~2 daqiqa"
+
+            active_count = 0
+            total_agents_count = 0
+            nodes_list = []
+
+            with nodes_lock:
+                if "MASTER_PC" not in cluster_nodes:
+                    cluster_nodes["MASTER_PC"] = {
+                        "pc_name": "1-Kompyuter (Asosiy Server)",
+                        "ram_gb": 16,
+                        "workers": 4,
+                        "approved": True,
+                        "last_seen": now_t,
+                        "status": "🟢 Faol ishlamoqda...",
+                        "worker_statuses": {}
+                    }
+
+                for nid, ninf in list(cluster_nodes.items()):
+                    is_online = (nid == "MASTER_PC") or ((now_t - float(ninf.get("last_seen", 0))) < 180)
+                    is_approved = ninf.get("approved", True)
+                    w_max = int(ninf.get("workers", 4))
+                    pc_name = ninf.get("pc_name", nid)
+                    w_statuses = ninf.get("worker_statuses", {})
+                    agents_arr = []
+                    for wid in range(1, w_max + 1):
+                        wid_str = str(wid)
+                        w_key = f"{nid}_{wid_str}"
+                        st_txt = w_statuses.get(wid_str, "")
+
+                        st_name = "—"
+                        m_sn = re.match(r"^\[\d+/\d+\]\s+(.+?)\s+—", st_txt)
+                        if m_sn:
+                            st_name = m_sn.group(1).strip()
+                        elif (nid, wid_str) in _worker_assigned:
+                            st_name = _worker_assigned[(nid, wid_str)]
+
+                        if not is_online or not is_approved or w_max == 0:
+                            ag_state = "offline"
+                            step_label = "🔴 O'chiq"
+                        elif "Bo'sh" in st_txt or not st_txt:
+                            ag_state = "idle"
+                            step_label = "🟡 Bo'sh (Kutmoqda)"
+                        else:
+                            ag_state = "working"
+                            pts = st_txt.split("—", 1)
+                            step_label = pts[1].strip() if len(pts) > 1 else st_txt
+
+                        if ag_state == "working":
+                            active_count += 1
+                            st_time = agent_task_start_times.get(w_key)
+                            if st_time:
+                                cur_dur = int(now_t - st_time)
+                                cur_dur_str = f"{cur_dur // 60} daq {cur_dur % 60} son"
+                            else:
+                                cur_dur_str = "0 daq 15 son"
+                        else:
+                            cur_dur_str = "—"
+
+                        if is_online and is_approved:
+                            total_agents_count += 1
+
+                        agents_arr.append({
+                            "worker_id": wid_str,
+                            "agent_title": f"Agent #{wid_str}",
+                            "state": ag_state,
+                            "current_student": st_name,
+                            "current_step": step_label,
+                            "duration_str": cur_dur_str,
+                            "certs_count": agent_cert_counts.get(w_key, 0),
+                            "last_duration": agent_last_durations.get(w_key, "—")
+                        })
+
+                    nodes_list.append({
+                        "node_id": nid,
+                        "pc_name": pc_name,
+                        "is_online": is_online,
+                        "agents": agents_arr
+                    })
+
+            data_resp = {
+                "boss": {
+                    "total_students": total_s_count,
+                    "done_count": len(done_s),
+                    "remaining_count": rem_s_count,
+                    "active_agents": active_count,
+                    "total_agents": total_agents_count,
+                    "avg_speed": avg_speed_str
+                },
+                "nodes": nodes_list,
+                "recent_certs": recent_completed_records[-15:][::-1]
+            }
+            self._send_json(data_resp)
+            return
+
+        if path == "/api/hotkey":
+            combo = qs.get("combo", [""])[0]
+            ok = web_any_hotkey(combo)
+            self._send_json({"ok": ok, "combo": combo})
             return
 
         if path == "/api/screen":
@@ -1349,6 +1837,35 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     save_nodes_state(force=True)
                 pc_idx_fin = (list(cluster_nodes.keys()).index(node_id) + 2) if node_id in cluster_nodes else 2
 
+            w_key_str = f"{node_id}_{worker_id}"
+            start_time_val = agent_task_start_times.pop(w_key_str, None)
+            dur_sec = int(data.get("duration_sec", 0))
+            if not dur_sec and start_time_val:
+                dur_sec = max(10, int(time.time() - start_time_val))
+            if not dur_sec:
+                dur_sec = 135
+
+            dur_m = dur_sec // 60
+            dur_s = dur_sec % 60
+            dur_str = f"{dur_m} daqiqa {dur_s} soniya" if dur_m > 0 else f"{dur_s} soniya"
+
+            if status == "COMPLETED":
+                agent_cert_counts[w_key_str] = agent_cert_counts.get(w_key_str, 0) + 1
+                agent_last_durations[w_key_str] = dur_str
+                certs_map = get_certificate_map()
+                c_url_recent = certs_map.get(s_name, "")
+                recent_completed_records.append({
+                    "student": s_name,
+                    "node_name": pc_name,
+                    "worker": str(worker_id),
+                    "time": time.strftime("%H:%M"),
+                    "dur_str": dur_str,
+                    "dur_sec": dur_sec,
+                    "url": c_url_recent,
+                })
+                if len(recent_completed_records) > 50:
+                    recent_completed_records.pop(0)
+
             idx_val = data.get("idx", "")
             tot_val = data.get("total", "")
             num_prefix = f"[{idx_val}/{tot_val}] " if (idx_val and tot_val) else ""
@@ -1366,6 +1883,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         f"🎉 <b>{num_prefix}MUVAFFAQIYATLI OLINDI!</b>\n"
                         f"🖥 <b>{pc2_tag}</b>\n"
                         f"👤 <b>{s_name}</b>\n"
+                        f"⏱ Sarflangan vaqt: <b>{dur_str}</b>\n"
                         f"📧 Login: <code>{ac.get('email', '—')}</code>\n"
                         f"🔑 Parol: <code>{ac.get('password', '—')}</code>\n"
                         f"🏅 Sertifikat: {c_url}"
@@ -1438,6 +1956,12 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     cluster_nodes[node_id]["worker_statuses"][w_id] = status_text
                     save_nodes_state(force=False)
 
+            w_key_status = f"{node_id}_{w_id}"
+            if "Bo'sh" in status_text:
+                agent_task_start_times.pop(w_key_status, None)
+            elif w_key_status not in agent_task_start_times or "boshlandi" in status_text or "Navbatdagi" in status_text:
+                agent_task_start_times[w_key_status] = now_st
+
             try:
                 m_st = re.match(r"^\[(\d+)/(\d+)\]\s+(.+?)\s+—\s*(.+)$", status_text)
                 m_em = re.search(r"\(([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\)", status_text)
@@ -1451,7 +1975,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     if m_em:
                         em_clean = m_em.group(1).strip().lower()
                         from master_certified_pipeline import generate_student_password
-                        pass_val = post_data.get("password") or generate_student_password(st_name_clean)
+                        pass_val = data.get("password") or generate_student_password(st_name_clean)
                         new_ac_line = f"{st_name_clean} | 1-sinf | {em_clean} | {pass_val}"
                         with file_lock:
                             existing_txt = open(ACCOUNTS_FILE, "r", encoding="utf-8", errors="replace").read() if os.path.exists(ACCOUNTS_FILE) else ""

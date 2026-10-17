@@ -240,11 +240,14 @@ class ClusterWorkerNode:
                     pass
 
             status = "INCOMPLETE"
+            t_work_start = time.time()
             try:
                 is_headless = os.environ.get("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
                 status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=local_wid)
             except Exception as e:
                 print(f"[CLUSTER WORKER #{local_wid} XATO] {e}")
+
+            dur_sec = max(1, int(time.time() - t_work_start))
 
             payload = {
                 "task_id": task_id,
@@ -256,6 +259,7 @@ class ClusterWorkerNode:
                 "worker_id": local_wid,
                 "status": status,
                 "student": st,
+                "duration_sec": dur_sec,
                 "account_line": self.get_student_acc_line(s_name),
                 "cert_line": self.get_student_cert_line(s_name),
                 "error_line": self.get_student_err_line(s_name),
