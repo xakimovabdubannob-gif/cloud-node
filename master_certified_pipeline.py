@@ -34,7 +34,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-FILE_LOCK = threading.Lock()
+FILE_LOCK = threading.RLock()
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_FILE = os.path.join(SCRIPT_DIR, "natijalar_sertifikatlar.txt")
@@ -84,8 +84,8 @@ def get_completed_students():
 def get_unrecoverable_students():
     """Umuman kirib bo'lmaydigan (oldin boshqa joyda ro'yxatdan o'tgan va bazada paroli yo'q) o'quvchilar ro'yxati.
     Bularga oxirida qayta urinilmaydi!"""
+    accs = get_existing_accounts()
     with FILE_LOCK:
-        accs = get_existing_accounts()
         unrec = set()
         if os.path.exists(ERRORS_FILE):
             with open(ERRORS_FILE, "r", encoding="utf-8") as f:
