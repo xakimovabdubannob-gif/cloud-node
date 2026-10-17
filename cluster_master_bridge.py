@@ -1226,17 +1226,24 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     cluster_nodes["MASTER_PC"]["workers"] = 3
 
-                for nid, ninf in list(cluster_nodes.items()):
+                all_node_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC"]
+                all_node_keys.insert(0, "MASTER_PC")
+
+                global_agent_num = 1
+                for nid_idx, nid in enumerate(all_node_keys, 1):
+                    ninf = cluster_nodes[nid]
                     is_online = (nid == "MASTER_PC") or ((now_t - float(ninf.get("last_seen", 0))) < 180)
                     is_approved = ninf.get("approved", True)
                     w_max = int(ninf.get("workers", 4))
-                    pc_name = ninf.get("pc_name", nid)
+                    pc_name = "1-Kompyuter (Asosiy Server)" if nid == "MASTER_PC" else f"{nid_idx}-Kompyuter"
                     w_statuses = ninf.get("worker_statuses", {})
                     agents_arr = []
                     for wid in range(1, w_max + 1):
                         wid_str = str(wid)
                         w_key = f"{nid}_{wid_str}"
                         st_txt = w_statuses.get(wid_str, "")
+                        ag_title = f"Agent #{global_agent_num}"
+                        global_agent_num += 1
 
                         st_name = "—"
                         step_label = "🟡 Bo'sh (Kutmoqda)"
@@ -1277,7 +1284,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
 
                         agents_arr.append({
                             "worker_id": wid_str,
-                            "agent_title": f"Agent #{wid_str}",
+                            "agent_title": ag_title,
                             "state": ag_state,
                             "current_student": st_name,
                             "current_step": step_label,
@@ -1820,13 +1827,15 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         if "worker_statuses" not in cluster_nodes[node_id]:
                             cluster_nodes[node_id]["worker_statuses"] = {}
                         cluster_nodes[node_id]["worker_statuses"][worker_id] = init_st
-                        save_nodes_state(force=False)
-                        all_keys = list(cluster_nodes.keys())
-                        pc_idx_reg = (all_keys.index(node_id) + 2) if node_id in all_keys else 2
-                        pc_name_reg = cluster_nodes[node_id].get("pc_name", node_id)
+                        all_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC"]
+                        all_keys.insert(0, "MASTER_PC")
+                        pc_num = (all_keys.index(node_id) + 1) if node_id in all_keys else 2
+                        pc_clean_name = f"{pc_num}-Kompyuter"
+                        preceding_w = sum(int(cluster_nodes[k].get("workers", 4)) for k in all_keys[:all_keys.index(node_id)]) if node_id in all_keys else 0
+                        global_w_id = preceding_w + int(worker_id)
 
                     cid = task.get("chat_id") or load_bot_config().get("admin_id", 6580113791)
-                    pc_tg_tag = f"💻 {pc_idx_reg}-Kompyuter [{pc_name_reg}] | 🤖 Agent #{worker_id}"
+                    pc_tg_tag = f"💻 {pc_clean_name} | 🤖 Agent #{global_w_id}"
                     start_msg = (
                         f"⏳ <b>[{idx_v}/{tot_v}] {st_n}</b>\n"
                         f"└ <b>{pc_tg_tag}</b>\n"
@@ -1913,8 +1922,12 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         tried_cluster_set.add(s_name)
                 if node_id in cluster_nodes and status == "COMPLETED":
                     cluster_nodes[node_id]["completed_count"] = cluster_nodes[node_id].get("completed_count", 0) + 1
-                    save_nodes_state(force=True)
-                pc_idx_fin = (list(cluster_nodes.keys()).index(node_id) + 2) if node_id in cluster_nodes else 2
+                all_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC"]
+                all_keys.insert(0, "MASTER_PC")
+                pc_idx_fin = (all_keys.index(node_id) + 1) if node_id in all_keys else 2
+                pc_clean_name = f"{pc_idx_fin}-Kompyuter"
+                preceding_w = sum(int(cluster_nodes[k].get("workers", 4)) for k in all_keys[:all_keys.index(node_id)]) if node_id in all_keys else 0
+                global_w_fin = preceding_w + int(worker_id)
 
             w_key_str = f"{node_id}_{worker_id}"
             start_time_val = agent_task_start_times.pop(w_key_str, None)
@@ -1935,8 +1948,8 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 c_url_recent = certs_map.get(s_name, "")
                 recent_completed_records.append({
                     "student": s_name,
-                    "node_name": pc_name,
-                    "worker": str(worker_id),
+                    "node_name": pc_clean_name,
+                    "worker": str(global_w_fin),
                     "time": time.strftime("%H:%M"),
                     "dur_str": dur_str,
                     "dur_sec": dur_sec,
@@ -1948,7 +1961,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             idx_val = data.get("idx", "")
             tot_val = data.get("total", "")
             num_prefix = f"[{idx_val}/{tot_val}] " if (idx_val and tot_val) else ""
-            pc2_tag = f"💻 {pc_idx_fin}-Kompyuter [{pc_name}] | 🤖 Agent #{worker_id}"
+            pc2_tag = f"💻 {pc_clean_name} | 🤖 Agent #{global_w_fin}"
 
             # Faqat masofaviy klaster kompyuterlari uchun Telegram xabari yuboramiz.
             # 1-Kompyuter (MASTER_PC) uchun asosiy telegram_bot.py o'zi allaqachon to'g'ridan-to'g'ri xabar beradi!

@@ -1293,8 +1293,7 @@ class TelegramBotServer:
 
         _ensure_internet()
 
-        import socket
-        pc1_tag = f"💻 1-Kompyuter [{socket.gethostname()}] | 🤖 Agent #{worker_id}"
+        pc1_tag = f"💻 1-Kompyuter (Asosiy Server) | 🤖 Agent #{worker_id}"
         step_history = []
         prog_res = self.send_message(
             chat_id,
