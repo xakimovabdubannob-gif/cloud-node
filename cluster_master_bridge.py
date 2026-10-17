@@ -303,8 +303,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                     busy_by_others_norm.add(normalize_student_key(_ost))
 
         for _st_k, _st_t in in_progress_students.items():
-            if now - _st_t <= 600:
-                # Agar aynan shu worker ga tegishli bo'lmasa, busy_by_others ga kiradi
+            if now - _st_t <= 180 and normalize_student_key(_st_k) in active_assigned_norm:
                 if not (w_key and normalize_student_key(_worker_assigned.get(w_key, "")) == normalize_student_key(_st_k)):
                     busy_by_others_norm.add(normalize_student_key(_st_k))
 
@@ -1035,6 +1034,7 @@ function updateDashboard() {
       if (data.nodes && data.nodes.length > 0) {
         data.nodes.forEach(node => {
           (node.agents || []).forEach(agent => {
+            const stClass = agent.state || 'idle';
             const stLabel = stClass === 'working' ? "🟢 Ishlamoqda" : (stClass === 'idle' ? "⚪️ Bo'sh (Kutmoqda)" : "🔴 O'chiq");
             
             cardsHtml += `
@@ -1879,6 +1879,9 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         _state_mem_cache["accs"][s_name] = {"email": parts_ac[2], "password": parts_ac[3]}
                 if status in ("COMPLETED", "UNRECOVERABLE"):
                     in_progress_students.pop(s_name, None)
+                    for _k in list(in_progress_students.keys()):
+                        if normalize_student_key(_k) == normalize_student_key(s_name):
+                            in_progress_students.pop(_k, None)
                     _worker_assigned.pop(w_key, None)
                     _sticky_workers.pop(w_key, None)
                     tried_cluster_set.add(s_name)
