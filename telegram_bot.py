@@ -1544,8 +1544,8 @@ class TelegramBotServer:
                     [{"text": "⚡ Ishlarni bo'lish (Klasterga)"}, {"text": "📊 Tahlil va Jarayon"}],
                     [{"text": "⚡ Jonli Log (Console)"}, {"text": "📥 Tayyor Sertifikatlar (Excel)"}],
                     [{"text": "💰 Foyda va Kassa"}, {"text": "📸 Kompyuterdan Skrinshot"}],
-                    [{"text": "🖥 AnyDesk Jonli Ulanish"}, {"text": "📄 Bo'sh Shablon (.xlsx)"}],
-                    [{"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
+                    [{"text": "🖥 AnyDesk Jonli Ulanish"}, {"text": "🌐 Web Any (Brauzerda)"}],
+                    [{"text": "📄 Bo'sh Shablon (.xlsx)"}, {"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
                 ],
                 "resize_keyboard": True,
                 "is_persistent": True,
@@ -2495,6 +2495,50 @@ class TelegramBotServer:
                     "Server yuklanishi bilan AnyDesk ID avtomatik shu yerga yuboriladi!\n"
                     "Iltimos, 15-20 soniyadan so'ng qayta bosing.",
                     reply_markup=self.get_reply_keyboard(chat_id),
+                )
+            return
+
+        if text in ("🌐 Web Any (Brauzerda)", "🌐 Web Any", "/webany", "/web_any", "/anyweb", "web any", "webany"):
+            admin_input_state.pop(chat_id, None)
+            tunnel_url = ""
+            try:
+                r = requests.get("http://127.0.0.1:8766/cluster/dashboard_data", timeout=3)
+                if r.status_code == 200:
+                    tunnel_url = r.json().get("tunnel_url", "")
+            except Exception:
+                pass
+            if not tunnel_url and os.path.exists("cluster_url.txt"):
+                try:
+                    tunnel_url = open("cluster_url.txt", "r", encoding="utf-8").read().strip()
+                except Exception:
+                    pass
+
+            if tunnel_url:
+                web_url = f"{tunnel_url}/web_any"
+                inline_markup = {
+                    "inline_keyboard": [
+                        [{"text": "🌐 Web AnyDesk ni Brauzerda Ochish", "url": web_url}],
+                        [{"text": "🔄 Yangilash", "callback_data": "refresh_tahlil"}]
+                    ]
+                }
+                self.send_message(
+                    chat_id,
+                    f"🌐 <b>WEB ANYDESK — JONLI EKRAN VA BOSHQARUV:</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"AnyDesk ilovasi o'rnatilishi shart emas! To'g'ridan-to'g'ri telefoningiz yoki kompyuteringiz brauzerida ochiladi.\n\n"
+                    f"🔗 <b>Jonli havola:</b>\n{web_url}\n\n"
+                    f"📱 <b>Qulayliklari:</b>\n"
+                    f"• Ekranni har 1 soniyada jonli ko'rsatib turadi\n"
+                    f"• Barmog'ingiz bilan rasmning istalgan joyiga bossangiz — virtual kompyuterda aynan o'sha kordinata bosiladi!\n"
+                    f"• Scroll qilish, matn yozish va Enter tugmalari mavjud.",
+                    reply_markup=inline_markup
+                )
+            else:
+                self.send_message(
+                    chat_id,
+                    "⏳ <b>Web AnyDesk tunnel tayyorlanmoqda...</b>\n"
+                    "Cloudflare tunnel 10-15 soniyada tayyor bo'ladi. Iltimos, birozdan so'ng qayta bosing.",
+                    reply_markup=self.get_reply_keyboard(chat_id)
                 )
             return
 

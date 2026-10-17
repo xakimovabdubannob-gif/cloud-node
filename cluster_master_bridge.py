@@ -404,6 +404,277 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
     return {"has_task": False, "all_done": True}
 
 
+# =============================================================================
+# WEB ANYDESK — JONLI VEB EKRAN VA KORDINATADAN BOSHQARISH TIZIMI
+# =============================================================================
+_last_screen_bytes = None
+_last_screen_ts = 0.0
+_screen_capture_lock = threading.Lock()
+
+def get_screen_jpeg(max_age_sec=0.7):
+    global _last_screen_bytes, _last_screen_ts
+    now = time.time()
+    with _screen_capture_lock:
+        if _last_screen_bytes and (now - _last_screen_ts < max_age_sec):
+            return _last_screen_bytes
+        try:
+            tmp_p = os.path.join(os.environ.get("TEMP", "."), f"web_scr_{int(now*1000)}.jpg")
+            ps_p = tmp_p.replace("\\", "/")
+            ps_c = (
+                "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; "
+                "$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; "
+                "$bmp = New-Object System.Drawing.Bitmap($b.Width, $b.Height); "
+                "$g = [System.Drawing.Graphics]::FromImage($bmp); "
+                "$g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size); "
+                f"$bmp.Save('{ps_p}', [System.Drawing.Imaging.ImageFormat]::Jpeg); "
+                "$g.Dispose(); $bmp.Dispose();"
+            )
+            subprocess.run(
+                ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_c],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=6,
+                creationflags=0x08000000 if os.name == "nt" else 0
+            )
+            if os.path.exists(tmp_p):
+                with open(tmp_p, "rb") as f:
+                    _last_screen_bytes = f.read()
+                _last_screen_ts = now
+                try:
+                    os.remove(tmp_p)
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"[WEB ANYDESK CAPTURE ERROR] {e}")
+        return _last_screen_bytes
+
+def web_any_click(x, y):
+    try:
+        import ctypes
+        u32 = ctypes.windll.user32
+        u32.SetCursorPos(int(x), int(y))
+        time.sleep(0.02)
+        u32.mouse_event(0x0002, 0, 0, 0, 0)
+        time.sleep(0.04)
+        u32.mouse_event(0x0004, 0, 0, 0, 0)
+        return True
+    except Exception as e:
+        print(f"[WEB ANYDESK CLICK ERROR] {e}")
+        return False
+
+def web_any_scroll(direction):
+    try:
+        import ctypes
+        u32 = ctypes.windll.user32
+        delta = 360 if direction == "up" else -360
+        u32.mouse_event(0x0800, 0, 0, delta, 0)
+        return True
+    except Exception:
+        return False
+
+def web_any_key(key):
+    try:
+        import ctypes
+        u32 = ctypes.windll.user32
+        vk_map = {"enter": 0x0D, "backspace": 0x08, "tab": 0x09, "esc": 0x1B, "space": 0x20}
+        vk = vk_map.get(key.lower())
+        if vk:
+            u32.keybd_event(vk, 0, 0, 0)
+            time.sleep(0.04)
+            u32.keybd_event(vk, 0, 2, 0)
+            return True
+    except Exception:
+        pass
+    return False
+
+def web_any_type(text):
+    try:
+        escaped = text.replace("'", "''").replace("{", "{{}").replace("}", "{}}")
+        ps = f"$w = New-Object -ComObject WScript.Shell; $w.SendKeys('{escaped}')"
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps], timeout=5)
+        return True
+    except Exception:
+        return False
+
+WEB_ANY_HTML = """<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🌐 Web AnyDesk — UzbekCoders</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
+  header { background: #1e293b; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; position: sticky; top: 0; z-index: 50; }
+  .title { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; color: #38bdf8; }
+  .status-badge { font-size: 11px; background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid #22c55e; padding: 3px 8px; border-radius: 999px; font-weight: 600; }
+  .info-bar { font-size: 12px; color: #94a3b8; text-align: center; padding: 6px 10px; background: #0b1120; border-bottom: 1px solid #1e293b; }
+  .screen-wrap { flex: 1; display: flex; justify-content: center; align-items: center; padding: 8px; background: #020617; position: relative; overflow: auto; }
+  .screen-container { position: relative; display: inline-block; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.8); border-radius: 8px; overflow: hidden; border: 1px solid #334155; }
+  #screenImg { display: block; max-width: 100%; height: auto; cursor: crosshair; user-select: none; -webkit-user-drag: none; touch-action: none; }
+  .click-ripple { position: absolute; width: 24px; height: 24px; border-radius: 50%; background: rgba(56, 189, 248, 0.6); border: 2px solid #38bdf8; transform: translate(-50%, -50%) scale(0); animation: ripple 0.4s ease-out forwards; pointer-events: none; }
+  @keyframes ripple { 0% { transform: translate(-50%, -50%) scale(0.2); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; } }
+  .controls { background: #1e293b; padding: 8px 12px; border-top: 1px solid #334155; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; position: sticky; bottom: 0; z-index: 50; }
+  button, .btn { background: #334155; color: #f8fafc; border: 1px solid #475569; padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; display: inline-flex; align-items: center; gap: 4px; user-select: none; }
+  button:hover, .btn:hover { background: #475569; border-color: #64748b; }
+  button:active, .btn:active { transform: scale(0.96); }
+  .btn-primary { background: #0284c7; border-color: #0369a1; color: white; }
+  .btn-success { background: #16a34a; border-color: #15803d; color: white; }
+  .input-group { display: flex; gap: 4px; }
+  .input-group input { background: #0f172a; border: 1px solid #475569; color: #fff; padding: 6px 8px; border-radius: 6px; font-size: 12px; outline: none; width: 130px; }
+  .input-group input:focus { border-color: #38bdf8; }
+</style>
+</head>
+<body>
+<header>
+  <div class="title"><span>🌐 Web AnyDesk</span></div>
+  <div class="status-badge" id="statusBadge">🟢 Jonli Ekran</div>
+</header>
+
+<div class="info-bar" id="statusBar">👆 Ekranning istalgan joyiga bosing — sichqoncha aynan o'sha kordinataga bosiladi!</div>
+
+<div class="screen-wrap">
+  <div class="screen-container" id="screenBox">
+    <img id="screenImg" src="/api/screen" alt="Virtual Screen">
+  </div>
+</div>
+
+<div class="controls">
+  <button class="btn btn-primary" onclick="forceRefresh()">🔄 Yangilash</button>
+  <button id="autoBtn" class="btn btn-success" onclick="toggleAuto()">⏸️ Avto (1s)</button>
+  <button onclick="sendKey('enter')">↵ Enter</button>
+  <button onclick="sendKey('backspace')">⌫ O'chirish</button>
+  <button onclick="sendScroll('up')">⬆️ Scroll</button>
+  <button onclick="sendScroll('down')">⬇️ Scroll</button>
+  
+  <div class="input-group">
+    <input type="text" id="textInput" placeholder="Matn yozish..." onkeydown="if(event.key==='Enter') sendText()">
+    <button onclick="sendText()">Yozish</button>
+  </div>
+</div>
+
+<script>
+let autoActive = true;
+let refreshing = false;
+const img = document.getElementById('screenImg');
+const box = document.getElementById('screenBox');
+const statusBadge = document.getElementById('statusBadge');
+const statusBar = document.getElementById('statusBar');
+
+function refreshScreen() {
+  if (refreshing) return;
+  refreshing = true;
+  const next = new Image();
+  next.onload = () => {
+    img.src = next.src;
+    refreshing = false;
+    statusBadge.innerText = '🟢 ' + new Date().toLocaleTimeString();
+  };
+  next.onerror = () => {
+    refreshing = false;
+    statusBadge.innerText = '⚠️ Ulanish...';
+  };
+  next.src = '/api/screen?t=' + Date.now();
+}
+
+function forceRefresh() {
+  refreshing = false;
+  refreshScreen();
+}
+
+let timer = setInterval(() => {
+  if (autoActive) refreshScreen();
+}, 1000);
+
+function toggleAuto() {
+  autoActive = !autoActive;
+  const btn = document.getElementById('autoBtn');
+  if (autoActive) {
+    btn.innerText = '⏸️ Avto (1s)';
+    btn.className = 'btn btn-success';
+  } else {
+    btn.innerText = '▶️ Avto: O\\'chiq';
+    btn.className = 'btn';
+  }
+}
+
+function handlePointerClick(e) {
+  const rect = img.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  
+  const clickX = clientX - rect.left;
+  const clickY = clientY - rect.top;
+  
+  const natW = img.naturalWidth || 1920;
+  const natH = img.naturalHeight || 1080;
+  
+  const scaleX = natW / rect.width;
+  const scaleY = natH / rect.height;
+  
+  const realX = Math.round(clickX * scaleX);
+  const realY = Math.round(clickY * scaleY);
+  
+  const ripple = document.createElement('div');
+  ripple.className = 'click-ripple';
+  ripple.style.left = clickX + 'px';
+  ripple.style.top = clickY + 'px';
+  box.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 400);
+  
+  statusBar.innerText = `👆 Bosilmoqda: (${realX}, ${realY})...`;
+  
+  fetch(`/api/click?x=${realX}&y=${realY}&t=${Date.now()}`)
+    .then(r => r.json())
+    .then(res => {
+      statusBar.innerText = `✅ Bosildi: (${realX}, ${realY})`;
+      setTimeout(forceRefresh, 250);
+    })
+    .catch(err => {
+      statusBar.innerText = `❌ Xato: ${err}`;
+    });
+}
+
+img.addEventListener('click', handlePointerClick);
+
+function sendKey(key) {
+  statusBar.innerText = `⌨️ ${key} yuborilmoqda...`;
+  fetch(`/api/key?key=${key}&t=${Date.now()}`)
+    .then(r => r.json())
+    .then(() => {
+      statusBar.innerText = `✅ ${key} yuborildi`;
+      setTimeout(forceRefresh, 200);
+    });
+}
+
+function sendScroll(dir) {
+  statusBar.innerText = `📜 Scroll ${dir}...`;
+  fetch(`/api/scroll?dir=${dir}&t=${Date.now()}`)
+    .then(r => r.json())
+    .then(() => {
+      setTimeout(forceRefresh, 200);
+    });
+}
+
+function sendText() {
+  const inp = document.getElementById('textInput');
+  const txt = inp.value.trim();
+  if (!txt) return;
+  statusBar.innerText = `⌨️ Matn yozilmoqda: "${txt}"...`;
+  fetch(`/api/type?text=${encodeURIComponent(txt)}&t=${Date.now()}`)
+    .then(r => r.json())
+    .then(() => {
+      inp.value = '';
+      statusBar.innerText = `✅ Matn kiritildi`;
+      setTimeout(forceRefresh, 300);
+    });
+}
+</script>
+</body>
+</html>
+"""
+
+
 class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
@@ -425,8 +696,20 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(code)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.end_headers()
             self.wfile.write(body)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
+            pass
+
+    def _send_jpeg(self, img_bytes, code=200):
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(img_bytes)))
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.end_headers()
+            self.wfile.write(img_bytes)
         except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
             pass
 
@@ -454,6 +737,40 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         qs = urllib.parse.parse_qs(parsed.query)
+
+        if path in ("/web_any", "/web_anydesk", "/any", "/live", "/stream"):
+            self._send_html(WEB_ANY_HTML)
+            return
+
+        if path == "/api/screen":
+            img = get_screen_jpeg()
+            self._send_jpeg(img if img else b"")
+            return
+
+        if path == "/api/click":
+            x = int(qs.get("x", [0])[0])
+            y = int(qs.get("y", [0])[0])
+            ok = web_any_click(x, y)
+            self._send_json({"ok": ok, "x": x, "y": y})
+            return
+
+        if path == "/api/key":
+            key = qs.get("key", [""])[0]
+            ok = web_any_key(key)
+            self._send_json({"ok": ok, "key": key})
+            return
+
+        if path == "/api/scroll":
+            direction = qs.get("dir", ["down"])[0]
+            ok = web_any_scroll(direction)
+            self._send_json({"ok": ok, "dir": direction})
+            return
+
+        if path == "/api/type":
+            text = qs.get("text", [""])[0]
+            ok = web_any_type(text)
+            self._send_json({"ok": ok, "text": text})
+            return
 
         if path == "/cluster/ping":
             self._send_text("OK")
