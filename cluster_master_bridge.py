@@ -426,9 +426,18 @@ _last_screen_bytes = None
 _last_screen_ts = 0.0
 _screen_capture_lock = threading.Lock()
 
-def get_screen_jpeg(max_age_sec=0.7):
+remote_actions_lock = threading.Lock()
+remote_pending_actions = {}    # node_id -> [action_dicts]
+remote_latest_screens = {}     # node_id -> bytes
+remote_active_nodes = {}       # node_id -> timestamp
+
+def get_screen_jpeg(max_age_sec=0.7, node="MASTER_PC"):
     global _last_screen_bytes, _last_screen_ts
     now = time.time()
+    if node and node != "MASTER_PC":
+        remote_active_nodes[node] = now
+        if node in remote_latest_screens and remote_latest_screens[node]:
+            return remote_latest_screens[node]
     with _screen_capture_lock:
         if _last_screen_bytes and (now - _last_screen_ts < max_age_sec):
             return _last_screen_bytes
@@ -463,21 +472,38 @@ def get_screen_jpeg(max_age_sec=0.7):
             print(f"[WEB ANYDESK CAPTURE ERROR] {e}")
         return _last_screen_bytes
 
-def web_any_click(x, y):
+def web_any_click(x, y, btn="left", node="MASTER_PC"):
+    if node and node != "MASTER_PC":
+        with remote_actions_lock:
+            remote_pending_actions.setdefault(node, []).append({
+                "type": "click", "x": int(x), "y": int(y), "btn": btn
+            })
+        return True
     try:
         import ctypes
         u32 = ctypes.windll.user32
         u32.SetCursorPos(int(x), int(y))
         time.sleep(0.02)
-        u32.mouse_event(0x0002, 0, 0, 0, 0)
-        time.sleep(0.04)
-        u32.mouse_event(0x0004, 0, 0, 0, 0)
+        if btn == "right":
+            u32.mouse_event(0x0008, 0, 0, 0, 0)
+            time.sleep(0.04)
+            u32.mouse_event(0x0010, 0, 0, 0, 0)
+        else:
+            u32.mouse_event(0x0002, 0, 0, 0, 0)
+            time.sleep(0.04)
+            u32.mouse_event(0x0004, 0, 0, 0, 0)
         return True
     except Exception as e:
         print(f"[WEB ANYDESK CLICK ERROR] {e}")
         return False
 
-def web_any_scroll(direction):
+def web_any_scroll(direction, node="MASTER_PC"):
+    if node and node != "MASTER_PC":
+        with remote_actions_lock:
+            remote_pending_actions.setdefault(node, []).append({
+                "type": "scroll", "dir": direction
+            })
+        return True
     try:
         import ctypes
         u32 = ctypes.windll.user32
@@ -487,7 +513,13 @@ def web_any_scroll(direction):
     except Exception:
         return False
 
-def web_any_key(key):
+def web_any_key(key, node="MASTER_PC"):
+    if node and node != "MASTER_PC":
+        with remote_actions_lock:
+            remote_pending_actions.setdefault(node, []).append({
+                "type": "key", "key": key
+            })
+        return True
     try:
         import ctypes
         u32 = ctypes.windll.user32
@@ -502,7 +534,13 @@ def web_any_key(key):
         pass
     return False
 
-def web_any_type(text):
+def web_any_type(text, node="MASTER_PC"):
+    if node and node != "MASTER_PC":
+        with remote_actions_lock:
+            remote_pending_actions.setdefault(node, []).append({
+                "type": "type", "text": text
+            })
+        return True
     try:
         escaped = text.replace("'", "''").replace("{", "{{}").replace("}", "{}}")
         ps = f"$w = New-Object -ComObject WScript.Shell; $w.SendKeys('{escaped}')"
@@ -511,7 +549,13 @@ def web_any_type(text):
     except Exception:
         return False
 
-def web_any_hotkey(combo):
+def web_any_hotkey(combo, node="MASTER_PC"):
+    if node and node != "MASTER_PC":
+        with remote_actions_lock:
+            remote_pending_actions.setdefault(node, []).append({
+                "type": "hotkey", "combo": combo
+            })
+        return True
     try:
         import ctypes
         u32 = ctypes.windll.user32
@@ -557,8 +601,10 @@ WEB_ANY_HTML = """<!DOCTYPE html>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
-  header { background: #1e293b; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; position: sticky; top: 0; z-index: 50; }
-  .title { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; color: #38bdf8; }
+  header { background: #1e293b; padding: 8px 14px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; position: sticky; top: 0; z-index: 50; flex-wrap: wrap; gap: 8px; }
+  .title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; color: #38bdf8; }
+  .node-select { background: #0f172a; color: #38bdf8; border: 1.5px solid #0284c7; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; outline: none; cursor: pointer; }
+  .node-select:focus { border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.3); }
   .status-badge { font-size: 11px; background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid #22c55e; padding: 3px 8px; border-radius: 999px; font-weight: 600; }
   .info-bar { font-size: 12px; color: #94a3b8; text-align: center; padding: 6px 10px; background: #0b1120; border-bottom: 1px solid #1e293b; }
   .screen-wrap { flex: 1; display: flex; justify-content: center; align-items: center; padding: 8px; background: #020617; position: relative; overflow: auto; }
@@ -580,14 +626,19 @@ WEB_ANY_HTML = """<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <div class="title"><span>🌐 Web AnyDesk</span></div>
+  <div class="title">
+    <span>🌐 Web AnyDesk</span>
+    <select id="nodeSelect" class="node-select" onchange="onNodeChange(this.value)">
+      <option value="MASTER_PC">1-Kompyuter (Asosiy Server)</option>
+    </select>
+  </div>
   <div style="display:flex; align-items:center; gap:8px;">
     <div class="status-badge" id="statusBadge">🟢 Jonli Ekran</div>
     <button class="btn btn-danger" onclick="exitWebAny()" style="padding:4px 8px; font-size:11px;">❌ Chiqish</button>
   </div>
 </header>
 
-<div class="info-bar" id="statusBar">👆 Ekranning istalgan joyiga bosing — sichqoncha aynan o'sha kordinataga bosiladi!</div>
+<div class="info-bar" id="statusBar">👆 Ekranning istalgan joyiga bosing — sichqoncha bosiladi. Sichqoncha o'ng tugmasi ham ishlaydi!</div>
 
 <div class="screen-wrap">
   <div class="screen-container" id="screenBox">
@@ -596,13 +647,14 @@ WEB_ANY_HTML = """<!DOCTYPE html>
         <path fill="#38bdf8" stroke="#ffffff" stroke-width="1.5" d="M3 3l7 18 3-7 7-3L3 3z"/>
       </svg>
     </div>
-    <img id="screenImg" src="/api/screen" alt="Virtual Screen">
+    <img id="screenImg" src="/api/screen?node=MASTER_PC" alt="Virtual Screen">
   </div>
 </div>
 
 <div class="controls">
   <button class="btn btn-primary" onclick="forceRefresh()">🔄 Yangilash</button>
   <button id="autoBtn" class="btn btn-success" onclick="toggleAuto()">⏸️ Avto (1s)</button>
+  <button id="rightBtn" class="btn" onclick="toggleRightClickMode()" style="background:#475569; border-color:#64748b;">🖱️ Sichqoncha O'ng Tugmasi (OFF)</button>
   <button onclick="sendKey('enter')">↵ Enter</button>
   <button onclick="sendKey('backspace')">⌫ O'chirish</button>
   <button onclick="sendScroll('up')">⬆️ Scroll</button>
@@ -619,6 +671,8 @@ WEB_ANY_HTML = """<!DOCTYPE html>
 </div>
 
 <script>
+let selectedNode = 'MASTER_PC';
+let rightClickMode = false;
 let autoActive = true;
 let refreshing = false;
 const img = document.getElementById('screenImg');
@@ -642,6 +696,52 @@ if (window.Telegram && window.Telegram.WebApp) {
   } catch(e) {}
 }
 
+function toggleRightClickMode() {
+  rightClickMode = !rightClickMode;
+  const b = document.getElementById('rightBtn');
+  if (rightClickMode) {
+    b.innerText = "🖱️ Sichqoncha O'ng Tugmasi (YONIQ)";
+    b.style.background = "#e11d48";
+    b.style.borderColor = "#be123c";
+    statusBar.innerText = "👉 Ekranning biror joyini bosing — O'ng tugma (Right click) bosiladi!";
+  } else {
+    b.innerText = "🖱️ Sichqoncha O'ng Tugmasi (OFF)";
+    b.style.background = "#475569";
+    b.style.borderColor = "#64748b";
+    statusBar.innerText = "👆 Ekranning istalgan joyiga bosing — sichqoncha bosiladi";
+  }
+}
+
+function onNodeChange(val) {
+  selectedNode = val;
+  statusBar.innerText = `🖥 ${val} kompyuteriga ulanilmoqda...`;
+  forceRefresh();
+}
+
+function updateNodeList() {
+  fetch('/api/robot_dashboard_data?t=' + Date.now())
+    .then(r => r.json())
+    .then(data => {
+      const sel = document.getElementById('nodeSelect');
+      if (!sel || !data.nodes) return;
+      const currentVal = sel.value || selectedNode;
+      sel.innerHTML = '';
+      data.nodes.forEach((n, idx) => {
+        const opt = document.createElement('option');
+        opt.value = n.node_id;
+        opt.text = n.pc_name || ((idx + 1) + '-Kompyuter');
+        if (n.node_id === currentVal) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      if (!sel.value) sel.value = 'MASTER_PC';
+      selectedNode = sel.value;
+    })
+    .catch(() => {});
+}
+
+setInterval(updateNodeList, 6000);
+updateNodeList();
+
 function refreshScreen() {
   if (refreshing) return;
   refreshing = true;
@@ -655,7 +755,7 @@ function refreshScreen() {
     refreshing = false;
     statusBadge.innerText = '⚠️ Ulanish...';
   };
-  next.src = '/api/screen?t=' + Date.now();
+  next.src = `/api/screen?node=${encodeURIComponent(selectedNode)}&t=` + Date.now();
 }
 
 function forceRefresh() {
@@ -679,7 +779,7 @@ function toggleAuto() {
   }
 }
 
-function handlePointerClick(e) {
+function handlePointerClick(e, explicitBtn) {
   const rect = img.getBoundingClientRect();
   const clientX = e.touches ? e.touches[0].clientX : e.clientX;
   const clientY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -695,7 +795,17 @@ function handlePointerClick(e) {
   
   const realX = Math.round(clickX * scaleX);
   const realY = Math.round(clickY * scaleY);
-  
+
+  let btn = explicitBtn;
+  if (!btn) {
+    if (e.button === 2 || rightClickMode) {
+      btn = 'right';
+      if (rightClickMode) toggleRightClickMode();
+    } else {
+      btn = 'left';
+    }
+  }
+
   // Virtual mouse cursor joylashtirish
   const vMouse = document.getElementById('virtualMouse');
   if (vMouse) {
@@ -711,15 +821,20 @@ function handlePointerClick(e) {
   ripple.className = 'click-ripple';
   ripple.style.left = clickX + 'px';
   ripple.style.top = clickY + 'px';
+  if (btn === 'right') {
+    ripple.style.borderColor = '#f43f5e';
+    ripple.style.background = 'rgba(244, 63, 94, 0.6)';
+  }
   box.appendChild(ripple);
   setTimeout(() => ripple.remove(), 400);
   
-  statusBar.innerText = `👆 Sichqoncha bosilmoqda: (${realX}, ${realY})...`;
+  const btnTitle = btn === 'right' ? "O'ng tugma" : "Chap tugma";
+  statusBar.innerText = `👆 ${btnTitle} bosilmoqda: (${realX}, ${realY})...`;
   
-  fetch(`/api/click?x=${realX}&y=${realY}&t=${Date.now()}`)
+  fetch(`/api/click?x=${realX}&y=${realY}&btn=${btn}&node=${encodeURIComponent(selectedNode)}&t=${Date.now()}`)
     .then(r => r.json())
     .then(res => {
-      statusBar.innerText = `✅ Bosildi: (${realX}, ${realY}) | Kerak bo'lsa pastdan matn yozing`;
+      statusBar.innerText = `✅ ${btnTitle} bosildi: (${realX}, ${realY})`;
       setTimeout(forceRefresh, 250);
     })
     .catch(err => {
@@ -727,11 +842,15 @@ function handlePointerClick(e) {
     });
 }
 
-img.addEventListener('click', handlePointerClick);
+img.addEventListener('click', function(e) { handlePointerClick(e); });
+img.addEventListener('contextmenu', function(e) {
+  e.preventDefault();
+  handlePointerClick(e, 'right');
+});
 
 function sendKey(key) {
   statusBar.innerText = `⌨️ ${key} yuborilmoqda...`;
-  fetch(`/api/key?key=${key}&t=${Date.now()}`)
+  fetch(`/api/key?key=${key}&node=${encodeURIComponent(selectedNode)}&t=${Date.now()}`)
     .then(r => r.json())
     .then(() => {
       statusBar.innerText = `✅ ${key} yuborildi`;
@@ -741,7 +860,7 @@ function sendKey(key) {
 
 function sendScroll(dir) {
   statusBar.innerText = `📜 Scroll ${dir}...`;
-  fetch(`/api/scroll?dir=${dir}&t=${Date.now()}`)
+  fetch(`/api/scroll?dir=${dir}&node=${encodeURIComponent(selectedNode)}&t=${Date.now()}`)
     .then(r => r.json())
     .then(() => {
       setTimeout(forceRefresh, 200);
@@ -753,7 +872,7 @@ function sendText() {
   const txt = inp.value.trim();
   if (!txt) return;
   statusBar.innerText = `⌨️ Matn yozilmoqda: "${txt}"...`;
-  fetch(`/api/type?text=${encodeURIComponent(txt)}&t=${Date.now()}`)
+  fetch(`/api/type?text=${encodeURIComponent(txt)}&node=${encodeURIComponent(selectedNode)}&t=${Date.now()}`)
     .then(r => r.json())
     .then(() => {
       inp.value = '';
@@ -764,7 +883,7 @@ function sendText() {
 
 function quickType(val) {
   statusBar.innerText = `⌨️ Kiritilmoqda: ${val}...`;
-  fetch(`/api/type?text=${encodeURIComponent(val)}&t=${Date.now()}`)
+  fetch(`/api/type?text=${encodeURIComponent(val)}&node=${encodeURIComponent(selectedNode)}&t=${Date.now()}`)
     .then(r => r.json())
     .then(() => {
       statusBar.innerText = `✅ Kiritildi: ${val}`;
@@ -774,7 +893,7 @@ function quickType(val) {
 
 function quickHotkey(combo) {
   statusBar.innerText = `⌨️ ${combo}...`;
-  fetch(`/api/hotkey?combo=${combo}&t=${Date.now()}`)
+  fetch(`/api/hotkey?combo=${combo}&node=${encodeURIComponent(selectedNode)}&t=${Date.now()}`)
     .then(r => r.json())
     .then(() => {
       statusBar.innerText = `✅ ${combo} bosildi`;
@@ -1316,38 +1435,45 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "/api/hotkey":
             combo = qs.get("combo", [""])[0]
-            ok = web_any_hotkey(combo)
-            self._send_json({"ok": ok, "combo": combo})
+            node = qs.get("node", ["MASTER_PC"])[0]
+            ok = web_any_hotkey(combo, node=node)
+            self._send_json({"ok": ok, "combo": combo, "node": node})
             return
 
         if path == "/api/screen":
-            img = get_screen_jpeg()
+            node = qs.get("node", ["MASTER_PC"])[0]
+            img = get_screen_jpeg(node=node)
             self._send_jpeg(img if img else b"")
             return
 
         if path == "/api/click":
             x = int(qs.get("x", [0])[0])
             y = int(qs.get("y", [0])[0])
-            ok = web_any_click(x, y)
-            self._send_json({"ok": ok, "x": x, "y": y})
+            btn = qs.get("btn", ["left"])[0]
+            node = qs.get("node", ["MASTER_PC"])[0]
+            ok = web_any_click(x, y, btn=btn, node=node)
+            self._send_json({"ok": ok, "x": x, "y": y, "btn": btn, "node": node})
             return
 
         if path == "/api/key":
             key = qs.get("key", [""])[0]
-            ok = web_any_key(key)
-            self._send_json({"ok": ok, "key": key})
+            node = qs.get("node", ["MASTER_PC"])[0]
+            ok = web_any_key(key, node=node)
+            self._send_json({"ok": ok, "key": key, "node": node})
             return
 
         if path == "/api/scroll":
             direction = qs.get("dir", ["down"])[0]
-            ok = web_any_scroll(direction)
-            self._send_json({"ok": ok, "dir": direction})
+            node = qs.get("node", ["MASTER_PC"])[0]
+            ok = web_any_scroll(direction, node=node)
+            self._send_json({"ok": ok, "dir": direction, "node": node})
             return
 
         if path == "/api/type":
             text = qs.get("text", [""])[0]
-            ok = web_any_type(text)
-            self._send_json({"ok": ok, "text": text})
+            node = qs.get("node", ["MASTER_PC"])[0]
+            ok = web_any_type(text, node=node)
+            self._send_json({"ok": ok, "text": text, "node": node})
             return
 
         if path == "/cluster/ping":
@@ -1682,6 +1808,23 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 except Exception as e:
                     print(f"[SCREEN UPLOAD XATO] {e}")
             self._send_json({"ok": True})
+            return
+
+        if path == "/cluster/node_remote_sync":
+            data = self._read_body()
+            node_id = data.get("node_id", "")
+            img_b64 = data.get("image_b64", "")
+            if node_id and img_b64:
+                try:
+                    import base64
+                    remote_latest_screens[node_id] = base64.b64decode(img_b64)
+                except Exception:
+                    pass
+            with remote_actions_lock:
+                acts = remote_pending_actions.pop(node_id, [])
+            now_t = time.time()
+            need_feed = (now_t - remote_active_nodes.get(node_id, 0)) < 15
+            self._send_json({"ok": True, "actions": acts, "need_screen": need_feed})
             return
 
         if path == "/cluster/register":
