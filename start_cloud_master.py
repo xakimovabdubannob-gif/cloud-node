@@ -185,7 +185,7 @@ while time.time() - start_ts < 16200:
             st_resp = requests.get("http://127.0.0.1:8766/cluster/tg_status", timeout=5).json()
             rem = st_resp.get("remaining_count", 0)
             online = st_resp.get("online_nodes", 0)
-            if rem > 3 and online == 0:
+            if rem > 0 and online == 0:
                 print(f"[FAILSAFE KLASTER] {rem} ta tugallanmagan o'quvchi bor, ammo virtual klaster ulanmagan. Avtomatik ishga tushirilmoqda...")
                 target_st_cnt = rem
                 should_dispatch = True

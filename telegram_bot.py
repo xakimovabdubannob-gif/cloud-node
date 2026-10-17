@@ -1375,7 +1375,7 @@ class TelegramBotServer:
                     f"Jami <b>{total} ta</b> o'quvchi bo'yicha 100% sertifikat olish jarayoni boshlandi!",
                 )
 
-            for pass_num in range(1, 3):
+            for pass_num in range(1, 4):
                 done_set = get_completed_students()
                 unrec_set = get_unrecoverable_students()
                 rem = [s for s in students if s["name"] not in done_set and s["name"] not in unrec_set]

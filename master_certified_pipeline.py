@@ -1033,64 +1033,87 @@ def verify_student_name_with_3_checks(page, student_name):
                 v_btn.click(force=True)
                 time.sleep(3.0 * mult)
 
+            # Ism yozish maydonlari (First/Middle/Last name)
             parts = student_name.split()
             first_name = parts[0] if len(parts) > 0 else student_name
             middle_name = parts[1] if len(parts) > 2 else ""
             last_name = " ".join(parts[2:]) if len(parts) > 2 else (parts[1] if len(parts) == 2 else "")
 
-            # 1. FIRST NAME
-            page.evaluate("""() => {
-                const inps = Array.from(document.querySelectorAll('input')).filter(i => i.type === 'text' && !i.className.includes('autosuggest') && !(i.placeholder || '').toLowerCase().includes('search'));
-                if (inps.length >= 1) { inps[0].value = ''; inps[0].focus(); }
-            }""")
-            time.sleep(0.3)
-            page.keyboard.type(first_name, delay=30)
+            # Modal ichidagi matnli inputlarni olamiz
+            txt_inps = page.locator("div[role='dialog'] input[type='text'], div[aria-modal='true'] input[type='text'], div[class*='modal'] input[type='text'], form input[type='text']").all()
+            if not txt_inps:
+                txt_inps = [i for i in page.locator("input[type='text']").all() if 'search' not in (i.get_attribute('placeholder') or '').lower()]
+
+            if len(txt_inps) >= 3:
+                fill_react_input(txt_inps[0], first_name)
+                fill_react_input(txt_inps[1], middle_name)
+                fill_react_input(txt_inps[2], last_name)
+            elif len(txt_inps) == 2:
+                fill_react_input(txt_inps[0], first_name)
+                fill_react_input(txt_inps[1], f"{middle_name} {last_name}".strip() if (middle_name or last_name) else first_name)
+            elif len(txt_inps) == 1:
+                fill_react_input(txt_inps[0], student_name)
+            else:
+                page.keyboard.type(student_name, delay=30)
             time.sleep(0.4)
 
-            # 2. MIDDLE NAME
-            if middle_name:
-                page.evaluate("""() => {
-                    const inps = Array.from(document.querySelectorAll('input')).filter(i => i.type === 'text' && !i.className.includes('autosuggest') && !(i.placeholder || '').toLowerCase().includes('search'));
-                    if (inps.length >= 2) { inps[1].value = ''; inps[1].focus(); }
-                }""")
-                time.sleep(0.3)
-                page.keyboard.type(middle_name, delay=30)
-                time.sleep(0.4)
-
-            # 3. LAST NAME
-            if last_name:
-                page.evaluate("""() => {
-                    const inps = Array.from(document.querySelectorAll('input')).filter(i => i.type === 'text' && !i.className.includes('autosuggest') && !(i.placeholder || '').toLowerCase().includes('search'));
-                    if (inps.length >= 3) { inps[2].value = ''; inps[2].focus(); }
-                }""")
-                time.sleep(0.3)
-                page.keyboard.type(last_name, delay=30)
-                time.sleep(0.4)
-
-            # 4. Galichka (Checkbox)
-            cb = page.locator("input[type='checkbox']").first
-            if cb.count() > 0:
+            # 4. Galichka (Checkbox) - barcha usullar bilan belgilash
+            cb = page.locator("div[role='dialog'] input[type='checkbox'], div[aria-modal='true'] input[type='checkbox'], input[type='checkbox']").first
+            for _ in range(3):
+                if cb.count() > 0 and cb.is_checked():
+                    break
                 try:
                     cb.scroll_into_view_if_needed()
-                    if not cb.is_checked():
-                        cb.check(force=True)
+                    cb.check(force=True)
                 except Exception:
                     pass
-                if not cb.is_checked():
-                    lbl = page.locator("label:has-text('By checking this box'), label:has-text('Устанавливая этот флажок')").first
-                    if lbl.count() > 0 and lbl.is_visible():
-                        lbl.click(force=True)
-                print(f"[ISMNI TASDIQLASH] Rozilik checkbox holati: {'BELGILANDI' if cb.is_checked() else 'belgilanmadi'}")
+                if cb.count() > 0 and not cb.is_checked():
+                    try:
+                        box = cb.bounding_box()
+                        if box:
+                            page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
+                    except Exception:
+                        pass
+                if cb.count() > 0 and not cb.is_checked():
+                    page.evaluate("""() => {
+                        const c = document.querySelector("input[type='checkbox']");
+                        if (c) {
+                            if (!c.checked) c.click();
+                            c.checked = true;
+                            c.dispatchEvent(new Event('change', { bubbles: true }));
+                            c.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                        const lbls = Array.from(document.querySelectorAll("label"));
+                        for (const l of lbls) {
+                            if (l.querySelector("input[type='checkbox']") || /checking this box|удостоверении|подтверждаю|agree/i.test(l.innerText || '')) {
+                                l.click();
+                                break;
+                            }
+                        }
+                    }""")
+                time.sleep(0.3)
+
+            cb_ok = (cb.count() > 0 and cb.is_checked())
+            print(f"[ISMNI TASDIQLASH] Rozilik checkbox holati: {'BELGILANDI' if cb_ok else 'belgilanmadi'}")
 
             # 5. Submit (1-urinishda: 4s, 2-urinishda: 8s, 3-urinishda: 12s kutadi)
             sub_wait_sec = v_try * 4
             print(f"[ISMNI TASDIQLASH] Submit tugmasi kutilmoqda ({sub_wait_sec} soniya)...")
             sub_v = None
-            for _ in range(int(sub_wait_sec / 0.5)):
-                cand = page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
+            for loop_i in range(int(sub_wait_sec / 0.5)):
+                cand = page.locator("div[role='dialog'] button:has-text('Submit'), div[role='dialog'] button:has-text('Отправить'), div[aria-modal='true'] button:has-text('Submit'), button:has-text('Submit'), button:has-text('Отправить')").first
                 if cand.count() > 0 and cand.is_visible() and cand.is_enabled():
                     sub_v = cand
                     break
+                if loop_i % 2 == 1:
+                    page.evaluate("""() => {
+                        const c = document.querySelector("input[type='checkbox']");
+                        if (c && !c.checked) {
+                            c.click();
+                            c.checked = true;
+                            c.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }""")
                 time.sleep(0.5)
 
             if sub_v and sub_v.is_enabled():

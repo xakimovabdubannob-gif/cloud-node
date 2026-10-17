@@ -312,26 +312,28 @@ class ClusterWorkerNode:
 
 if __name__ == "__main__":
     node = ClusterWorkerNode()
-    _single_lock_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        _single_lock_sock.bind(("127.0.0.1", 49881))
-    except Exception:
-        print("[!] Cluster Worker allaqachon orqa fonda ishlab turibdi! Telegramga oqim tanlash so'rovi qayta yuborilmoqda...")
+    is_cloud = bool(os.environ.get("GITHUB_ACTIONS") or os.environ.get("TUNNEL_URL"))
+    if not is_cloud:
+        _single_lock_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            m_url = node.discover_master_url()
-            if m_url:
-                requests.post(
-                    f"{m_url}/cluster/register",
-                    json={
-                        "node_id": node.node_id,
-                        "pc_name": node.pc_name,
-                        "ram_gb": node.ram_gb,
-                        "default_workers": node.target_workers,
-                        "force_prompt": True,
-                    },
-                    timeout=10,
-                )
+            _single_lock_sock.bind(("127.0.0.1", 49881))
         except Exception:
-            pass
-        sys.exit(0)
+            print("[!] Cluster Worker allaqachon orqa fonda ishlab turibdi! Telegramga oqim tanlash so'rovi qayta yuborilmoqda...")
+            try:
+                m_url = node.discover_master_url()
+                if m_url:
+                    requests.post(
+                        f"{m_url}/cluster/register",
+                        json={
+                            "node_id": node.node_id,
+                            "pc_name": node.pc_name,
+                            "ram_gb": node.ram_gb,
+                            "default_workers": node.target_workers,
+                            "force_prompt": True,
+                        },
+                        timeout=10,
+                    )
+            except Exception:
+                pass
+            sys.exit(0)
     node.run_forever()
