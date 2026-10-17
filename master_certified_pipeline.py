@@ -280,34 +280,106 @@ def login_coursera(page, email, password, full_name=""):
             time.sleep(1.5)
     return False, was_signup
 
-def ensure_enrolled_on_coursera(page, student_email="", student_password=""):
-    """Agar o'quvchi kursga hali Enroll ('Enroll Starts Oct 11' / 'Зарегистрироваться') bo'lmagan bo'lsa,
-    Enroll tugmasini bosib, agar login oynasi ochilsa email va parolni kiritib, kursning ichiga (/home/module/1) kirganini 100% tekshiradi!"""
+def ensure_enrolled_on_coursera(page, student_email="", student_password="", full_name=""):
+    """Agar o'quvchi kursga hali Enroll bo'lmagan bo'lsa, Enroll tugmasini bosadi,
+    agar login/ro'yxat oynasi (authMode=signup/login) chiqsa Pochta -> Continue -> Parol -> Next bosqichlarini
+    100% to'ldirib, darslar ichiga (/home/module/1) kirishni ta'minlaydi!"""
     for _ in range(3):
         try:
-            for _ in range(3):
-                dismiss_all_popups(page)
-                time.sleep(0.25)
-
             # Agar /home/ ichida bo'lsa va Quiz 1 ko'rinib turgan bo'lsa — haqiqatan Enroll bo'lgan!
             if "/home/" in page.url and page.locator("a:has-text('Quiz 1')").count() > 0:
                 return True
 
             # Agar DEDC dasturi sahifasida 'Join Program' / 'Continue' chiqib turgan bo'lsa, darhol bosamiz
             try:
-                prog_btn = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе'), div[role='dialog'] button:has-text('Continue'), div[role='dialog'] button:has-text('Продолжить')").first
+                prog_btn = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе'), button:has-text('Accept Invitation')").first
                 if prog_btn.count() > 0 and prog_btn.is_visible():
                     prog_btn.click(force=True)
                     time.sleep(2.5)
             except Exception:
                 pass
 
-            # MUHIM: Enroll tugmasi faqat kursning asosiy sahifasida (/learn/introduction-to-generative-ai) chiqadi, /home/module/1 da chiqmaydi!
-            safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai", wait_sec=2.5)
+            # 1. AGAR EKRANDA ALLAQACHON LOGIN OYNASI (authMode=signup/login yoki name@email.com) OCHIQ BO'LSA:
+            for auth_loop in range(2):
+                em_inp = page.locator("input[placeholder*='name@email' i], input[placeholder*='email' i], input[type='email'], input[name='email']").first
+                if em_inp.count() > 0 and em_inp.is_visible() and student_email:
+                    print(f"   [ENROLL-LOGIN] Kirish oynasiga pochta kiritilmoqda: {student_email}...")
+                    em_inp.click(force=True)
+                    time.sleep(0.15)
+                    em_inp.fill(student_email)
+                    time.sleep(0.2)
+                    cont_btn = page.locator("button:has-text('Continue'), button:has-text('Продолжить')").filter(has_not_text="Google").first
+                    if cont_btn.count() > 0 and cont_btn.is_visible():
+                        print("   [ENROLL-LOGIN] 'Continue' tugmasi bosilmoqda...")
+                        cont_btn.click(force=True)
+                    else:
+                        em_inp.press("Enter")
+                    time.sleep(2.5)
+
+                    # 2-QADAM: PAROL (va yangi talaba bo'lsa Ism)
+                    for _ in range(12):
+                        pwd_inp = page.locator("input[type='password'], input[name='password']").first
+                        name_inp = page.locator("input[name='name'], input[placeholder*='full name' i]").first
+                        if pwd_inp.count() > 0 and pwd_inp.is_visible():
+                            if name_inp.count() > 0 and name_inp.is_visible() and full_name:
+                                try:
+                                    name_inp.fill(full_name.replace("`", "'"))
+                                    time.sleep(0.2)
+                                except Exception:
+                                    pass
+                            print("   [ENROLL-LOGIN] Parol kiritilmoqda...")
+                            pwd_inp.click(force=True)
+                            time.sleep(0.15)
+                            pwd_inp.fill(student_password)
+                            time.sleep(0.2)
+                            nxt_btn = page.locator("button[data-e2e='login-form-submit-button'], button:has-text('Next'), button:has-text('Log In'), button:has-text('Join for Free'), button:has-text('Войти')").filter(has_not_text="Google").first
+                            if nxt_btn.count() > 0 and nxt_btn.is_visible():
+                                print(f"   [ENROLL-LOGIN] '{nxt_btn.inner_text().strip()}' bosildi!")
+                                nxt_btn.click(force=True)
+                            else:
+                                pwd_inp.press("Enter")
+                            time.sleep(3.5)
+                            break
+                        time.sleep(0.5)
+                    break
+
+            # 2. AGAR HALI KURS SAHIFASIDA BO'LMASA, KURS SAHIFASIGA O'TISH:
+            if "introduction-to-generative-ai" not in page.url or "#authMode" in page.url:
+                safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai", wait_sec=2.5)
 
             for _ in range(12):
                 if "/home/" in page.url and page.locator("a:has-text('Quiz 1')").count() > 0:
                     return True
+
+                # Agar sahifada login modali ochilib turgan bo'lsa (Enroll bosilmasdan oldin):
+                em_box = page.locator("input[placeholder*='name@email' i], input[type='email'], input[name='email']").first
+                if em_box.count() > 0 and em_box.is_visible() and student_email:
+                    print(f"   [ENROLL-LOGIN] Pochta kiritilmoqda: {student_email}...")
+                    em_box.click(force=True)
+                    time.sleep(0.15)
+                    em_box.fill(student_email)
+                    time.sleep(0.2)
+                    c_btn = page.locator("button:has-text('Continue'), button:has-text('Продолжить')").filter(has_not_text="Google").first
+                    if c_btn.count() > 0 and c_btn.is_visible():
+                        c_btn.click(force=True)
+                    else:
+                        em_box.press("Enter")
+                    time.sleep(2.5)
+                    pwd_box = page.locator("input[type='password'], input[name='password']").first
+                    if pwd_box.count() > 0 and pwd_box.is_visible() and student_password:
+                        print("   [ENROLL-LOGIN] Parol kiritilmoqda...")
+                        pwd_box.click(force=True)
+                        time.sleep(0.15)
+                        pwd_box.fill(student_password)
+                        time.sleep(0.2)
+                        n_btn = page.locator("button[data-e2e='login-form-submit-button'], button:has-text('Next'), button:has-text('Log In'), button:has-text('Join for Free'), button:has-text('Войти')").filter(has_not_text="Google").first
+                        if n_btn.count() > 0 and n_btn.is_visible():
+                            n_btn.click(force=True)
+                        else:
+                            pwd_box.press("Enter")
+                        time.sleep(3.5)
+                    continue
+
                 enr_btn = page.locator(
                     "button[data-e2e='enroll-button'], "
                     "button:has-text('Enroll'), "
@@ -327,50 +399,39 @@ def ensure_enrolled_on_coursera(page, student_email="", student_password=""):
                         enr_btn.click(force=True)
                     time.sleep(2.5)
 
-                    # AGAR ENROLL BOSILGANDAN KEYIN LOGIN SO'RALSA (Login/Parol yozish):
-                    for _ in range(12):
-                        login_needed = False
-                        try:
-                            login_needed = page.locator("input[type='email'], input[name='email'], input[type='password'], div[role='dialog'] input, div[role='dialog'] button:has-text('Log In'), div[role='dialog'] a:has-text('Log In')").first.is_visible()
-                        except Exception:
-                            login_needed = False
+                    # AGAR ENROLL BOSILGANDAN KEYIN LOGIN SO'RALSA:
+                    for _ in range(10):
+                        em_box = page.locator("input[placeholder*='name@email' i], input[type='email'], input[name='email']").first
+                        if em_box.count() > 0 and em_box.is_visible() and student_email:
+                            print(f"   [ENROLL-LOGIN] Enroll bosilgach login oynasi chiqdi, pochta kiritilmoqda: {student_email}...")
+                            em_box.click(force=True)
+                            time.sleep(0.15)
+                            em_box.fill(student_email)
+                            time.sleep(0.2)
+                            c_btn = page.locator("button:has-text('Continue'), button:has-text('Продолжить')").filter(has_not_text="Google").first
+                            if c_btn.count() > 0 and c_btn.is_visible():
+                                c_btn.click(force=True)
+                            else:
+                                em_box.press("Enter")
+                            time.sleep(2.5)
 
-                        if login_needed:
-                            print("   [ENROLL-LOGIN] Enroll bosilgach login oynasi chiqdi, ma'lumotlar kiritilmoqda...")
-                            time.sleep(0.5)
-                            try:
-                                l_tab = page.locator("div[role='dialog'] a:has-text('Log In'), div[role='dialog'] button:has-text('Log In'), div[role='dialog'] a:has-text('Already have an account? Log In'), div[role='dialog'] button:has-text('Already have an account? Log In'), div[role='dialog'] a:has-text('Войти')").first
-                                if l_tab.count() > 0 and l_tab.is_visible():
-                                    l_tab.click(force=True)
-                                    time.sleep(1.0)
-                            except Exception:
-                                pass
-
-                            em_box = page.locator("div[role='dialog'] input[type='email'], input[type='email'], input[name='email']").first
-                            if em_box.count() > 0 and em_box.is_visible() and student_email:
-                                print(f"   [ENROLL-LOGIN] Login (pochta) kiritilmoqda: {student_email}...")
-                                em_box.click(force=True)
-                                time.sleep(0.15)
-                                em_box.fill(student_email)
-                                time.sleep(0.2)
-
-                            pwd_box = page.locator("div[role='dialog'] input[type='password'], input[type='password'], input[name='password']").first
+                            pwd_box = page.locator("input[type='password'], input[name='password']").first
                             if pwd_box.count() > 0 and pwd_box.is_visible() and student_password:
                                 print("   [ENROLL-LOGIN] Parol kiritilmoqda...")
                                 pwd_box.click(force=True)
                                 time.sleep(0.15)
                                 pwd_box.fill(student_password)
                                 time.sleep(0.2)
-
-                            sub_box = page.locator("div[role='dialog'] button:has-text('Log In'), div[role='dialog'] button:has-text('Войти'), div[role='dialog'] button[type='submit'], button[data-e2e='login-form-submit-button']").first
-                            if sub_box.count() > 0 and sub_box.is_visible():
-                                print("   [ENROLL-LOGIN] 'Log In' tugmasi bosildi!")
-                                sub_box.click(force=True)
+                                n_btn = page.locator("button[data-e2e='login-form-submit-button'], button:has-text('Next'), button:has-text('Log In'), button:has-text('Join for Free'), button:has-text('Войти')").filter(has_not_text="Google").first
+                                if n_btn.count() > 0 and n_btn.is_visible():
+                                    print(f"   [ENROLL-LOGIN] '{n_btn.inner_text().strip()}' bosildi!")
+                                    n_btn.click(force=True)
+                                else:
+                                    pwd_box.press("Enter")
                                 time.sleep(3.5)
                             break
                         time.sleep(0.5)
 
-                    dismiss_all_popups(page)
                     page.evaluate("""() => {
                         const btns = Array.from(document.querySelectorAll('div[role="dialog"] button, button, a'));
                         const cont = btns.find(b => {
@@ -380,7 +441,7 @@ def ensure_enrolled_on_coursera(page, student_email="", student_password=""):
                         });
                         if (cont) cont.click();
                     }""")
-                    time.sleep(3.0)
+                    time.sleep(2.5)
                     break
                 time.sleep(0.5)
 
