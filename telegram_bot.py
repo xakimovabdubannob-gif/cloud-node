@@ -503,10 +503,10 @@ def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
                     pass
             if t_url.startswith("https://"):
                 if nodes_count is not None:
-                    n_cnt = max(1, min(6, nodes_count))
+                    n_cnt = max(1, min(10, nodes_count))
                 else:
                     needed = max(1, students_count - 3)
-                    n_cnt = min(6, max(1, (needed + 5) // 6))
+                    n_cnt = min(10, max(1, (needed + 5) // 6))
                 print(f"[DIRECT CLUSTER DISPATCH] {n_cnt} ta Virtual Kompyuter chaqirilmoqda (o'quvchilar: {students_count}, tunnel: {t_url})...")
                 try:
                     r = requests.post(
