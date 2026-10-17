@@ -1335,14 +1335,14 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     cluster_nodes["MASTER_PC"] = {
                         "pc_name": "1-Kompyuter (Asosiy Server)",
                         "ram_gb": 16,
-                        "workers": 3,
+                        "workers": 1,
                         "approved": True,
                         "last_seen": now_t,
                         "status": "🟢 Faol ishlamoqda...",
                         "worker_statuses": {}
                     }
                 else:
-                    cluster_nodes["MASTER_PC"]["workers"] = 3
+                    cluster_nodes["MASTER_PC"]["workers"] = 1
 
                 all_node_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC" and (now_t - float(cluster_nodes[k].get("last_seen", 0)) < 75)]
                 all_node_keys.insert(0, "MASTER_PC")
