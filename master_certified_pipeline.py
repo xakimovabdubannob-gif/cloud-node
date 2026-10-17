@@ -84,7 +84,6 @@ def get_completed_students():
 def get_unrecoverable_students():
     """Umuman kirib bo'lmaydigan (oldin boshqa joyda ro'yxatdan o'tgan va bazada paroli yo'q) o'quvchilar ro'yxati.
     Bularga oxirida qayta urinilmaydi!"""
-    accs = get_existing_accounts()
     with FILE_LOCK:
         unrec = set()
         if os.path.exists(ERRORS_FILE):
@@ -94,10 +93,7 @@ def get_unrecoverable_students():
                     if "ILOJI_YOQ" in line:
                         parts = [p.strip() for p in line.split("|")]
                         if len(parts) >= 1:
-                            s_u = parts[0].upper()
-                            s_clean = re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", s_u)
-                            if s_u not in accs and s_clean not in accs:
-                                unrec.add(s_u)
+                            unrec.add(parts[0].upper())
         return unrec
 
 def save_unrecoverable_student(full_name, class_name, reason):
@@ -223,8 +219,8 @@ def login_coursera(page, email, password, full_name=""):
             pwd_inp = page.locator("input[type='password']").first
             if pwd_inp.is_visible():
                 pwd_inp.fill(password)
-                sub_btn = page.locator("button[data-e2e='login-form-submit-button'], button[type='submit'], div[role='dialog'] button.cds-button-primary, form button.cds-button-primary, button:has-text('Log In'), button:has-text('Войти')").first
-                if sub_btn.count() > 0 and sub_btn.is_visible():
+                sub_btn = page.locator("div[role='dialog'] button.cds-button-primary, form button.cds-button-primary").first
+                if sub_btn.is_visible():
                     sub_btn.click(force=True)
                 else:
                     page.keyboard.press("Enter")
@@ -269,15 +265,9 @@ def ensure_enrolled_on_coursera(page):
             safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai", wait_sec=2.5)
 
             for _ in range(12):
+                dismiss_all_popups(page)
                 if "/home/" in page.url and page.locator("a:has-text('Quiz 1')").count() > 0:
                     return True
-
-                go_btn = page.locator("a:has-text('Go to Course'), button:has-text('Go to Course'), a:has-text('Перейти к курсу'), button:has-text('Перейти к курсу')").first
-                if go_btn.count() > 0 and go_btn.is_visible():
-                    go_btn.click(force=True)
-                    time.sleep(2.5)
-                    break
-
                 enr_btn = page.locator(
                     "button[data-e2e='enroll-button'], "
                     "button:has-text('Enroll'), "
@@ -296,24 +286,17 @@ def ensure_enrolled_on_coursera(page):
                     else:
                         enr_btn.click(force=True)
                     time.sleep(2.5)
-
-                    # Dialogdagi 'Enroll in Course' / 'Go to Course' / 'Continue' ni bosamiz
+                    dismiss_all_popups(page)
                     page.evaluate("""() => {
-                        const dialog = document.querySelector('div[role="dialog"], div[aria-modal="true"], div.cds-modal');
-                        const root = dialog || document;
-                        const btns = Array.from(root.querySelectorAll('button, a'));
+                        const btns = Array.from(document.querySelectorAll('div[role="dialog"] button, button, a'));
                         const cont = btns.find(b => {
-                            const t = (b.innerText || '').toLowerCase().trim();
-                            return t.includes('enroll in course') || t.includes('go to course') ||
-                                   t.includes('continue') || t.includes('start learning') ||
-                                   t.includes('продолжить') || t.includes('начать обучение') ||
-                                   t.includes('перейти к курсу') || t.includes('зарегистрироваться') ||
-                                   t === 'enroll';
+                            const t = (b.innerText || '').toLowerCase();
+                            return t.includes('go to course') || t.includes('continue') || t.includes('start learning') ||
+                                   t.includes('продолжить') || t.includes('начать обучение') || t.includes('перейти к курсу');
                         });
                         if (cont) cont.click();
                     }""")
                     time.sleep(3.0)
-                    dismiss_all_popups(page)
                     break
                 time.sleep(0.5)
 
@@ -637,7 +620,7 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
 
             # Agar hali kursga Enroll ('Enroll Starts Oct 11') bo'lmagani uchun landing sahifaga qaytib qolgan bo'lsa, darhol Enroll qilamiz!
             enr_check = page.locator("button[data-e2e='enroll-button'], button:has-text('Enroll'), button:has-text('Зарегистрироваться')").first
-            if ("/organizations/" in page.url and "/attempt" not in page.url) or (enr_check.count() > 0 and enr_check.is_visible()) or page.url.rstrip("/") == "https://www.coursera.org/learn/introduction-to-generative-ai":
+            if ("/organizations/" in page.url and "/attempt" not in page.url) or (enr_check.count() > 0 and enr_check.is_visible()):
                 ensure_enrolled_on_coursera(page)
                 safe_navigate(page, q_url, wait_sec=2.5 * mult)
 
@@ -647,7 +630,8 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                 "button:has-text('Start assignment'), a:has-text('Start assignment'), "
                 "button:has-text('Try again'), a:has-text('Try again'), "
                 "button:has-text('Retake'), a:has-text('Retake'), "
-                "button:has-text('Возобновить'), "
+                "button:has-text('Resume'), button:has-text('Start'), "
+                "button:has-text('Возобновить'), button:has-text('Начать'), "
                 "button:has-text('Пройти тест'), button:has-text('Повторить')"
             )
             for _ in range(20 * mult):
@@ -664,7 +648,6 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                     return els.some(el => {
                         if (el.offsetWidth < 20 || el.offsetHeight < 15) return false;
                         const t = (el.innerText || '').trim().toLowerCase();
-                        if (t.includes('enroll') || t.includes('starts')) return false;
                         return t === 'start assignment' || t === 'resume assignment' || t === 'try again' ||
                                t === 'retake' || t === 'resume' || t === 'start' ||
                                t === 'начать' || t === 'возобновить' || t === 'пройти тест' || t === 'повторить';
@@ -684,7 +667,6 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                     const target = els.find(el => {
                         if (el.offsetWidth < 20 || el.offsetHeight < 15) return false;
                         const t = (el.innerText || '').trim().toLowerCase();
-                        if (t.includes('enroll') || t.includes('starts')) return false;
                         return t === 'start assignment' || t === 'resume assignment' || t === 'try again' ||
                                t === 'retake' || t === 'resume' || t === 'start' ||
                                t === 'начать' || t === 'возобновить' || t === 'пройти тест' || t === 'повторить';
@@ -703,11 +685,7 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                     act_btn = page.locator(act_selector).first
                     if act_btn.count() > 0 and act_btn.is_visible():
                         b_label = act_btn.inner_text().strip()
-                        b_low = b_label.lower()
-                        if "enroll" in b_low or "starts" in b_low:
-                            ensure_enrolled_on_coursera(page)
-                            continue
-                        if "пробный" in b_low or "trial" in b_low:
+                        if "пробный" in b_label.lower() or "trial" in b_label.lower():
                             print(f"[!] [{q_name}] Akkountda DEDC dasturi ulanmagan ('{b_label}' chiqdi)!")
                             return False
                         print(f"[{q_name}] '{b_label}' tugmasi bosilmoqda ({mult}x)...")
@@ -931,76 +909,47 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
             print(f"[{q_name}] 1-Submit holati: is_enabled = {is_en}")
 
             if is_en:
-                sub_btn_1.scroll_into_view_if_needed()
                 sub_btn_1.click(force=True)
                 time.sleep(1.0)
-                print(f"[{q_name}] 1-Submit bosildi! 'Ready to submit?' oynasi kutilmoqda (kutish koeffitsiyenti: {mult}x)...")
-
-                # 2-Submit ("Ready to submit?" oynasi ichidagi Submit) ni topish va bosish
-                modal_submitted = False
-                wait_loops = int(14 * mult)
-                for w_idx in range(wait_loops):
-                    if "/attempt" not in page.url:
-                        modal_submitted = True
+                if page.locator("button:has-text('Submit'), button:has-text('Отправить')").count() < 2:
+                    box1 = sub_btn_1.bounding_box()
+                    if box1:
+                        page.mouse.click(box1['x'] + box1['width']/2, box1['y'] + box1['height']/2)
+                print(f"[{q_name}] 1-Submit bosildi! 'Ready to submit?' oynasi kutilmoqda...")
+                for _ in range(10):
+                    if page.locator("button:has-text('Submit'), button:has-text('Отправить')").count() >= 2:
                         break
+                    time.sleep(0.25)
 
-                    modal_btn = None
-                    # 1. Dialog yoki Modal konteyner ichidagi Submit tugmasi
-                    try:
-                        diag_btns = page.locator("[role='dialog'] button, [role='alertdialog'] button, div[aria-modal='true'] button, div[class*='modal'] button").all()
-                        for b in diag_btns:
-                            b_txt = (b.text_content() or "").strip()
-                            if any(w in b_txt for w in ["Submit", "Отправить"]):
-                                modal_btn = b
+                # 2-Submit ("Ready to submit?" oynasi ichidagi Submit, Cancel tugmasi yonidagi!)
+                for modal_try in range(1, 4):
+                    if "/attempt" not in page.url:
+                        break
+                    all_submits = page.locator("button:has-text('Submit'), button:has-text('Отправить')").all()
+                    if len(all_submits) >= 2:
+                        sub_btn_2 = all_submits[-1]
+                        print(f"[{q_name}] 2-Submit (Modal ichidagi Submit, urinish #{modal_try}) sichqoncha bilan bosilmoqda...")
+                        try:
+                            box2 = sub_btn_2.bounding_box(timeout=2500)
+                            if box2:
+                                page.mouse.click(box2['x'] + box2['width']/2, box2['y'] + box2['height']/2)
+                            else:
+                                sub_btn_2.click(force=True, timeout=2500)
+                        except Exception:
+                            pass
+                        for _ in range(12):
+                            time.sleep(0.45)
+                            if "/attempt" not in page.url:
                                 break
-                    except Exception:
-                        pass
-
-                    # 2. Agar dialog selectori topilmasa, sahifadagi barcha Submit tugmalarining oxirgisi
-                    if not modal_btn:
-                        try:
-                            all_subs = page.locator("button:has-text('Submit'), button:has-text('Отправить')").all()
-                            if len(all_subs) >= 2:
-                                modal_btn = all_subs[-1]
-                        except Exception:
-                            pass
-
-                    if modal_btn and modal_btn.is_visible():
-                        print(f"[{q_name}] 2-Submit (Modal ichidagi Submit) topildi va bosilmoqda...")
-                        try:
-                            modal_btn.scroll_into_view_if_needed()
-                            modal_btn.click(force=True, timeout=3000)
-                        except Exception:
-                            try:
-                                box2 = modal_btn.bounding_box()
-                                if box2:
-                                    page.mouse.click(box2['x'] + box2['width']/2, box2['y'] + box2['height']/2)
-                            except Exception:
-                                pass
-                        modal_submitted = True
-                        break
-
-                    # Agar 3 soniya o'tsa-yu hali modal chiqmagan bo'lsa, 1-Submitni qayta bosib ko'ramiz
-                    if w_idx == 6 and not modal_submitted:
-                        try:
-                            sub_btn_1.click(force=True)
-                        except Exception:
-                            pass
-
-                    time.sleep(0.5)
-
-                # Formadan chiqib natija sahifasiga o'tishini kutamiz
-                for _ in range(int(15 * mult)):
-                    time.sleep(0.5)
-                    if "/attempt" not in page.url:
+                    else:
                         break
 
                 # Natija (100% / You passed!) chiqishini kutamiz
-                for _ in range(int(15 * mult)):
+                for _ in range(10):
                     after_text = page.evaluate("() => (document.body ? document.body.innerText : '')")
-                    if any(p in after_text for p in ["You passed!", "Your grade: 100%", "Вы прошли!"]):
+                    if "You passed!" in after_text or "Your grade: 100%" in after_text or "Вы прошли!" in after_text or "You didn't pass" in after_text:
                         break
-                    time.sleep(0.5)
+                    time.sleep(0.4)
 
                 dismiss_all_popups(page)
                 after_text = page.evaluate("() => (document.body ? document.body.innerText : '')")
@@ -1090,33 +1039,31 @@ def verify_student_name_with_3_checks(page, student_name):
                 time.sleep(0.4)
 
             # 4. Galichka (Checkbox)
-            for _ in range(5):
-                cb = page.locator("input[type='checkbox']").first
-                if cb.count() > 0:
-                    try:
-                        cb.scroll_into_view_if_needed()
-                        cb.check(force=True)
-                    except Exception:
-                        pass
-                    if not cb.is_checked():
-                        lbl = page.locator("label:has-text('By checking this box'), label:has-text('Устанавливая этот флажок')").first
-                        if lbl.is_visible():
-                            lbl.click(force=True)
-                    if cb.is_checked():
-                        break
-                time.sleep(0.5)
+            cb = page.locator("input[type='checkbox']").first
+            if cb.count() > 0 and cb.is_visible():
+                box = cb.bounding_box()
+                if box:
+                    page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
+                    time.sleep(1)
+                if not cb.is_checked():
+                    lbl = page.locator("label:has-text('By checking this box'), label:has-text('Устанавливая этот флажок')").first
+                    if lbl.is_visible():
+                        lbl.click(force=True)
+                        time.sleep(1)
 
             # 5. Submit ('Save' yozilmaydi, chunki 'Saved' tabiga bosilib ketmasligi kerak!)
-            for _ in range(int(10 * mult)):
-                sub_v = page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
-                if sub_v.is_visible() and sub_v.is_enabled():
-                    sub_v.scroll_into_view_if_needed()
+            sub_v = page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
+            if sub_v.is_visible() and sub_v.is_enabled():
+                box_s = sub_v.bounding_box()
+                if box_s:
+                    page.mouse.click(box_s['x'] + box_s['width']/2, box_s['y'] + box_s['height']/2)
+                else:
                     sub_v.click(force=True)
-                    print("[ISMNI TASDIQLASH] Tasdiqlash muvaffaqiyatli yuborildi!")
-                    time.sleep(5.0 * mult)
-                    return True
-                time.sleep(0.5)
-            print(f"[!] Verify My Name Submit tugmasi faol emas, qayta tekshirilmoqda ({v_try}/3)...")
+                print("[ISMNI TASDIQLASH] Tasdiqlash muvaffaqiyatli yuborildi!")
+                time.sleep(5.0 * mult)
+                return True
+            else:
+                print(f"[!] Verify My Name Submit tugmasi faol emas, qayta tekshirilmoqda ({v_try}/3)...")
         except Exception as e:
             print(f"[!] Verify My Name {v_try}-urinishda xatolik ushlandi: {e}")
             time.sleep(2)
@@ -1361,17 +1308,13 @@ def pick_date_aileaders(page, birth_date: str):
         parts = birth_date.split("/")
         if len(parts[0]) == 4:
             year_str, month_idx, day_int = parts[0], int(parts[1]) - 1, int(parts[2])
-        elif int(parts[1]) > 12:
+        elif int(parts[0]) > 12:
+            day_int, month_idx, year_str = int(parts[0]), int(parts[1]) - 1, str(parts[2])
+        else:
             month_idx, day_int, year_str = int(parts[0]) - 1, int(parts[1]), str(parts[2])
-        else:
-            day_int, month_idx, year_str = int(parts[0]), int(parts[1]) - 1, str(parts[2])
     else:
-        parts = birth_date.split(".")
-        if len(parts[0]) == 4:
-            year_str, month_idx, day_int = parts[0], int(parts[1]) - 1, int(parts[2])
-        else:
-            day_int, month_idx, year_str = int(parts[0]), int(parts[1]) - 1, str(parts[2])
-
+        day_str, month_str, year_str = birth_date.split(".")
+        day_int, month_idx = int(day_str), int(month_str) - 1
 
     cal_btn = page.locator("button#date, button[data-slot='popover-trigger']").first
     cal_btn.click(force=True)
@@ -1661,18 +1604,36 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
         print(f"[!] TempMail xatosi: {e}")
         return "RETRY", None
 
-    # Faqat o'quvchining haqiqiy hujjat ma'lumoti bo'yicha 1 marta aniq tekshirish (ortiqcha soxta seriyalar aylanmaydi!)
+    # Hujjat seriyasini har xil variantlarda (Guvohnoma: T, I-TV, TV, I-FR va Passport) tekshirib ko'rish ro'yxati
     ds_up = doc_series.upper().strip()
-    num_clean = doc_number.strip()
-    num_pad7 = num_clean.zfill(7) if len(num_clean) < 7 and ds_up != "T" else num_clean
-
+    num_pad7 = doc_number.zfill(7) if len(doc_number) < 7 else doc_number
     doc_candidates = []
-    if ds_up in ("T", "TV", "FR", "TN", "AN", "SM", "QA", "SU", "NA", "BU", "XO", "JZ", "SI", "QR", "TS") or "-" in ds_up:
+    if "-" in ds_up:
         doc_candidates.append(("guvohnoma", ds_up, num_pad7))
-        if ds_up.startswith("I-") and len(ds_up) > 2:
-            doc_candidates.append(("guvohnoma", ds_up[2:], num_pad7))
+        if ds_up != "I-TV":
+            doc_candidates.append(("guvohnoma", "I-TV", num_pad7))
+        if ds_up != "I-FR":
+            doc_candidates.append(("guvohnoma", "I-FR", num_pad7))
+        doc_candidates.append(("guvohnoma", "T", doc_number))
+    elif ds_up in ("T", "TV", "FR", "TN", "AN", "SM", "QA", "SU", "NA", "BU", "XO", "JZ", "SI", "QR", "TS"):
+        doc_candidates.append(("guvohnoma", ds_up, doc_number if ds_up == "T" else num_pad7))
+        if ds_up == "T":
+            doc_candidates.append(("guvohnoma", "I-TV", num_pad7))
+            doc_candidates.append(("guvohnoma", "TV", num_pad7))
+            doc_candidates.append(("guvohnoma", "I-FR", num_pad7))
+            if len(doc_number) == 8:
+                doc_candidates.append(("guvohnoma", "I-TV", doc_number[1:]))
+                doc_candidates.append(("guvohnoma", "I-FR", doc_number[1:]))
+        else:
+            doc_candidates.append(("guvohnoma", f"I-{ds_up}", num_pad7))
+            doc_candidates.append(("guvohnoma", "T", doc_number))
+            doc_candidates.append(("guvohnoma", "I-FR", num_pad7))
+        doc_candidates.append(("passport", ds_up, doc_number))
     else:
-        doc_candidates.append(("passport", ds_up, num_clean))
+        doc_candidates.append(("passport", ds_up, doc_number))
+        doc_candidates.append(("guvohnoma", ds_up, num_pad7))
+        doc_candidates.append(("guvohnoma", f"I-{ds_up}", num_pad7))
+        doc_candidates.append(("guvohnoma", "T", doc_number))
 
     try:
         reg_step2_ok = False
@@ -1710,8 +1671,8 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                     opt.click(force=True)
                 page.wait_for_timeout(400)
 
-            sub1 = page.locator("button[type='submit']").first
-            if sub1.count() > 0 and sub1.is_visible():
+            sub1 = page.locator("button[type='submit']").filter(has_text=re.compile(r"Ro.yxatdan o.tish", re.I)).first
+            if sub1.is_visible():
                 sub1.click(force=True)
                 page.wait_for_timeout(3500)
 
@@ -1809,6 +1770,10 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
         print(f"{tag}[CHECK] {full_name} allaqachon sertifikat olgan. Keyingi o'quvchiga o'tiladi.")
         return "COMPLETED"
 
+    if full_name in get_unrecoverable_students():
+        print(f"{tag}[SKIP - ILOJI YO'Q] {full_name} oldin ro'yxatdan o'tgan va bazada paroli yo'q (yoki kirib bo'lmaydi). Qayta urinilmaydi!")
+        return "UNRECOVERABLE"
+
     if student.get("email") and student.get("password"):
         acc = {"email": student["email"].strip(), "password": student["password"].strip()}
     else:
@@ -1819,10 +1784,6 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
             accounts.get(full_name.replace("'", "`")) or
             accounts.get(re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", full_name))
         )
-
-    if not acc and full_name in get_unrecoverable_students():
-        print(f"{tag}[SKIP - ILOJI YO'Q] {full_name} oldin ro'yxatdan o'tgan va bazada paroli yo'q (yoki kirib bo'lmaydi). Qayta urinilmaydi!")
-        return "UNRECOVERABLE"
 
 
     common_media_args = [
