@@ -328,43 +328,47 @@ def ensure_enrolled_on_coursera(page, student_email="", student_password=""):
                     time.sleep(2.5)
 
                     # AGAR ENROLL BOSILGANDAN KEYIN LOGIN SO'RALSA (Login/Parol yozish):
-                    login_needed = False
-                    try:
-                        login_needed = page.locator("input[type='email'], input[name='email'], input[type='password'], div[role='dialog'] a:has-text('Log In'), div[role='dialog'] button:has-text('Log In')").first.is_visible()
-                    except Exception:
+                    for _ in range(12):
                         login_needed = False
-
-                    if login_needed:
-                        print("   [ENROLL-LOGIN] Enroll bosilgach login oynasi chiqdi, ma'lumotlar kiritilmoqda...")
                         try:
-                            l_tab = page.locator("div[role='dialog'] a:has-text('Log In'), div[role='dialog'] button:has-text('Log In'), div[role='dialog'] a:has-text('Already have an account? Log In'), div[role='dialog'] button:has-text('Already have an account? Log In'), div[role='dialog'] a:has-text('Войти')").first
-                            if l_tab.count() > 0 and l_tab.is_visible():
-                                l_tab.click(force=True)
-                                time.sleep(1.0)
+                            login_needed = page.locator("input[type='email'], input[name='email'], input[type='password'], div[role='dialog'] input, div[role='dialog'] button:has-text('Log In'), div[role='dialog'] a:has-text('Log In')").first.is_visible()
                         except Exception:
-                            pass
+                            login_needed = False
 
-                        em_box = page.locator("div[role='dialog'] input[type='email'], input[type='email'], input[name='email']").first
-                        if em_box.count() > 0 and em_box.is_visible() and student_email:
-                            print(f"   [ENROLL-LOGIN] Pochta kiritilmoqda: {student_email}...")
-                            em_box.click(force=True)
-                            time.sleep(0.15)
-                            em_box.fill(student_email)
-                            time.sleep(0.2)
+                        if login_needed:
+                            print("   [ENROLL-LOGIN] Enroll bosilgach login oynasi chiqdi, ma'lumotlar kiritilmoqda...")
+                            time.sleep(0.5)
+                            try:
+                                l_tab = page.locator("div[role='dialog'] a:has-text('Log In'), div[role='dialog'] button:has-text('Log In'), div[role='dialog'] a:has-text('Already have an account? Log In'), div[role='dialog'] button:has-text('Already have an account? Log In'), div[role='dialog'] a:has-text('Войти')").first
+                                if l_tab.count() > 0 and l_tab.is_visible():
+                                    l_tab.click(force=True)
+                                    time.sleep(1.0)
+                            except Exception:
+                                pass
 
-                        pwd_box = page.locator("div[role='dialog'] input[type='password'], input[type='password'], input[name='password']").first
-                        if pwd_box.count() > 0 and pwd_box.is_visible() and student_password:
-                            print("   [ENROLL-LOGIN] Parol kiritilmoqda...")
-                            pwd_box.click(force=True)
-                            time.sleep(0.15)
-                            pwd_box.fill(student_password)
-                            time.sleep(0.2)
+                            em_box = page.locator("div[role='dialog'] input[type='email'], input[type='email'], input[name='email']").first
+                            if em_box.count() > 0 and em_box.is_visible() and student_email:
+                                print(f"   [ENROLL-LOGIN] Login (pochta) kiritilmoqda: {student_email}...")
+                                em_box.click(force=True)
+                                time.sleep(0.15)
+                                em_box.fill(student_email)
+                                time.sleep(0.2)
 
-                        sub_box = page.locator("div[role='dialog'] button:has-text('Log In'), div[role='dialog'] button:has-text('Войти'), div[role='dialog'] button[type='submit'], button[data-e2e='login-form-submit-button']").first
-                        if sub_box.count() > 0 and sub_box.is_visible():
-                            print("   [ENROLL-LOGIN] 'Log In' tugmasi bosildi!")
-                            sub_box.click(force=True)
-                            time.sleep(3.5)
+                            pwd_box = page.locator("div[role='dialog'] input[type='password'], input[type='password'], input[name='password']").first
+                            if pwd_box.count() > 0 and pwd_box.is_visible() and student_password:
+                                print("   [ENROLL-LOGIN] Parol kiritilmoqda...")
+                                pwd_box.click(force=True)
+                                time.sleep(0.15)
+                                pwd_box.fill(student_password)
+                                time.sleep(0.2)
+
+                            sub_box = page.locator("div[role='dialog'] button:has-text('Log In'), div[role='dialog'] button:has-text('Войти'), div[role='dialog'] button[type='submit'], button[data-e2e='login-form-submit-button']").first
+                            if sub_box.count() > 0 and sub_box.is_visible():
+                                print("   [ENROLL-LOGIN] 'Log In' tugmasi bosildi!")
+                                sub_box.click(force=True)
+                                time.sleep(3.5)
+                            break
+                        time.sleep(0.5)
 
                     dismiss_all_popups(page)
                     page.evaluate("""() => {
@@ -1763,199 +1767,22 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
         print(f"   [2-XABAR: Coursera Join #{idx_link}/{len(all_invite_links)}] Taklifnoma ochilmoqda...")
         safe_goto_commit(page, inv_link, wait_sec=4.0)
 
-        # 1. JOIN HAVOLADAN KEYIN 70% ZOOM (Log In tugmasi ko'rinishi uchun):
-        time.sleep(1.5)
-        try:
-            page.evaluate("() => { document.body.style.zoom = '0.7'; document.documentElement.style.zoom = '0.7'; }")
-        except Exception:
-            pass
-
-        # 2. 'LOG IN' TUGMASINI TOPISH VA BOSISH:
-        time.sleep(1.0)
-        for _ in range(6):
-            cookies = [c.get("name", "") for c in page.context.cookies()]
-            if any("CAUTH" in c for c in cookies):
-                break
-
-            # Agar login formasi (email va parol) allaqachon ochilgan bo'lsa
-            has_login_inputs = False
+        # Taklifnoma havolasi ochiladi:
+        time.sleep(2.0)
+        # Agar sahifada 'Join Program' yoki 'Accept Invitation' tugmasi bo'lsa, bosamiz:
+        for _ in range(5):
             try:
-                has_login_inputs = page.locator("input[type='password'], input[name='password']").first.is_visible()
-            except Exception:
-                has_login_inputs = False
-            if has_login_inputs:
-                break
-
-            clicked_login = False
-            try:
-                clicked_login = page.evaluate("""() => {
-                    const elements = Array.from(document.querySelectorAll('a, button, [role="button"], span'));
-                    for (const el of elements) {
-                        const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-                        if (txt === 'log in' || txt === 'войти' || txt === 'kirish' ||
-                            txt.includes('already have an account') || txt.includes('log in with coursera') ||
-                            txt.includes('уже есть аккаунт')) {
-                            el.scrollIntoView({behavior: 'instant', block: 'center'});
-                            el.click();
-                            return true;
-                        }
-                    }
-                    return false;
-                }""")
-            except Exception:
-                clicked_login = False
-
-            if not clicked_login:
-                login_link = page.locator(
-                    "a:has-text('Already have an account? Log In'), "
-                    "button:has-text('Already have an account? Log In'), "
-                    "a:has-text('Log in with Coursera credentials'), "
-                    "button:has-text('Log in with Coursera credentials'), "
-                    "a[data-e2e='header-login-button'], "
-                    "button[data-e2e='header-login-button'], "
-                    "a:has-text('Log In'), button:has-text('Log In'), "
-                    "a:has-text('Войти'), button:has-text('Войти')"
-                ).first
-                if login_link.count() > 0 and login_link.is_visible():
-                    print("   [JOIN-LOGIN] Sahifadagi 'Log in' tugmasi bosilmoqda...")
-                    login_link.click(force=True)
-                    clicked_login = True
-
-            if clicked_login:
-                time.sleep(2.0)
-                break
-            time.sleep(0.5)
-
-        # 3. FORMAGA LOGIN VA PASTIGA PAROL YOZIB LOGIN TUGMASINI BOSISH:
-        for _ in range(35):
-            try:
-                em_inp = page.locator("input[type='email'], input[name='email'], input[placeholder*='email' i], input#email").first
-                c_pwd = page.locator("input[placeholder*='password' i], input[type='password'], input[name='password']").first
-                fn_in = page.locator("input[name='fullName'], input[placeholder*='full name' i], input[placeholder*='имя' i]").first
-
-                em_vis = False
-                pwd_vis = False
-                fn_vis = False
-                try:
-                    em_vis = em_inp.count() > 0 and em_inp.is_visible()
-                except Exception:
-                    em_vis = False
-                try:
-                    pwd_vis = c_pwd.count() > 0 and c_pwd.is_visible()
-                except Exception:
-                    pwd_vis = False
-                try:
-                    fn_vis = fn_in.count() > 0 and fn_in.is_visible()
-                except Exception:
-                    fn_vis = False
-
-                # 1. Ham Email, ham Parol ko'rinsa (Login va pastida Parol):
-                if em_vis and pwd_vis:
-                    try:
-                        cur_em = em_inp.input_value().strip()
-                    except Exception:
-                        cur_em = ""
-                    if not cur_em and s_email:
-                        print(f"   [JOIN-LOGIN] Login (pochta) kiritilmoqda: {s_email}...")
-                        em_inp.click(force=True)
-                        time.sleep(0.15)
-                        em_inp.fill(s_email)
-                        time.sleep(0.2)
-
-                    try:
-                        cur_pwd = c_pwd.input_value().strip()
-                    except Exception:
-                        cur_pwd = ""
-                    if not cur_pwd and student_password:
-                        print("   [JOIN-LOGIN] Parol kiritilmoqda...")
-                        c_pwd.click(force=True)
-                        time.sleep(0.15)
-                        c_pwd.fill(student_password)
-                        time.sleep(0.2)
-
-                    if fn_vis and full_name:
-                        try:
-                            if not fn_in.input_value().strip():
-                                fn_in.fill(full_name.replace("`", "'"))
-                        except Exception:
-                            pass
-
-                    login_btn = page.locator("button:has-text('Log In'), button:has-text('Войти'), button:has-text('Accept Invitation'), button:has-text('Join Program'), button[data-e2e='login-form-submit-button'], button[type='submit']").first
-                    if login_btn.count() > 0 and login_btn.is_visible():
-                        print("   [JOIN-LOGIN] 'Log In' tugmasi bosilmoqda...")
-                        login_btn.click(force=True)
-                        time.sleep(3.5)
-                        cookies = [c.get("name", "") for c in page.context.cookies()]
-                        if any("CAUTH" in c for c in cookies):
-                            print("   [JOIN-OK] CAUTH sessiyasi olindi (Kapchasiz muvaffaqiyatli)!")
-                            time.sleep(2.0)
-                            break
-                        continue
-
-                # 2. Agar faqat email ko'rinsa (2 bosqichli):
-                elif em_vis and not pwd_vis:
-                    try:
-                        cur_em = em_inp.input_value().strip()
-                    except Exception:
-                        cur_em = ""
-                    if not cur_em and s_email:
-                        print(f"   [JOIN-LOGIN] Pochta kiritilmoqda: {s_email}...")
-                        em_inp.click(force=True)
-                        time.sleep(0.15)
-                        em_inp.fill(s_email)
-                        time.sleep(0.3)
-                    cont_b = page.locator("button:has-text('Continue'), button:has-text('Продолжить'), button[type='submit']").first
-                    if cont_b.count() > 0 and cont_b.is_visible():
-                        cont_b.click(force=True)
-                        time.sleep(2.0)
-                        continue
-
-                # 3. Agar faqat parol ko'rinsa:
-                elif pwd_vis and not em_vis:
-                    time.sleep(0.3)
-                    c_pwd.click(force=True)
-                    time.sleep(0.15)
-                    c_pwd.fill(student_password)
-                    time.sleep(0.3)
-                    set_b = page.locator("button:has-text('Log In'), button:has-text('Войти'), button:has-text('Set Password'), button:has-text('Join Program'), button:has-text('Accept Invitation'), button[type='submit']").first
-                    if set_b.count() > 0 and set_b.is_visible():
-                        print("   [JOIN-LOGIN] Tasdiqlash / Log In bosilmoqda...")
-                        set_b.click(force=True)
-                        time.sleep(3.0)
-                        cookies = [c.get("name", "") for c in page.context.cookies()]
-                        if any("CAUTH" in c for c in cookies):
-                            print("   [JOIN-OK] CAUTH sessiyasi olindi!")
-                            time.sleep(2.0)
-                            break
-                        continue
-
-                # 4. Agar 'Join Program' / 'Accept Invitation' tugmasi chiqsa:
-                join_prog_btn = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе'), button:has-text('Accept Invitation')").first
-                if join_prog_btn.count() > 0 and join_prog_btn.is_visible():
-                    print("   [JOIN-PROGRAM] 'Join Program' tasdiqlandi!")
-                    join_prog_btn.click(force=True)
-                    time.sleep(3.0)
-
-                cookies = [c.get("name", "") for c in page.context.cookies()]
-                if any("CAUTH" in c for c in cookies):
-                    time.sleep(2.0)
-                    break
-            except Exception:
-                pass
-            time.sleep(0.5)
-
-        for _ in range(6):
-            try:
-                terms_b = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе'), button:has-text('Accept Invitation')").first
-                if terms_b.count() > 0 and terms_b.is_visible():
-                    terms_b.click(force=True)
+                join_b = page.locator("button:has-text('Join Program'), button:has-text('Accept Invitation'), button:has-text('Присоединиться к программе'), button:has-text('Принять приглашение')").first
+                if join_b.count() > 0 and join_b.is_visible():
+                    print("   [JOIN] 'Join Program' / 'Accept Invitation' tugmasi bosildi!")
+                    join_b.click(force=True)
                     time.sleep(2.5)
                     break
             except Exception:
                 pass
             time.sleep(0.5)
 
-    # 4. ENROLL (Kursga to'g'ridan-to'g'ri yozilish, agar login so'ralsa login/parol yozish va darsni boshlash):
+    # ENROLL (Kursga to'g'ridan-to'g'ri o'tib, Enroll bosilganda Login va Parol kiritilib dars boshlanadi):
     ensure_enrolled_on_coursera(page, student_email=s_email, student_password=student_password)
     return True
 
