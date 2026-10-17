@@ -1724,64 +1724,51 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
         print(f"   [2-XABAR: Coursera Join #{idx_link}/{len(all_invite_links)}] Taklifnoma ochilmoqda...")
         safe_goto_commit(page, inv_link, wait_sec=4.0)
 
-        # 1. JOIN HAVOLADAN KEYIN 70% ZOOM VA LOGIN TUGMASINI BOSISH:
+        # 1. JOIN HAVOLADAN KEYIN 70% ZOOM:
         time.sleep(1.5)
         try:
             page.evaluate("() => { document.body.style.zoom = '0.7'; document.documentElement.style.zoom = '0.7'; }")
         except Exception:
             pass
 
-        for _ in range(6):
+        # 2. AGAR TAKLIFNOMA FORMASI (Email/Ism/Parol) BO'LMASA, TUGMANI BOSISH:
+        for _ in range(4):
             cookies = [c.get("name", "") for c in page.context.cookies()]
             if any("CAUTH" in c for c in cookies):
                 break
 
-            # Agar login/parol formasi allaqachon ko'rinib turgan bo'lsa
-            has_login_form = False
+            # Agar sahifada to'g'ridan-to'g'ri taklifnoma formasi (email yoki parol) ko'rinsa — tashqi login tugmasini bosmaymiz!
+            has_form = False
             try:
-                has_login_form = page.locator("input[type='password'], input[name='password']").first.is_visible()
+                has_form = page.locator("input[type='email'], input[name='email'], input[placeholder*='email' i], input[type='password']").first.is_visible()
             except Exception:
-                has_login_form = False
-            if has_login_form:
+                has_form = False
+            if has_form:
+                print("   [JOIN-FORM] Taklifnoma formasi topildi (Pochta, Ism va Parol to'g'ridan-to'g'ri kiritiladi)!")
                 break
 
-            # Log in knopkasini JavaScript va locator orqali qidirib bosish
-            clicked_login = False
-            try:
-                clicked_login = page.evaluate("""() => {
-                    const elements = Array.from(document.querySelectorAll('a, button, [role="button"], span'));
-                    for (const el of elements) {
-                        const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-                        if (txt === 'log in' || txt === 'войти' || txt === 'kirish' ||
-                            txt.includes('already have an account') || txt.includes('log in with coursera') ||
-                            txt.includes('уже есть аккаунт')) {
-                            el.scrollIntoView({behavior: 'instant', block: 'center'});
-                            el.click();
-                            return true;
-                        }
-                    }
-                    return false;
-                }""")
-            except Exception:
-                clicked_login = False
+            # Agar to'g'ridan-to'g'ri 'Accept Invitation' yoki 'Join Program' tugmasi bo'lsa:
+            join_btn = page.locator("button:has-text('Accept Invitation'), button:has-text('Принять приглашение'), button:has-text('Join Program'), button:has-text('Присоединиться к программе')").first
+            if join_btn.count() > 0 and join_btn.is_visible():
+                print("   [JOIN-BTN] 'Accept Invitation' / 'Join Program' tugmasi bosilmoqda...")
+                join_btn.click(force=True)
+                time.sleep(2.0)
+                break
 
-            if not clicked_login:
-                login_link = page.locator(
-                    "a:has-text('Already have an account? Log In'), "
-                    "button:has-text('Already have an account? Log In'), "
-                    "a:has-text('Log in with Coursera credentials'), "
-                    "button:has-text('Log in with Coursera credentials'), "
-                    "a[data-e2e='header-login-button'], "
-                    "button[data-e2e='header-login-button'], "
-                    "a:has-text('Log In'), button:has-text('Log In'), "
-                    "a:has-text('Войти'), button:has-text('Войти')"
-                ).first
-                if login_link.count() > 0 and login_link.is_visible():
-                    print("   [JOIN-LOGIN] Sahifadagi 'Log in' tugmasi bosilmoqda...")
-                    login_link.click(force=True)
-                    clicked_login = True
-
-            if clicked_login:
+            # Faqat forma ham, Accept ham bo'lmaganda 'Log In' tugmasi bosiladi:
+            login_link = page.locator(
+                "a:has-text('Already have an account? Log In'), "
+                "button:has-text('Already have an account? Log In'), "
+                "a:has-text('Log in with Coursera credentials'), "
+                "button:has-text('Log in with Coursera credentials'), "
+                "a[data-e2e='header-login-button'], "
+                "button[data-e2e='header-login-button'], "
+                "a:has-text('Log In'), button:has-text('Log In'), "
+                "a:has-text('Войти'), button:has-text('Войти')"
+            ).first
+            if login_link.count() > 0 and login_link.is_visible():
+                print("   [JOIN-LOGIN] Sahifadagi 'Log in' tugmasi bosilmoqda...")
+                login_link.click(force=True)
                 time.sleep(2.0)
                 break
             time.sleep(0.5)
@@ -1808,34 +1795,67 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
                 except Exception:
                     fn_vis = False
 
-                # 1. AGAR HAM EMAIL, HAM PAROL BIR VAQTDA KO'RINSA (Klassik Login formasi: Login va pastida Parol):
-                if em_vis and pwd_vis:
+                # 1. POCHTA KIRITISH (agar bo'sh bo'lsa):
+                if em_vis:
                     try:
                         cur_em = em_inp.input_value().strip()
                     except Exception:
                         cur_em = ""
                     if not cur_em and s_email:
-                        print(f"   [JOIN-LOGIN-FORM] Pochta kiritilmoqda: {s_email}...")
+                        print(f"   [JOIN-POCHTA] Taklif oynasiga pochta kiritilmoqda: {s_email}...")
                         em_inp.click(force=True)
                         time.sleep(0.15)
                         em_inp.fill(s_email)
                         time.sleep(0.2)
 
+                # 2. FAMILIYA-ISM KIRITISH (agar so'ralsa):
+                if fn_vis:
+                    try:
+                        cur_fn = fn_in.input_value().strip()
+                    except Exception:
+                        cur_fn = ""
+                    if not cur_fn and full_name:
+                        print(f"   [JOIN-ISM] Familiya-Ism kiritilmoqda: {full_name}...")
+                        fn_in.click(force=True)
+                        time.sleep(0.15)
+                        fn_in.fill(full_name.replace("`", "'"))
+                        time.sleep(0.2)
+
+                # 3. PAROL KIRITISH (agar so'ralsa):
+                if pwd_vis:
                     try:
                         cur_pwd = c_pwd.input_value().strip()
                     except Exception:
                         cur_pwd = ""
                     if not cur_pwd and student_password:
-                        print("   [JOIN-LOGIN-FORM] Parol kiritilmoqda...")
+                        print("   [JOIN-PAROL] Parol kiritilmoqda...")
                         c_pwd.click(force=True)
                         time.sleep(0.15)
                         c_pwd.fill(student_password)
                         time.sleep(0.2)
 
-                    login_btn = page.locator("button:has-text('Log In'), button:has-text('Войти'), button[data-e2e='login-form-submit-button'], button[type='submit']").first
-                    if login_btn.count() > 0 and login_btn.is_visible():
-                        print("   [JOIN-LOGIN-SUBMIT] 'Log In' tugmasi bosilmoqda...")
-                        login_btn.click(force=True)
+                # 4. SUBMIT: AGAR HAM POCHTA, HAM PAROL BO'LSA (yoki faqat parol bosqichi):
+                if (em_vis and pwd_vis) or (pwd_vis and not em_vis):
+                    sub_btn = page.locator(
+                        "button:has-text('Accept Invitation'), "
+                        "button:has-text('Join Program'), "
+                        "button:has-text('Принять приглашение'), "
+                        "button:has-text('Присоединиться к программе'), "
+                        "button:has-text('Log In'), "
+                        "button:has-text('Войти'), "
+                        "button:has-text('Set Password'), "
+                        "button:has-text('Установить пароль'), "
+                        "button[data-e2e='login-form-submit-button'], "
+                        "button[type='submit']"
+                    ).first
+                    if sub_btn.count() > 0 and sub_btn.is_visible():
+                        b_txt = ""
+                        try:
+                            b_txt = sub_btn.inner_text().strip()
+                        except Exception:
+                            b_txt = "Submit"
+                        print(f"   [JOIN-SUBMIT] '{b_txt}' tugmasi bosilmoqda...")
+                        sub_btn.click(force=True)
                         time.sleep(3.5)
                         cookies = [c.get("name", "") for c in page.context.cookies()]
                         if any("CAUTH" in c for c in cookies):
@@ -1844,60 +1864,24 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
                             break
                         continue
 
-                # 2. AGAR FAQAT EMAIL KO'RINSA (2 bosqichli kirish yoki taklif pochtasi):
+                # 5. AGAR FAQAT EMAIL KO'RINSA (1-bosqich):
                 elif em_vis and not pwd_vis:
-                    try:
-                        cur_em = em_inp.input_value().strip()
-                    except Exception:
-                        cur_em = ""
-                    if not cur_em and s_email:
-                        print(f"   [JOIN-EMAIL] Taklifnoma formasiga pochta kiritilmoqda: {s_email}...")
-                        em_inp.click(force=True)
-                        time.sleep(0.15)
-                        em_inp.fill(s_email)
-                        time.sleep(0.3)
-                    cont_b = page.locator("button:has-text('Continue'), button:has-text('Продолжить'), button[type='submit']").first
+                    cont_b = page.locator("button:has-text('Accept Invitation'), button:has-text('Join Program'), button:has-text('Continue'), button:has-text('Продолжить'), button[type='submit']").first
                     if cont_b.count() > 0 and cont_b.is_visible():
+                        b_txt = ""
+                        try:
+                            b_txt = cont_b.inner_text().strip()
+                        except Exception:
+                            b_txt = "Continue"
+                        print(f"   [JOIN-CONTINUE] '{b_txt}' bosilmoqda...")
                         cont_b.click(force=True)
                         time.sleep(2.0)
                         continue
 
-                # 3. AGAR FAMILYA ISM SHARIF SO'RALSA:
-                if fn_vis:
-                    try:
-                        cur_fn = fn_in.input_value().strip()
-                    except Exception:
-                        cur_fn = ""
-                    if not cur_fn and full_name:
-                        print(f"   [JOIN-NAME] Ism-Familiya kiritilmoqda: {full_name}...")
-                        fn_in.click(force=True)
-                        time.sleep(0.15)
-                        fn_in.fill(full_name.replace("`", "'"))
-                        time.sleep(0.2)
-
-                # 4. AGAR FAQAT PAROL KO'RINSA (2-bosqich yoki yangi parol o'rnatish):
-                if pwd_vis and not em_vis:
-                    time.sleep(0.3)
-                    c_pwd.click(force=True)
-                    time.sleep(0.15)
-                    c_pwd.fill(student_password)
-                    time.sleep(0.3)
-                    set_b = page.locator("button:has-text('Log In'), button:has-text('Войти'), button:has-text('Set Password'), button:has-text('Установить пароль'), button:has-text('Продолжить'), button:has-text('Continue'), button:has-text('Создать'), button:has-text('Join Program'), button[type='submit']").first
-                    if set_b.count() > 0 and set_b.is_visible():
-                        print("   [JOIN-SUBMIT] Tasdiqlash / Log In bosilmoqda...")
-                        set_b.click(force=True)
-                        time.sleep(3.0)
-                        cookies = [c.get("name", "") for c in page.context.cookies()]
-                        if any("CAUTH" in c for c in cookies):
-                            print("   [JOIN-OK] CAUTH sessiyasi olindi!")
-                            time.sleep(2.0)
-                            break
-                        continue
-
-                # 5. AGAR 'Join Program' / 'Accept Invitation' TASDIQ TUGMASI CHIQSA:
-                join_prog_btn = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе'), button:has-text('Accept Invitation')").first
+                # 6. AGAR 'Accept Invitation' / 'Join Program' TASDIQ MODALI CHIQSA:
+                join_prog_btn = page.locator("button:has-text('Accept Invitation'), button:has-text('Join Program'), button:has-text('Присоединиться к программе'), button:has-text('Принять приглашение')").first
                 if join_prog_btn.count() > 0 and join_prog_btn.is_visible():
-                    print("   [JOIN-PROGRAM] 'Join Program' tasdiqlandi!")
+                    print("   [JOIN-PROGRAM] 'Accept Invitation' tasdiqlandi!")
                     join_prog_btn.click(force=True)
                     time.sleep(3.0)
 
