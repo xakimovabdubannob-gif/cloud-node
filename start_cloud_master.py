@@ -207,8 +207,13 @@ while time.time() - start_ts < 16200:
     except Exception:
         bridge_alive = False
 
-    if not bridge_alive and (p_bridge is None or p_bridge.poll() is not None):
-        print(f"[QAYTA ISHGA TUSHIRISH] Master Bridge to'xtadi. Qayta yoqilmoqda...")
+    if not bridge_alive:
+        print("[QAYTA ISHGA TUSHIRISH] Master Bridge javob bermayapti yoki qotdi. Qayta yoqilmoqda...")
+        if p_bridge is not None:
+            try:
+                p_bridge.kill()
+            except Exception:
+                pass
         p_bridge = subprocess.Popen([sys.executable, "-u", "cluster_master_bridge.py"])
 
     # Tunnel manzilini tekshiramiz

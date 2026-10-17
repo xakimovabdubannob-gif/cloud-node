@@ -52,8 +52,8 @@ if sys.platform == "win32":
 CLUSTER_PORT = 8766
 ORDERS_DIR = "bot_orders"
 NODES_STATE_FILE = "cluster_nodes_state.json"
-file_lock = threading.Lock()
-nodes_lock = threading.Lock()
+file_lock = threading.RLock()
+nodes_lock = threading.RLock()
 _excel_cache = {}
 
 cluster_nodes = {}
@@ -363,7 +363,9 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
             indices = range(total, 0, -1) if (node_id and node_id != "MASTER_PC") else range(1, total + 1)
             for idx in indices:
                 st = students[idx - 1]
-                s_name = st["name"]
+                s_name = st.get("name", "")
+                if not s_name:
+                    continue
                 s_norm = normalize_student_key(s_name)
                 if s_norm in done_norm or s_norm in unrec_norm:
                     continue
@@ -1793,47 +1795,53 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if path == "/cluster/pop_task":
-            data = self._read_body()
-            node_id = data.get("node_id", "")
-            worker_id = str(data.get("worker_id", "1"))
-            with nodes_lock:
-                node_info = cluster_nodes.get(node_id, {})
-                if node_id in cluster_nodes:
-                    cluster_nodes[node_id]["last_seen"] = time.time()
-            if not node_info.get("approved", False):
-                self._send_json({"has_task": False, "reason": "not_approved"})
-                return
-
-            task = get_pending_cluster_task(node_id=node_id, worker_id=worker_id)
-            if task.get("has_task") and node_id in cluster_nodes:
-                st_n = " ".join(task.get("student", {}).get("name", "").strip().upper().split())
-                idx_v = task.get("idx", 0)
-                tot_v = task.get("total", 0)
-                step_init = f"🚀 AI Agent #{worker_id} ishni boshladi..."
-                init_st = f"[{idx_v}/{tot_v}] {st_n} — {step_init}"
+            try:
+                data = self._read_body()
+                node_id = data.get("node_id", "")
+                worker_id = str(data.get("worker_id", "1"))
                 with nodes_lock:
-                    cluster_nodes[node_id]["status"] = init_st
-                    cluster_nodes[node_id]["idle_alerted"] = False
-                    if "worker_statuses" not in cluster_nodes[node_id]:
-                        cluster_nodes[node_id]["worker_statuses"] = {}
-                    cluster_nodes[node_id]["worker_statuses"][worker_id] = init_st
-                    save_nodes_state(force=False)
-                    pc_idx_reg = (list(cluster_nodes.keys()).index(node_id) + 2) if node_id in cluster_nodes else 2
-                    pc_name_reg = cluster_nodes[node_id].get("pc_name", node_id)
+                    node_info = cluster_nodes.get(node_id, {})
+                    if node_id in cluster_nodes:
+                        cluster_nodes[node_id]["last_seen"] = time.time()
+                if not node_info.get("approved", True):
+                    self._send_json({"has_task": False, "reason": "not_approved"})
+                    return
 
-                cid = task.get("chat_id") or load_bot_config().get("admin_id", 6580113791)
-                pc_tg_tag = f"💻 {pc_idx_reg}-Kompyuter [{pc_name_reg}] | 🤖 Agent #{worker_id}"
-                start_msg = (
-                    f"⏳ <b>[{idx_v}/{tot_v}] {st_n}</b>\n"
-                    f"└ <b>{pc_tg_tag}</b>\n"
-                    f"└ 🚀 Jarayon boshlanmoqda..."
-                )
-                threading.Thread(target=send_tg, args=(cid, start_msg), daemon=True).start()
-            elif task.get("all_done") and node_id in cluster_nodes:
-                with nodes_lock:
-                    cluster_nodes[node_id]["status"] = "🟡 Bo'sh (Yangi buyurtma kutilmoqda)"
-                    save_nodes_state(force=False)
-            self._send_json(task)
+                task = get_pending_cluster_task(node_id=node_id, worker_id=worker_id)
+                if task.get("has_task") and node_id in cluster_nodes:
+                    st_obj = task.get("student") or {}
+                    st_n = " ".join(st_obj.get("name", "").strip().upper().split())
+                    idx_v = task.get("idx", 0)
+                    tot_v = task.get("total", 0)
+                    step_init = f"🚀 AI Agent #{worker_id} ishni boshladi..."
+                    init_st = f"[{idx_v}/{tot_v}] {st_n} — {step_init}"
+                    with nodes_lock:
+                        cluster_nodes[node_id]["status"] = init_st
+                        cluster_nodes[node_id]["idle_alerted"] = False
+                        if "worker_statuses" not in cluster_nodes[node_id]:
+                            cluster_nodes[node_id]["worker_statuses"] = {}
+                        cluster_nodes[node_id]["worker_statuses"][worker_id] = init_st
+                        save_nodes_state(force=False)
+                        all_keys = list(cluster_nodes.keys())
+                        pc_idx_reg = (all_keys.index(node_id) + 2) if node_id in all_keys else 2
+                        pc_name_reg = cluster_nodes[node_id].get("pc_name", node_id)
+
+                    cid = task.get("chat_id") or load_bot_config().get("admin_id", 6580113791)
+                    pc_tg_tag = f"💻 {pc_idx_reg}-Kompyuter [{pc_name_reg}] | 🤖 Agent #{worker_id}"
+                    start_msg = (
+                        f"⏳ <b>[{idx_v}/{tot_v}] {st_n}</b>\n"
+                        f"└ <b>{pc_tg_tag}</b>\n"
+                        f"└ 🚀 Jarayon boshlanmoqda..."
+                    )
+                    threading.Thread(target=send_tg, args=(cid, start_msg), daemon=True).start()
+                elif task.get("all_done") and node_id in cluster_nodes:
+                    with nodes_lock:
+                        cluster_nodes[node_id]["status"] = "🟡 Bo'sh (Yangi buyurtma kutilmoqda)"
+                        save_nodes_state(force=False)
+                self._send_json(task)
+            except Exception as e:
+                print(f"[POP_TASK ERROR] {e}")
+                self._send_json({"has_task": False, "error": str(e)})
             return
 
         if path == "/cluster/finish_task":
