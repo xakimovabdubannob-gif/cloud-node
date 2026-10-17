@@ -100,6 +100,17 @@ if os.path.exists(NODES_STATE_FILE):
     except Exception:
         pass
 
+if "MASTER_PC" not in cluster_nodes:
+    cluster_nodes["MASTER_PC"] = {
+        "pc_name": f"1-Kompyuter [{socket.gethostname()}] (Asosiy Server)",
+        "ram_gb": 16,
+        "workers": 4,
+        "approved": True,
+        "last_seen": time.time(),
+        "status": "🟢 Faol ishlamoqda...",
+        "worker_statuses": {},
+    }
+
 public_tunnel_url = ""
 TRIED_CLUSTER_FILE = "cluster_tried_students.json"
 tried_cluster_set = {"MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"}
@@ -1181,22 +1192,27 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         st_txt = w_statuses.get(wid_str, "")
 
                         st_name = "—"
-                        m_sn = re.match(r"^\[\d+/\d+\]\s+(.+?)\s+—", st_txt)
+                        step_label = "🟡 Bo'sh (Kutmoqda)"
+                        m_sn = re.match(r"^\[\d+/\d+\]\s+(.+?)\s+[-—]\s*(.*)$", st_txt)
                         if m_sn:
                             st_name = m_sn.group(1).strip()
+                            step_label = m_sn.group(2).strip() or "Ishlanmoqda..."
                         elif (nid, wid_str) in _worker_assigned:
                             st_name = _worker_assigned[(nid, wid_str)]
+                            step_label = st_txt or "🚀 Ishlanmoqda..."
+                        elif st_txt and "Bo'sh" not in st_txt:
+                            pts = re.split(r"[-—]", st_txt, maxsplit=1)
+                            st_name = pts[0].strip() if len(pts) > 1 else st_txt
+                            step_label = pts[1].strip() if len(pts) > 1 else "🚀 Ishlanmoqda..."
 
                         if not is_online or not is_approved or w_max == 0:
                             ag_state = "offline"
                             step_label = "🔴 O'chiq"
-                        elif "Bo'sh" in st_txt or not st_txt:
+                        elif "Bo'sh" in st_txt or (not st_txt and st_name == "—"):
                             ag_state = "idle"
                             step_label = "🟡 Bo'sh (Kutmoqda)"
                         else:
                             ag_state = "working"
-                            pts = st_txt.split("—", 1)
-                            step_label = pts[1].strip() if len(pts) > 1 else st_txt
 
                         if ag_state == "working":
                             active_count += 1
@@ -1973,13 +1989,24 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             status_text = data.get("status_text", "")
             now_st = time.time()
             with nodes_lock:
-                if node_id in cluster_nodes:
-                    cluster_nodes[node_id]["last_seen"] = now_st
-                    cluster_nodes[node_id]["status"] = status_text
-                    if "worker_statuses" not in cluster_nodes[node_id]:
-                        cluster_nodes[node_id]["worker_statuses"] = {}
-                    cluster_nodes[node_id]["worker_statuses"][w_id] = status_text
-                    save_nodes_state(force=False)
+                if not node_id:
+                    node_id = "MASTER_PC"
+                if node_id not in cluster_nodes:
+                    cluster_nodes[node_id] = {
+                        "pc_name": f"1-Kompyuter [{socket.gethostname()}] (Asosiy Server)" if node_id == "MASTER_PC" else node_id,
+                        "ram_gb": 16,
+                        "workers": 4,
+                        "approved": True,
+                        "last_seen": now_st,
+                        "status": status_text,
+                        "worker_statuses": {}
+                    }
+                cluster_nodes[node_id]["last_seen"] = now_st
+                cluster_nodes[node_id]["status"] = status_text
+                if "worker_statuses" not in cluster_nodes[node_id]:
+                    cluster_nodes[node_id]["worker_statuses"] = {}
+                cluster_nodes[node_id]["worker_statuses"][w_id] = status_text
+                save_nodes_state(force=False)
 
             w_key_status = f"{node_id}_{w_id}"
             if "Bo'sh" in status_text:

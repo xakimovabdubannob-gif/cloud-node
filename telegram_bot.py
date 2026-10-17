@@ -1307,6 +1307,7 @@ class TelegramBotServer:
                     lines_txt.append(f"  {pref} {h_line}")
                 self.edit_message(_cid, _mid, "\n".join(lines_txt))
 
+        update_step("🚀 Jarayon boshlanmoqda...")
         is_headless = os.environ.get("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
         t_proc_start = time.time()
         result_status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=worker_id)
@@ -1321,6 +1322,14 @@ class TelegramBotServer:
                 "status": result_status,
                 "student": st,
                 "duration_sec": dur_sec,
+            }, timeout=2)
+        except Exception:
+            pass
+        try:
+            requests.post("http://127.0.0.1:8766/cluster/status", json={
+                "node_id": "MASTER_PC",
+                "worker_id": str(worker_id),
+                "status_text": "🟡 Bo'sh (Navbatdagi o'quvchi kutilmoqda)",
             }, timeout=2)
         except Exception:
             pass
