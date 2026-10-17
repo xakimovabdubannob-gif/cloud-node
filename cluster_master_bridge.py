@@ -262,8 +262,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         parsed_orders = _state_mem_cache["orders"]
 
     with nodes_lock:
-        # Uzilgan nodelarni cluster_nodes dan tozalaymiz (zombi kompyuter raqamlari yig'ilmasligi uchun)
-        dead_nodes = [nid for nid, ninf in list(cluster_nodes.items()) if now - ninf.get("last_seen", 0) > 180]
+        dead_nodes = [nid for nid, ninf in list(cluster_nodes.items()) if nid != "MASTER_PC" and now - float(ninf.get("last_seen", 0)) > 75]
         for nid in dead_nodes:
             cluster_nodes.pop(nid, None)
 
@@ -1226,7 +1225,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     cluster_nodes["MASTER_PC"]["workers"] = 3
 
-                all_node_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC"]
+                all_node_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC" and (now_t - float(cluster_nodes[k].get("last_seen", 0)) < 75)]
                 all_node_keys.insert(0, "MASTER_PC")
 
                 global_agent_num = 1
