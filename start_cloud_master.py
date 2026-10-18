@@ -269,9 +269,9 @@ while time.time() - start_ts < 16200:
         elif target_st_cnt <= 25:
             n_cnt = 4
         elif target_st_cnt <= 60:
-            n_cnt = 8
+            n_cnt = 6
         else:
-            n_cnt = 15
+            n_cnt = 10
         print(f"[BUYURTMA KELDI] {target_st_cnt} ta o'quvchi! GitHub'da {n_cnt} ta Virtual Kompyuter (Klaster) ishga tushirilmoqda...")
         try:
             r = requests.post(
