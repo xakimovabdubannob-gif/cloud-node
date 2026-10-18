@@ -61,6 +61,7 @@ in_progress_students = {}
 pending_screen_requests = {}  # node_id -> chat_id
 _worker_assigned = {}
 _sticky_workers = {}
+_started_notified_students = set()
 _last_nodes_save_ts = 0.0
 
 
@@ -262,6 +263,16 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         parsed_orders = _state_mem_cache["orders"]
 
     with nodes_lock:
+        if node_id and node_id != "MASTER_PC":
+            allowed_worker_nodes = [k for k, v in cluster_nodes.items() if k != "MASTER_PC" and v.get("approved", True)][:10]
+            if node_id not in allowed_worker_nodes:
+                return {"has_task": False, "reason": "node_not_in_top_10"}
+            try:
+                if int(worker_id or 1) > 6:
+                    return {"has_task": False, "reason": "max_6_agents_per_node"}
+            except Exception:
+                pass
+
         dead_nodes = [nid for nid, ninf in list(cluster_nodes.items()) if nid != "MASTER_PC" and now - float(ninf.get("last_seen", 0)) > 75]
         for nid in dead_nodes:
             cluster_nodes.pop(nid, None)
@@ -276,7 +287,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                     in_progress_students.pop(_wst, None)
                 continue
             _nlast = cluster_nodes.get(_wnid, {}).get("last_seen", 0)
-            if now - _nlast > 180:
+            if now - _nlast > 1800:
                 _worker_assigned.pop((_wnid, _wwid), None)
                 _sticky_workers.pop((_wnid, _wwid), None)
                 in_progress_students.pop(_wst, None)
@@ -284,7 +295,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         # Hozir tirik agentlarga biriktirilgan barcha o'quvchilar
         active_assigned_norm = set()
         for (_wn, _ww), _st in _worker_assigned.items():
-            if _wn == "MASTER_PC" or (now - cluster_nodes.get(_wn, {}).get("last_seen", 0) <= 180):
+            if _wn == "MASTER_PC" or (now - cluster_nodes.get(_wn, {}).get("last_seen", 0) <= 600):
                 active_assigned_norm.add(normalize_student_key(_st))
 
         # Agar o'quvchi faol agentga biriktirilgan bo'lsa, in_progress_students dan HECH QACHON o'chirilmaydi!
@@ -1344,8 +1355,8 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     cluster_nodes["MASTER_PC"]["workers"] = 1
 
-                all_node_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC" and (now_t - float(cluster_nodes[k].get("last_seen", 0)) < 75)]
-                all_node_keys.insert(0, "MASTER_PC")
+                worker_node_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC" and (now_t - float(cluster_nodes[k].get("last_seen", 0)) < 75)][:10]
+                all_node_keys = ["MASTER_PC"] + worker_node_keys
 
                 global_agent_num = 1
                 for nid_idx, nid in enumerate(all_node_keys, 1):
@@ -1838,15 +1849,24 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             force_prompt = bool(data.get("force_prompt", False))
             with nodes_lock:
                 now_ts = time.time()
+                active_worker_count = len([k for k, v in cluster_nodes.items() if k != "MASTER_PC" and (now_ts - float(v.get("last_seen", 0)) < 90)])
                 if node_id not in cluster_nodes:
+                    if active_worker_count >= 10:
+                        def_workers = 0
+                        node_approved = False
+                        node_status = "Kutish rejimida (Klaster to'lgan: max 10 ta PC)"
+                    else:
+                        def_workers = 6
+                        node_approved = True
+                        node_status = "Faol ishlamoqda..."
                     cluster_nodes[node_id] = {
                         "pc_name": pc_name,
                         "ram_gb": ram_gb,
                         "workers": def_workers,
-                        "approved": True,
+                        "approved": node_approved,
                         "last_seen": now_ts,
                         "last_prompt": now_ts,
-                        "status": "Faol ishlamoqda...",
+                        "status": node_status,
                         "notified": True,
                     }
                     save_nodes_state()
@@ -1854,13 +1874,11 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     cluster_nodes[node_id]["last_seen"] = now_ts
                     cluster_nodes[node_id]["ram_gb"] = ram_gb
-                    cluster_nodes[node_id]["approved"] = True
-                    if int(cluster_nodes[node_id].get("workers", 0)) < def_workers:
-                        cluster_nodes[node_id]["workers"] = def_workers
+                    if cluster_nodes[node_id].get("approved", True):
+                        cluster_nodes[node_id]["workers"] = 6
                     save_nodes_state()
                 pc_idx_reg = (list(cluster_nodes.keys()).index(node_id) + 2) if node_id in cluster_nodes else 2
-                approved = True
-                cluster_nodes[node_id]["approved"] = True
+                approved = cluster_nodes[node_id].get("approved", True)
                 workers = cluster_nodes[node_id].get("workers", def_workers)
 
             if notify_now:
@@ -1978,12 +1996,15 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
 
                     cid = task.get("chat_id") or load_bot_config().get("admin_id", 6580113791)
                     pc_tg_tag = f"💻 {pc_clean_name} | 🤖 Agent #{global_w_id}"
-                    start_msg = (
-                        f"⏳ <b>[{idx_v}/{tot_v}] {st_n}</b>\n"
-                        f"└ <b>{pc_tg_tag}</b>\n"
-                        f"└ 🚀 Jarayon boshlanmoqda..."
-                    )
-                    threading.Thread(target=send_tg, args=(cid, start_msg), daemon=True).start()
+                    st_norm = normalize_student_key(st_n)
+                    if st_norm and st_norm not in _started_notified_students:
+                        _started_notified_students.add(st_norm)
+                        start_msg = (
+                            f"⏳ <b>[{idx_v}/{tot_v}] {st_n}</b>\n"
+                            f"└ <b>{pc_tg_tag}</b>\n"
+                            f"└ 🚀 Jarayon boshlanmoqda..."
+                        )
+                        threading.Thread(target=send_tg, args=(cid, start_msg), daemon=True).start()
                 elif task.get("all_done") and node_id in cluster_nodes:
                     with nodes_lock:
                         cluster_nodes[node_id]["status"] = "🟡 Bo'sh (Yangi buyurtma kutilmoqda)"
