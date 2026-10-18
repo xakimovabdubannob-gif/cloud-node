@@ -29,8 +29,8 @@ import time
 import queue
 import socket
 import threading
-import requests
 import subprocess
+import requests
 from datetime import datetime
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -67,8 +67,8 @@ ADMIN_TG_URL = "https://t.me/OBIDBEK1988"
 ORDERS_DIR = "bot_orders"
 os.makedirs(ORDERS_DIR, exist_ok=True)
 
-# Core i5 / 8GB RAM uchun bir vaqtda nechta brauzer parallel ishlashi (bo'sh oqimlar bitta zakazga yordamlashadi)
-MAX_PARALLEL_WORKERS = int(os.environ.get("MAX_WORKERS", "3"))
+# Har bir agentda aynan bitta o'quvchi ketma-ket ishlaydi (1 ta agentga 1 ta o'quvchi)
+MAX_PARALLEL_WORKERS = int(os.environ.get("MAX_WORKERS", "1"))
 
 db_lock = threading.Lock()
 order_queue = queue.Queue()
@@ -77,35 +77,38 @@ admin_input_state = {}  # admin_id -> {"action": "partial_order" | "pay_debt", "
 
 
 def load_config():
+    cfg = {}
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-                if cfg.get("bot_token"):
-                    return cfg
         except Exception:
             pass
 
-    print("=" * 70)
-    print("TELEGRAM BOT SOZLAMALARI (Bir marta kiritiladi)")
-    print("=" * 70)
-    token = os.environ.get("BOT_TOKEN", "").strip()
-    if not token:
-        token = input("1. @BotFather dan olingan BOT TOKEN ni kiriting: ").strip()
-    admin_id = os.environ.get("ADMIN_ID", "").strip()
-    if not admin_id:
-        admin_id = input("2. Admin Telegram ID raqamini kiriting (masalan 123456789, bo'sh qoldirsa birinchi yozgan odam admin bo'ladi): ").strip()
-    card_info = input("3. To'lov uchun Karta raqami va Ismni kiriting (masalan: 8600 **** **** **** - Falonchiyev F.): ").strip()
-    if not card_info:
-        card_info = f"9860 **** **** **** (Admin {ADMIN_USERNAME} orqali aniqlashtiring)"
+    token = os.environ.get("BOT_TOKEN", "").strip() or cfg.get("bot_token", "").strip()
+    import re
+    tok_match = re.search(r"(\d{8,11}:[A-Za-z0-9_-]{34,36})", token)
+    if tok_match:
+        token = tok_match.group(1).strip()
+    else:
+        token = token.strip().strip('"\'').strip()
+
+    admin_id_raw = str(os.environ.get("ADMIN_ID", "")).strip() or str(cfg.get("admin_id", "6580113791")).strip()
+    admin_id = int(admin_id_raw) if admin_id_raw.isdigit() else 6580113791
+    card_info = os.environ.get("CARD_INFO", "").strip() or cfg.get("card_info", "").strip() or "5614 6812 1100 2260 (QOBILOV OBIDJON)"
+    start_vid = cfg.get("start_video_id", "BAACAgIAAxkBAAIU3WrOPdbdiiRsTbulzMMEhGLCKddMAALeqAACJ_9hShDh7OsB9N58PQQ")
 
     cfg = {
         "bot_token": token,
-        "admin_id": int(admin_id) if admin_id.isdigit() else 0,
+        "admin_id": admin_id,
         "card_info": card_info,
+        "start_video_id": start_vid,
     }
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2, ensure_ascii=False)
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
     return cfg
 
 
@@ -176,6 +179,16 @@ def mark_free_trial_used(user_id: int):
         if user_id not in db["free_trial_used"]:
             db["free_trial_used"].append(user_id)
         _write_db_unlocked(db)
+
+
+def get_total_users_count(user_id: int) -> int:
+    with db_lock:
+        db = _read_db_unlocked()
+        users_list = db.setdefault("all_users", [])
+        if user_id not in users_list:
+            users_list.append(user_id)
+            _write_db_unlocked(db)
+        return len(users_list)
 
 
 def record_order_financials(user_id: int, user_name: str, username: str, order_total: int, paid_now: int, note: str = ""):
@@ -257,10 +270,6 @@ def calculate_price(count: int):
     return per_student, count * per_student
 
 
-def get_total_students_count():
-    return len(get_completed_students())
-
-
 def get_certificate_map():
     """natijalar_sertifikatlar.txt dan o'quvchi -> sertifikat URL lug'atini qaytaradi."""
     cert_map = {}
@@ -315,9 +324,7 @@ def parse_students_from_text(text: str):
         line = raw_line.strip()
         if not line or line.startswith("#") or line.lower().startswith("f.i."):
             continue
-        # Tab, '|' yoki ';' orqali ajratish
         parts = [p.strip() for p in re.split(r"\t|\||;", line) if p.strip()]
-        # Agar 14 xonali JSHSHIR aralashgan bo'lsa, olib tashlaymiz
         parts = [p for p in parts if not (p.isdigit() and len(p) == 14)]
         if len(parts) >= 5:
             if parts[0].isdigit() and len(parts) >= 6:
@@ -344,7 +351,6 @@ def parse_students_from_text(text: str):
                 "class": "",
             })
         else:
-            # Agar '|' bo'lmasa, probel bilan yozilgan to'liq o'quvchi qatorimi (tug'ilgan sana DD.MM.YYYY bor) yoki bazada bor ismmi tekshiramiz
             date_match = re.search(r"\b(\d{2}[./-]\d{2}[./-]\d{4})\b", line)
             if date_match:
                 before_date = cyrillic_to_latin_uz(line[:date_match.start()].strip())
@@ -379,10 +385,8 @@ def parse_students_from_excel(file_path: str):
         vals_non_empty = [v for v in vals if v]
         if not vals_non_empty:
             continue
-        # Agar 1-ustun tartib raqami (1, 2, 3...) yoki '№' bo'lsa, uni o'tkazib yuboramiz
         if (vals_non_empty[0].isdigit() or vals_non_empty[0] in ("№", "#", "N", "No", "T/r")) and len(vals_non_empty) >= 2:
             vals_non_empty = vals_non_empty[1:]
-        # 14 xonali JSHSHIR ustuni bo'lsa olib tashlaymiz
         vals_non_empty = [v for v in vals_non_empty if not (v.isdigit() and len(v) == 14)]
         if not vals_non_empty:
             continue
@@ -421,6 +425,103 @@ def parse_students_from_excel(file_path: str):
                 "class": cyrillic_to_latin_uz(vals_non_empty[1]) if len(vals_non_empty) > 1 else "",
             })
     return students
+
+
+def save_students_to_excel(students: list, target_path: str):
+    """O'quvchilar ro'yxatini Klaster va Master Bridge tushunadigan .xlsx faylga saqlaydi."""
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Oquvchilar"
+        ws.append(["№", "F.I.SH", "Tug'ilgan sana", "Guvohnoma seriyasi", "Guvohnoma raqami", "Sinf"])
+        for idx, st in enumerate(students, 1):
+            ws.append([
+                idx,
+                st.get("name", ""),
+                st.get("birth_date", "") or st.get("birth", ""),
+                st.get("cert_series", "") or st.get("doc_series", ""),
+                st.get("cert_number", "") or st.get("doc_number", ""),
+                st.get("class_name", "") or st.get("class", "") or "8-sinf"
+            ])
+        wb.save(target_path)
+        wb.close()
+        return True
+    except Exception as e:
+        print(f"[EXCEL_SAVE_ERROR] {e}")
+        return False
+
+
+def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
+    """Buyurtma kelganda o'quvchilar soniga mos ravishda kerakli miqdorda Virtual Kompyuter chaqiradi."""
+    def _run():
+        GH_TOKEN = os.environ.get("GH_TOKEN", "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1])
+        GH_OWNER = "xakimovabdubannob-gif"
+        GH_REPO = "cloud-node"
+
+        # 1. Faqat 4 soatdan oshgan zombi klaster runlarini to'xtatamiz
+        try:
+            hdr = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"}
+            r_act = requests.get(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs?status=in_progress", headers=hdr, timeout=10)
+            if r_act.status_code == 200:
+                has_fresh_cluster = False
+                for r in r_act.json().get("workflow_runs", []):
+                    if "Cluster" in r.get("name", ""):
+                        import datetime
+                        cr_str = r.get("created_at", "")
+                        try:
+                            cr_dt = datetime.datetime.fromisoformat(cr_str.replace("Z", "+00:00"))
+                            now_dt = datetime.datetime.now(datetime.timezone.utc)
+                            if (now_dt - cr_dt).total_seconds() > 14400:
+                                requests.post(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs/{r['id']}/cancel", headers=hdr, timeout=5)
+                            else:
+                                has_fresh_cluster = True
+                        except Exception:
+                            has_fresh_cluster = True
+                if has_fresh_cluster and nodes_count is None:
+                    print("[CLUSTER DISPATCH] Faol klaster kompyuterlari allaqachon ishlamoqda.")
+                    return
+        except Exception as e:
+            print(f"[CHECK OLD RUNS ERROR] {e}")
+
+        # 2. Agar 1-3 ta o'quvchi bo'lsa, Master server (1-Kompyuter, 3 ta Agent)ning o'zi bemalol bajaradi!
+        if nodes_count is None and students_count <= 3:
+            print(f"[CLUSTER DISPATCH] {students_count} ta o'quvchi uchun 1-Kompyuter (3 ta Agent) yetarli, qo'shimcha kompyuter yoqilmadi.")
+            return
+
+        for attempt in range(45):
+            t_url = ""
+            try:
+                r_st = requests.get("http://127.0.0.1:8766/cluster/tg_status", timeout=2).json()
+                t_url = str(r_st.get("tunnel_url", "")).strip()
+            except Exception:
+                pass
+            if not t_url and os.path.exists("cluster_url.txt"):
+                try:
+                    t_url = open("cluster_url.txt", "r", encoding="utf-8").read().strip().splitlines()[0].strip()
+                except Exception:
+                    pass
+            if t_url.startswith("https://"):
+                if nodes_count is not None:
+                    n_cnt = max(1, min(15, nodes_count))
+                else:
+                    needed = max(1, students_count - 3)
+                    n_cnt = min(15, max(1, (needed + 5) // 6))
+                print(f"[DIRECT CLUSTER DISPATCH] {n_cnt} ta Virtual Kompyuter chaqirilmoqda (o'quvchilar: {students_count}, tunnel: {t_url})...")
+                try:
+                    r = requests.post(
+                        f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/workflows/ai_cluster.yml/dispatches",
+                        headers={"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"},
+                        json={"ref": "main", "inputs": {"tunnel_url": t_url, "nodes_count": str(n_cnt)}},
+                        timeout=15,
+                    )
+                    print(f"[DIRECT CLUSTER DISPATCH] Natija: status={r.status_code}")
+                    break
+                except Exception as e:
+                    print(f"[DIRECT CLUSTER DISPATCH XATO] {e}")
+            time.sleep(2.0)
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def create_template_excel(output_path: str = None):
@@ -480,7 +581,6 @@ def create_template_excel(output_path: str = None):
             c.border = border
             c.alignment = Alignment(horizontal="left" if col_idx == 2 else "center", vertical="center")
 
-    # 30 ta bo'sh qator tayyor chiziqlari bilan
     for i in range(1, 31):
         ws.append([i, "", "", "", "", ""])
         r_idx = ws.max_row
@@ -501,7 +601,7 @@ def create_template_excel(output_path: str = None):
 
 
 def generate_results_excel(students, output_path: str):
-    """O'quvchilarning barcha ma'lumotlari (COURSERA SERTIFIKAT tepa qatori, №, F.I.SH, Tug'ilgan sana, I-FR, Raqami, Sinf, Pochta, Parol, Sertifikat havolasi va Sertifikat raqami) bilan Excel (.xlsx) yaratadi."""
+    """O'quvchilarning barcha ma'lumotlari bilan Excel (.xlsx) yaratadi."""
     export_results_to_excel(students)
     return export_results_to_excel(students, output_file=output_path)
 
@@ -511,6 +611,7 @@ class TelegramBotServer:
         self.token = cfg["bot_token"]
         self.admin_id = cfg.get("admin_id", 0)
         self.card_info = cfg.get("card_info", "")
+        self.start_video_id = cfg.get("start_video_id", "")
         self.cfg = cfg
         self.api_url = f"https://api.telegram.org/bot{self.token}"
         self.offset = 0
@@ -518,6 +619,7 @@ class TelegramBotServer:
         self.shared_lock = threading.Lock()
         self.shared_orders = []
         self.active_worker_status = {}
+        self.is_paused = False
         self.hourly_stats = {
             "window_start": time.strftime("%H:%M"),
             "orders_submitted": 0,
@@ -604,12 +706,40 @@ class TelegramBotServer:
         except Exception as e:
             print(f"[BOT XATO] sendDocument: {e}")
 
-    def send_video(self, chat_id, video_id, caption=""):
-        payload = {"chat_id": chat_id, "video": video_id, "caption": caption, "parse_mode": "HTML"}
+    def send_video(self, chat_id, video, caption="", reply_markup=None):
+        """Telegram file_id yoki mahalliy fayl orqali videoni tezkor yuboradi."""
         try:
-            requests.post(f"{self.api_url}/sendVideo", data=payload, timeout=15)
+            data = {"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"}
+            if reply_markup:
+                data["reply_markup"] = json.dumps(reply_markup)
+
+            if isinstance(video, str) and os.path.isfile(video):
+                with open(video, "rb") as vf:
+                    r = requests.post(f"{self.api_url}/sendVideo", data=data, files={"video": vf}, timeout=60)
+                    return r.json()
+            else:
+                data["video"] = video
+                r = requests.post(f"{self.api_url}/sendVideo", data=data, timeout=25)
+                return r.json()
         except Exception as e:
             print(f"[BOT XATO] sendVideo: {e}")
+            return {}
+
+    def get_effective_start_video(self):
+        """Saqlangan video file_id yoki tmp papkasidagi oxirgi videoni oladi."""
+        if self.start_video_id:
+            return self.start_video_id
+        if self.cfg.get("start_video_id"):
+            return self.cfg["start_video_id"]
+        if os.path.exists("tmp"):
+            vids = sorted(
+                [os.path.join("tmp", f) for f in os.listdir("tmp") if f.endswith(".mp4")],
+                key=os.path.getmtime,
+                reverse=True,
+            )
+            if vids:
+                return vids[0]
+        return ""
 
     def download_file(self, file_id, dest_path):
         r = requests.get(f"{self.api_url}/getFile", params={"file_id": file_id}, timeout=15).json()
@@ -764,14 +894,12 @@ class TelegramBotServer:
         while True:
             time.sleep(120)
             ticks += 1
-            # Har 2 daqiqada server uxlamasligi uchun anti-sleep so'rov yuboramiz
             try:
                 requests.get(f"{self.api_url}/getMe", timeout=10)
                 if sys.platform != "win32":
                     subprocess.run("tmux refresh-client 2>/dev/null || true; touch ~/.cloudshell_keepalive 2>/dev/null || true", shell=True, timeout=5)
             except Exception:
                 pass
-            # Har 30 daqiqada (15 * 120s = 1800s) Adminga avtomatik tahlil yuboramiz
             if ticks >= 15:
                 ticks = 0
                 if self.admin_id:
@@ -782,7 +910,6 @@ class TelegramBotServer:
                         print(f"[BOT XATO] hourly_analytics_loop: {e}")
 
     def handle_smart_question(self, chat_id, user_name, text):
-        """Mijoz o'quvchi ro'yxati emas, savol yoki murojaat yozganda o'ylab, to'g'ri javob beradi va shablon taklif qiladi."""
         low = text.lower()
         default_markup = {
             "inline_keyboard": [
@@ -795,12 +922,10 @@ class TelegramBotServer:
             ]
         }
 
-        # 1. Agar foydalanuvchi Excel shablon / namuna / qanday to'ldirish haqida so'rasa:
         if any(w in low for w in ["shablon", "excel", "exel", "excl", "jadval", "namuna", "fayl", "to'ldir", "toldir", "шаблон", "эксель", "образец"]):
             self.send_template_to_user(chat_id)
             return
 
-        # 2. Agar narx / tarif / qancha turadi deb so'rasa:
         if any(w in low for w in ["narx", "qancha", "necha pul", "nechpul", "tarif", "skidka", "chegirma", "bepul", "цена", "сколько"]):
             reply = (
                 f"💰 <b>SERTIFIKAT OLISH TARIFLARIMIZ:</b>\n"
@@ -816,7 +941,6 @@ class TelegramBotServer:
             self.send_message(chat_id, reply, reply_markup=default_markup)
             return
 
-        # 3. Agar to'lov / avans / karta / yarim pul haqida so'rasa:
         if any(w in low for w in ["avans", "yarim", "karta", "plastik", "to'lov", "tolov", "chek", "50%", "50 foiz"]):
             reply = (
                 f"💳 <b>TO'LOV VA 50% AVANS TARTIBI:</b>\n"
@@ -831,7 +955,6 @@ class TelegramBotServer:
             self.send_message(chat_id, reply, reply_markup=default_markup)
             return
 
-        # 4. Agar vaqt / qachon tayyor bo'ladi / tezlik haqida so'rasa:
         if any(w in low for w in ["vaqt", "qachon", "necha daqiqa", "minut", "soat", "tez", "долго", "время", "qotib", "ishlamay"]):
             q_len = order_queue.qsize()
             est_extra = q_len * 15
@@ -847,7 +970,6 @@ class TelegramBotServer:
             self.send_message(chat_id, reply, reply_markup=default_markup)
             return
 
-        # 5. Agar sertifikat haqiqiyligi / Coursera / aileaders / login-parol haqida so'rasa:
         if any(w in low for w in ["sertifikat", "haqiqiy", "coursera", "aileaders", "login", "parol", "kurs", "orginal", "original"]):
             reply = (
                 f"🏅 <b>SERTIFIKAT HAQIDA MA'LUMOT:</b>\n"
@@ -863,7 +985,6 @@ class TelegramBotServer:
             self.send_message(chat_id, reply, reply_markup=default_markup)
             return
 
-        # 6. Agar qanday ma'lumot kerakligi / metrika / guvohnoma haqida so'rasa:
         if any(w in low for w in ["nima kerak", "qanday ma'lumot", "metrika", "guvohnoma", "seriya", "tug'ilgan", "qanday yubor", "qanaqa qilib"]):
             reply = (
                 f"📋 <b>SERTIFIKAT OLISH UCHUN KERAKLI MA'LUMOTLAR:</b>\n"
@@ -880,7 +1001,6 @@ class TelegramBotServer:
             self.send_template_to_user(chat_id)
             return
 
-        # 7. Umumiy salomlashish yoki boshqa har qanday savol uchun aqlli yordamchi javobi:
         reply = (
             f"Assalomu alaykum, <b>{user_name}</b>! 😊\n\n"
             f"Men <b>UzbekCoders (Coursera) Avtomat Sertifikat AI Botiman</b> <i>(hozirda test rejimida ishga tushdi)</i>.\n\n"
@@ -891,7 +1011,7 @@ class TelegramBotServer:
             f"• 🎁 <b>1-marta 1 ta o'quvchini tekshirib ko'rish — BEPUL!</b>\n"
             f"• 🌗 To'lovni <b>100% to'liq</b> yoki <b>50% avans (yarim pulini)</b> berib boshlashingiz mumkin (Karta: <code>{self.card_info}</code>).\n"
             f"• 🔄 <b>Kafolat:</b> Sertifikat olinmagan (o'tmagan) o'quvchilar chiqsa, o'rniga boshqa o'quvchilar berilsa <b>bepul to'ldirib beriladi!</b>\n"
-            f"• ⏳ <i>Eslatma: Sayt qotib qolsa yoki sekinlashsa, sayt ishlashi bilan jarayon avtomatik davom etadi (sabr qilishingizni so'raymiz).</i>\n\n"
+            f"• ⏳ <i>Eslatma: Sayt qotib qolsa yoki sekinlashsa, sayt ishlashi bilan jarayon avtomatik davom etadi.</i>\n\n"
             f"🤝 Taklif, savol va hamkorlik bo'yicha Admin bilan bog'lanishingiz mumkin: 👉 <b>{ADMIN_USERNAME}</b>"
         )
         self.send_message(chat_id, reply, reply_markup=default_markup)
@@ -950,7 +1070,7 @@ class TelegramBotServer:
         lines.append(f"💰 <b>JAMI QOLGAN TO'LOVLAR: {total_all:,} so'm</b>")
         self.send_message(chat_id, "\n".join(lines), reply_markup={"inline_keyboard": inline_rows})
 
-    def handle_students_submission(self, chat_id, user_name, username, students):
+    def handle_students_submission(self, chat_id, user_name, username, students, orig_fname: str = "Buyurtma"):
         if not students:
             self.send_message(
                 chat_id,
@@ -977,12 +1097,12 @@ class TelegramBotServer:
                 chat_id,
                 f"👑 <b>ADMIN BUYURTMASI QABUL QILINDI!</b>\n\n"
                 f"👥 O'quvchilar soni: <b>{count} ta</b>\n"
-                f"⚡ To'lov chekisiz to'g'ridan-to'g'ri navbatga qo'shildi va ishga tushirilmoqda!",
+                f"⚡ Navbatga qo'shildi va barcha 6 ta Klaster kompyuterlari bilan birgalikda taqsimlanmoqda...",
+                reply_markup=self.get_reply_keyboard(chat_id),
             )
-            self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0})
+            self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0}, orig_fname=orig_fname)
             return
 
-        # Agar foydalanuvchi hali 1 ta bepul limitidan foydalanmagan bo'lsa va 1 ta o'quvchi tashlagan bo'lsa:
         if not free_used and count == 1:
             mark_free_trial_used(chat_id)
             with self.stats_lock:
@@ -995,10 +1115,9 @@ class TelegramBotServer:
                 f"<b>{students[0]['name']}</b> sertifikatini <b>BEPUL</b> tayyorlab beramiz!\n\n"
                 "⏳ Navbatga qo'shildi, har bir qadamni jonli yozib turaman...",
             )
-            self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0})
+            self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0}, orig_fname=orig_fname)
             return
 
-        # Narxni hisoblash
         per_st, total_price = calculate_price(count)
         half_price = total_price // 2
         free_note = ""
@@ -1017,6 +1136,7 @@ class TelegramBotServer:
             "price": total_price,
             "user_name": user_name,
             "username": username or "",
+            "orig_fname": orig_fname,
         }
 
         self.card_info = load_config().get("card_info", self.card_info)
@@ -1035,8 +1155,8 @@ class TelegramBotServer:
             f"<code>{self.card_info}</code>\n"
             f"{free_note}{custom_note}\n"
             f"📸 <b>100% to'liq yoki 50% yarim (avans) to'lovni amalga oshirib, chek rasmini (skrinshot) shu yerga botga yuboring!</b>\n\n"
-            f"🔄 <b>Kafolat:</b> Sertifikat olinmagan (oldin ro'yxatdan o'tgan yoki o'tmagan) o'quvchilar o'rniga boshqa o'quvchilar berilsa, <b>bepul to'ldirib beriladi!</b>\n"
-            f"⏳ <i>Eslatma: Sayt (aileaders.uz / Coursera) vaqtincha qotib qolsa yoki so'rov ko'payganda jarayon biroz sekinlashishi mumkin, sayt ishlashi bilan avtomatik davom etadi — sabr qilishingizni so'raymiz.</i>\n"
+            f"🔄 <b>Kafolat:</b> Sertifikat olinmagan o'quvchilar o'rniga boshqa o'quvchilar berilsa, <b>bepul to'ldirib beriladi!</b>\n"
+            f"⏳ <i>Eslatma: Sayt vaqtincha qotib qolsa, sayt ishlashi bilan jarayon avtomatik davom etadi.</i>\n"
             f"🤖 <i>Agentimiz test rejimida ishni boshladi — taklif va hamkorlik bo'lsa Adminga ({ADMIN_USERNAME}) yozishingiz mumkin!</i>"
         )
         client_markup = {
@@ -1051,7 +1171,7 @@ class TelegramBotServer:
         }
         self.send_message(chat_id, msg, reply_markup=client_markup)
 
-    def enqueue_order(self, chat_id, user_name, students, paid_info=None, silent=False):
+    def enqueue_order(self, chat_id, user_name, students, paid_info=None, silent=False, orig_fname: str = "Buyurtma"):
         q_pos = order_queue.qsize() + 1
         est_mins = max(3, ((q_pos - 1) * 15) + int(len(students) * 1.2))
         if not silent:
@@ -1061,20 +1181,42 @@ class TelegramBotServer:
                 f"📌 Navbatdagi o'rningiz: <b>#{q_pos}</b>\n"
                 f"👥 O'quvchilar soni: <b>{len(students)} ta</b>\n"
                 f"⏱ Taxminiy tayyor bo'lish vaqti: <b>~{est_mins} – {est_mins + 10} daqiqa</b>\n"
-                f"🤖 <i>Hozirda 3 ta AI Agent (Agent #1, Agent #2, Agent #3) ishlayapti — bo'sh AI Agentlar buyurtmangizga avtomatik parallel biriktiriladi!</i>\n\n"
+                f"🤖 <i>Hozirda 3 ta AI Agent ishlayapti — bo'sh AI Agentlar buyurtmangizga avtomatik parallel biriktiriladi!</i>\n\n"
                 f"🤖 Agentlarimiz ishni boshlaganda har bir o'quvchining qadamlarini jonli xabar qilib turadi!\n"
-                f"⏳ <i>Agar sayt vaqtincha qotib qolsa yoki sekinlashsa, sayt ishlashi bilan jarayon avtomatik davom etadi (sabr qilishingizni so'raymiz).</i>\n"
-                f"🔄 <i>Sertifikat olinmagan (o'tmagan) o'quvchilar chiqsa, o'rniga boshqa o'quvchilar berilsa bepul to'ldirib beriladi!</i>",
+                f"🔄 <i>Sertifikat olinmagan o'quvchilar chiqsa, o'rniga boshqa o'quvchilar berilsa bepul to'ldirib beriladi!</i>",
             )
+        # Klaster va Master Bridge ko'rishi uchun buyurtmani bot_orders/ ga saqlaymiz
+        try:
+            os.makedirs(ORDERS_DIR, exist_ok=True)
+            clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
+            recent = [f for f in os.listdir(ORDERS_DIR) if f.startswith(f"in_{chat_id}_") and f.endswith(".xlsx")]
+            need_save = True
+            if recent:
+                latest = max(os.path.getmtime(os.path.join(ORDERS_DIR, f)) for f in recent)
+                if time.time() - latest < 10:
+                    need_save = False
+            if need_save:
+                save_students_to_excel(students, os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}_{clean_base}.xlsx"))
+        except Exception as e:
+            print(f"[SAVE_ORDER_EXCEL_ERROR] {e}")
+
         order_queue.put({
             "chat_id": chat_id,
             "user_name": user_name,
             "students": students,
             "paid_info": paid_info or {},
             "silent": silent,
+            "orig_fname": orig_fname,
+            "start_time": time.time(),
         })
+        try:
+            trigger_cluster_dispatch(len(students))
+        except Exception as e:
+            print(f"[DISPATCH CALL ERROR] {e}")
 
     def _pop_helper_task(self):
+        if getattr(self, "is_paused", False):
+            return None, None, None
         with self.shared_lock:
             for ctx in self.shared_orders:
                 try:
@@ -1106,7 +1248,15 @@ class TelegramBotServer:
                 )
             return
 
-        if s_name in get_unrecoverable_students():
+        accs = get_existing_accounts()
+        has_acc = (
+            s_name in accs or
+            re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", s_name) in accs or
+            s_name.replace("`", "'") in accs or
+            s_name.replace("'", "`") in accs
+        )
+
+        if not has_acc and s_name in get_unrecoverable_students():
             if pass_num == 1 and not ctx.get("silent"):
                 errs = get_error_reason_map()
                 self.send_message(
@@ -1116,6 +1266,21 @@ class TelegramBotServer:
                     f"❗️ Bu o'quvchini tuzatib bo'lmagani uchun oxirida qayta urinilmaydi.",
                 )
             return
+
+        # Cluster ko'prigi bilan sinxronizatsiya: Agar bu o'quvchi boshqa klaster kompyuterida ishlanayotgan bo'lsa, ustiga kirmaymiz!
+        try:
+            claim_resp = requests.post("http://127.0.0.1:8766/cluster/claim_task", json={
+                "node_id": "MASTER_PC",
+                "worker_id": str(worker_id),
+                "student_name": s_name,
+                "idx": idx,
+                "total": total,
+            }, timeout=2).json()
+            if not claim_resp.get("ok", True):
+                print(f"[1-KOMPYUTER #{worker_id}] {s_name} klaster ({claim_resp.get('busy_by')}) tomonidan ishlanmoqda. Ustiga kirmasdan o'tkazildi.")
+                return
+        except Exception:
+            pass
 
         def _ensure_internet():
             while True:
@@ -1128,8 +1293,7 @@ class TelegramBotServer:
 
         _ensure_internet()
 
-        import socket
-        pc1_tag = f"💻 1-Kompyuter [{socket.gethostname()}] | 🤖 Agent #{worker_id}"
+        pc1_tag = f"💻 1-Kompyuter (Asosiy Server) | 🤖 Agent #{worker_id}"
         step_history = []
         prog_res = self.send_message(
             chat_id,
@@ -1139,6 +1303,14 @@ class TelegramBotServer:
 
         def update_step(step_text, _cid=chat_id, _mid=msg_id, _i=idx, _t=total, _name=s_name, _hist=step_history, _wid=worker_id, _ptag=pc1_tag):
             self.active_worker_status[_wid] = f"[{_i}/{_t}] {_name} — {step_text}"
+            try:
+                requests.post("http://127.0.0.1:8766/cluster/status", json={
+                    "node_id": "MASTER_PC",
+                    "worker_id": str(_wid),
+                    "status_text": f"[{_i}/{_t}] {_name} — {step_text}",
+                }, timeout=1)
+            except Exception:
+                pass
             if not _hist or _hist[-1] != step_text:
                 _hist.append(step_text)
             if _mid:
@@ -1148,7 +1320,32 @@ class TelegramBotServer:
                     lines_txt.append(f"  {pref} {h_line}")
                 self.edit_message(_cid, _mid, "\n".join(lines_txt))
 
-        result_status = process_student(st, status_callback=update_step, headless=True, worker_id=worker_id)
+        update_step("🚀 Jarayon boshlanmoqda...")
+        is_headless = os.environ.get("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
+        t_proc_start = time.time()
+        result_status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=worker_id)
+        dur_sec = max(1, int(time.time() - t_proc_start))
+        dur_m = dur_sec // 60
+        dur_s = dur_sec % 60
+        dur_str = f"{dur_m} daqiqa {dur_s} soniya" if dur_m > 0 else f"{dur_s} soniya"
+        try:
+            requests.post("http://127.0.0.1:8766/cluster/finish_task", json={
+                "node_id": "MASTER_PC",
+                "worker_id": worker_id,
+                "status": result_status,
+                "student": st,
+                "duration_sec": dur_sec,
+            }, timeout=2)
+        except Exception:
+            pass
+        try:
+            requests.post("http://127.0.0.1:8766/cluster/status", json={
+                "node_id": "MASTER_PC",
+                "worker_id": str(worker_id),
+                "status_text": "🟡 Bo'sh (Navbatdagi o'quvchi kutilmoqda)",
+            }, timeout=2)
+        except Exception:
+            pass
         if result_status not in ("COMPLETED", "UNRECOVERABLE"):
             _ensure_internet()
 
@@ -1162,6 +1359,7 @@ class TelegramBotServer:
                 f"🎉 <b>[{idx}/{total}] MUVAFFAQIYATLI OLINDI!</b>\n"
                 f"🖥 <b>{pc1_tag}</b>\n"
                 f"👤 <b>{s_name}</b>\n"
+                f"⏱ Sarflangan vaqt: <b>{dur_str}</b>\n"
                 f"📧 Login: <code>{ac.get('email', '—')}</code>\n"
                 f"🔑 Parol: <code>{ac.get('password', '—')}</code>\n"
                 f"🏅 Sertifikat: {c_url}",
@@ -1182,7 +1380,9 @@ class TelegramBotServer:
 
     def worker_loop(self, worker_id: int):
         while True:
-            # Avval 1-chi (joriy ishlayotgan) zakazda o'quvchilar bo'lsa, barcha bo'sh Agentlar o'shani 100% tugatishga yordamlashadi!
+            if getattr(self, "is_paused", False):
+                time.sleep(1.5)
+                continue
             ctx, idx, st = self._pop_helper_task()
             if ctx is not None:
                 try:
@@ -1211,8 +1411,7 @@ class TelegramBotServer:
                     f"Jami <b>{total} ta</b> o'quvchi bo'yicha 100% sertifikat olish jarayoni boshlandi!",
                 )
 
-            # 1- va 2-bosqich aylanish (bo'sh oqimlar avtomatik parallel yordamlashadi)
-            for pass_num in range(1, 3):
+            for pass_num in range(1, 4):
                 done_set = get_completed_students()
                 unrec_set = get_unrecoverable_students()
                 rem = [s for s in students if s["name"] not in done_set and s["name"] not in unrec_set]
@@ -1243,6 +1442,8 @@ class TelegramBotServer:
 
                 try:
                     while True:
+                        if getattr(self, "is_paused", False):
+                            break
                         try:
                             idx, st = student_q.get_nowait()
                         except queue.Empty:
@@ -1255,7 +1456,6 @@ class TelegramBotServer:
                             self.active_worker_status[worker_id] = ""
                             student_q.task_done()
 
-                    # Yordamga kirgan bo'sh oqimlar ham o'z o'quvchisini tugatishini kutamiz
                     student_q.join()
                 finally:
                     with self.shared_lock:
@@ -1263,8 +1463,26 @@ class TelegramBotServer:
                             self.shared_orders.remove(ctx)
 
             self.active_worker_status[worker_id] = ""
-            # Yakuniy Excel (.xlsx) jadval tayyorlash va yuborish
-            excel_path = os.path.join(ORDERS_DIR, f"Sertifikatlar_{chat_id}_{int(time.time())}.xlsx")
+            orig_fname = order.get("orig_fname", "Buyurtma")
+            clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
+            order_start_t = order.get("start_time", time.time())
+            total_sec = max(1, int(time.time() - order_start_t))
+            tot_h = total_sec // 3600
+            tot_m = (total_sec % 3600) // 60
+            tot_s = total_sec % 60
+            if tot_h > 0:
+                tot_dur_str = f"{tot_h} soat {tot_m} daqiqa"
+                file_dur_tag = f"{tot_h}soat_{tot_m}daq"
+            elif tot_m > 0:
+                tot_dur_str = f"{tot_m} daqiqa {tot_s} soniya"
+                file_dur_tag = f"{tot_m}daq_{tot_s}son"
+            else:
+                tot_dur_str = f"{tot_s} soniya"
+                file_dur_tag = f"{tot_s}son"
+
+            cur_time_str = time.strftime("%d.%m.%Y_%H-%M")
+            out_filename = f"{clean_base}_Sertifikatlar_{cur_time_str}_({file_dur_tag}).xlsx"
+            excel_path = os.path.join(ORDERS_DIR, out_filename)
             generate_results_excel(students, excel_path)
 
             done_cnt = sum(1 for s in students if s["name"] in get_completed_students())
@@ -1286,9 +1504,11 @@ class TelegramBotServer:
             summary_caption = (
                 f"📊 <b>BUYURTMA YAKUNLANDI! (TAYYOR EXCEL JADVAL)</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📁 Asl fayl nomi: <b>{orig_fname if orig_fname.endswith('.xlsx') else (orig_fname + '.xlsx')}</b>\n"
                 f"👥 Jami o'quvchilar: <b>{total} ta</b>\n"
                 f"✅ Sertifikat olindi: <b>{done_cnt} ta</b>\n"
                 f"⚠️ Oldin ro'yxatdan o'tgan (bazada paroli yo'q): <b>{unrec_cnt} ta</b>\n"
+                f"⏱ <b>Jami sarflangan vaqt: {tot_dur_str}</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"📎 Jadval ichida har bir o'quvchining <b>Email (Pochta), Parol, Sertifikat havolasi va Sertifikat ID raqami</b> to'liq yozilgan!"
                 f"{debt_footer}"
@@ -1296,18 +1516,94 @@ class TelegramBotServer:
             self.send_document(chat_id, excel_path, caption=summary_caption)
             order_queue.task_done()
 
+    def clear_and_archive_old_orders(self):
+        """Eski buyurtmalarni va xatolarni tozalaydi/arxivlaydi.
+        FAQAT akkountlar.txt (Login/Parollar) va natijalar_sertifikatlar.txt (Tayyor sertifikatlar) saqlanadi!"""
+        import shutil
+        if os.path.exists(ORDERS_DIR):
+            arch_dir = os.path.join(ORDERS_DIR, "archived")
+            os.makedirs(arch_dir, exist_ok=True)
+            for fn in os.listdir(ORDERS_DIR):
+                if fn.startswith("in_") and fn.endswith(".xlsx"):
+                    src = os.path.join(ORDERS_DIR, fn)
+                    dst = os.path.join(arch_dir, f"arch_{int(time.time())}_{fn}")
+                    try:
+                        shutil.move(src, dst)
+                    except Exception:
+                        pass
+
+        # Xatolar ro'yxatini tozalaymiz (zaxirasini arxivga olamiz)
+        if os.path.exists(ERRORS_FILE):
+            try:
+                err_bkp = f"xatolar_archived_{int(time.time())}.txt"
+                shutil.copy(ERRORS_FILE, err_bkp)
+                with open(ERRORS_FILE, "w", encoding="utf-8") as ef:
+                    ef.write("# Xatolar kesh tozalandi\n")
+            except Exception:
+                pass
+
+        with self.shared_lock:
+            self.shared_orders.clear()
+        while not order_queue.empty():
+            try:
+                order_queue.get_nowait()
+                order_queue.task_done()
+            except Exception:
+                break
+        for f in ("cluster_tried_students.json", "cluster_nodes_state.json", "cluster_pause_state.txt"):
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
+        try:
+            requests.get("http://127.0.0.1:8766/cluster/clear_cache", timeout=3)
+        except Exception:
+            pass
+        self.is_paused = False
+
+    def pause_all_tasks(self, chat_id: int):
+        self.is_paused = True
+        try:
+            with open("cluster_pause_state.txt", "w", encoding="utf-8") as f:
+                f.write("PAUSED")
+        except Exception:
+            pass
+        with self.shared_lock:
+            self.shared_orders.clear()
+        while not order_queue.empty():
+            try:
+                order_queue.get_nowait()
+                order_queue.task_done()
+            except Exception:
+                break
+        self.send_message(
+            chat_id,
+            "⏸ <b>JARAYON TO'XTATILDI (PAUZA)!</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "🛑 Yangi o'quvchilar navbati vaqtinchalik to'xtatildi.\n\n"
+            "👉 <b>Quyidagilardan birini tanlang:</b>\n"
+            "1️⃣ <b>▶️ Qolgan joyidan davom ettirish</b> — to'xtatilgan ro'yxat qolgan joyidan davom etadi.\n"
+            "2️⃣ <b>📁 Yangi Excel yoki matn tashlang</b> — eski ro'yxat to'liq bekor qilinadi va <b>FAQAT YANGI BUYURTMA</b> bajariladi!\n"
+            "3️⃣ <b>🗑 Yangi buyurtma (Eskisini o'chirish)</b> — eski navbatlarni butunlay tozalaydi.",
+            reply_markup=self.get_reply_keyboard(chat_id),
+        )
+
     def get_reply_keyboard(self, chat_id: int):
         if self.admin_id and chat_id == self.admin_id:
             return {
                 "keyboard": [
-                    [{"text": "🖥 Klaster (Kompyuterlar holati)"}, {"text": "📊 Tahlil va Jarayon"}],
-                    [{"text": "💰 Foyda va Kassa"}, {"text": "⚡ Jonli Log (Console)"}],
-                    [{"text": "📥 Tayyor Sertifikatlar (Excel)"}, {"text": "🌗 50% Avanslar"}],
-                    [{"text": "▶️ Qolgan joyidan davom ettirish"}, {"text": "🖥 Qo'shimcha Oqim (Agent tanlash)"}],
-                    [{"text": "📄 Bo'sh Shablon (.xlsx)"}, {"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
+                    [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
+                    [{"text": "🤖 Robot Agentlar Dashboard"}, {"text": "🌐 Web Any (Brauzerda)"}],
+                    [{"text": "🧹 Keshni tozalash (Yangi buyurtma)"}, {"text": "🖥 Klaster (Kompyuterlar holati)"}],
+                    [{"text": "⚡ Ishlarni bo'lish (Klasterga)"}, {"text": "📊 Tahlil va Jarayon"}],
+                    [{"text": "⚡ Jonli Log (Console)"}, {"text": "📥 Tayyor Sertifikatlar (Excel)"}],
+                    [{"text": "💰 Foyda va Kassa"}, {"text": "📸 Kompyuterdan Skrinshot"}],
+                    [{"text": "🖥 AnyDesk Jonli Ulanish"}, {"text": "📄 Bo'sh Shablon (.xlsx)"}],
+                    [{"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
                 ],
                 "resize_keyboard": True,
-                "is_persistent": True,
+                "is_persistent": False,
             }
         return {
             "keyboard": [
@@ -1315,7 +1611,7 @@ class TelegramBotServer:
                 [{"text": "💰 Narxlar va 50% Avans"}, {"text": "👨‍💼 Admin bilan aloqa"}],
             ],
             "resize_keyboard": True,
-            "is_persistent": True,
+            "is_persistent": False,
         }
 
     def resume_latest_unfinished_order(self, notify_chat_id: int = 0, manual: bool = False):
@@ -1349,10 +1645,11 @@ class TelegramBotServer:
                 rem = [s for s in sts if s["name"] not in done_set and s["name"] not in unrec_set]
                 if rem:
                     bn = os.path.basename(fpath)
-                    parts = bn.split("_")
+                    parts = bn.split("_", 3)
                     ord_cid = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else (self.admin_id or notify_chat_id)
+                    res_orig_fname = parts[3].rsplit(".", 1)[0] if len(parts) >= 4 else "Buyurtma"
                     if not self.shared_orders and order_queue.empty():
-                        self.enqueue_order(ord_cid, "Admin", sts, silent=True)
+                        self.enqueue_order(ord_cid, "Admin", sts, silent=True, orig_fname=res_orig_fname)
                     done_c = sum(1 for s in sts if s["name"] in done_set)
                     unrec_c = sum(1 for s in sts if s["name"] in unrec_set)
                     if notify_chat_id:
@@ -1388,7 +1685,7 @@ class TelegramBotServer:
                 f"📋 <b>Yangi zakaz ({ord_prog['total']} ta o'quvchi) bo'yicha aniq hisobot:</b>\n"
                 f"• ✅ Sertifikat olinganlar: <b>{ord_prog['done']} ta</b>\n"
                 f"• ⚠️ JSHSHIR xatoli (oldin o'tgan): <b>{ord_prog['unrec']} ta</b>\n"
-                f"• ⏳ Qolgan o'quvchilar: <b>{ord_prog['rem']} ta</b> (ulardan <b>{ord_prog['acc_ready']} tasiga</b> pochta va Coursera DEDC ulangan!)\n\n"
+                f"• ⏳ Qolgan o'quvchilar: <b>{ord_prog['rem']} ta</b> (ulardan <b>{ord_prog['acc_ready']} tasiga</b> pochta va Coursera ulangan!)\n\n"
             )
 
         import socket
@@ -1427,15 +1724,12 @@ class TelegramBotServer:
             except Exception:
                 st_nodes = {}
         if not st_nodes:
-            st_nodes = {
-                "DESKTOP-EKA9GM2-60DD": {
-                    "pc_name": "DESKTOP-EKA9GM2-60DD",
-                    "ram_gb": 16,
-                    "workers": 6,
-                }
-            }
+            st_nodes = {}
 
         now_ts = time.time()
+        # 150 soniyadan ko'proq vaqt oldin uzilgan eski mashinalarni ro'yxatdan tozalaymiz
+        st_nodes = {k: v for k, v in st_nodes.items() if (now_ts - float(v.get("last_seen", 0))) < 150}
+
         online_list = []
         idle_list = []
         offline_list = []
@@ -1460,7 +1754,40 @@ class TelegramBotServer:
             + (f"\n🟡 <b>Bo'sh / To'xtatilganlar ({len(idle_list)} ta):</b>\n" + "\n".join(idle_list) + "\n" if idle_list else "")
             + (f"\n🔴 <b>Uzilgan yoki O'chiq kompyuterlar ({len(offline_list)} ta):</b>\n" + "\n".join(offline_list) + "\n" if offline_list else "\n✅ <b>Uzilgan kompyuterlar yo'q!</b>\n")
         )
-        self.send_message(chat_id, summary_msg, reply_markup=self.get_reply_keyboard(chat_id))
+        node_keys = list(st_nodes.keys())
+        cluster_buttons = []
+
+        for p1, p2 in [(2, 3), (4, 5), (6, 7), (8, 9), (10, 11), (12, 13), (14, 15)]:
+            row = []
+            for pc_num in (p1, p2):
+                idx_n = pc_num - 2
+                if idx_n < len(node_keys):
+                    nid = node_keys[idx_n]
+                    ninfo = st_nodes[nid]
+                    w_cnt = int(ninfo.get("workers", 4))
+                    ago_s = max(0, int(now_ts - float(ninfo.get("last_seen", 0))))
+                    is_active = ninfo.get("approved", True) and w_cnt > 0 and ago_s < 120
+                    if is_active:
+                        row.append({"text": f"🟢 {pc_num}-Komp ({w_cnt}A) 🔴", "callback_data": f"cl_toggle|{nid}|off"})
+                    else:
+                        row.append({"text": f"🔴 {pc_num}-Komp (0A) 🟢", "callback_data": f"cl_toggle|{nid}|on"})
+                else:
+                    row.append({"text": f"🚀 {pc_num}-Komp (Yoqish)", "callback_data": f"cl_spawn_idx|{pc_num}"})
+            cluster_buttons.append(row)
+
+        cluster_buttons.append([
+            {"text": "⚡ BARCHA KOMPYUTERLARGA ISH BO'LISH 🚀", "callback_data": "distribute_work_all"},
+        ])
+        cluster_buttons.append([
+            {"text": "⚡ BARCHASINI YOQISH (15 ta Kompyuter / 60 ta Agent)", "callback_data": "start_cluster_manual"},
+        ])
+        cluster_buttons.append([
+            {"text": "🛑 Barchasini to'xtatish", "callback_data": "stop_cluster_all"},
+            {"text": "🔄 Yangilash", "callback_data": "refresh_cluster_status"},
+        ])
+
+        cluster_ctrl_markup = {"inline_keyboard": cluster_buttons}
+        self.send_message(chat_id, summary_msg, reply_markup=cluster_ctrl_markup)
 
         for pc_idx, (node_id, ninfo) in enumerate(st_nodes.items(), start=2):
             pc_name = ninfo.get("pc_name", node_id)
@@ -1479,24 +1806,16 @@ class TelegramBotServer:
             markup = {
                 "inline_keyboard": [
                     [
-                        {"text": f"✅ Ha ({def_workers} ta Agent bo'linsin)", "callback_data": f"cl_set|{node_id}|{def_workers}"},
+                        {"text": "🟢 Yoqish (4 Agent)", "callback_data": f"cl_toggle|{node_id}|on"},
+                        {"text": "🔴 O'chirish", "callback_data": f"cl_toggle|{node_id}|off"},
                     ],
                     [
-                        {"text": "🤖 1 Agent", "callback_data": f"cl_set|{node_id}|1"},
                         {"text": "🤖 2 Agent", "callback_data": f"cl_set|{node_id}|2"},
-                        {"text": "🤖 3 Agent", "callback_data": f"cl_set|{node_id}|3"},
                         {"text": "🤖 4 Agent", "callback_data": f"cl_set|{node_id}|4"},
-                        {"text": "🤖 5 Agent", "callback_data": f"cl_set|{node_id}|5"},
-                    ],
-                    [
                         {"text": "🤖 6 Agent", "callback_data": f"cl_set|{node_id}|6"},
-                        {"text": "🤖 7 Agent", "callback_data": f"cl_set|{node_id}|7"},
-                        {"text": "🤖 8 Agent", "callback_data": f"cl_set|{node_id}|8"},
-                        {"text": "🤖 9 Agent", "callback_data": f"cl_set|{node_id}|9"},
-                        {"text": "🤖 10 Agent", "callback_data": f"cl_set|{node_id}|10"},
                     ],
                     [
-                        {"text": "❌ Yo'q, to'xtatish", "callback_data": f"cl_set|{node_id}|0"},
+                        {"text": "📸 Ekran Skrinshoti (Yashirin)", "callback_data": f"cl_scr|{node_id}"},
                     ],
                 ]
             }
@@ -1594,21 +1913,16 @@ class TelegramBotServer:
                 ctypes.windll.kernel32.SetThreadExecutionState(0x80000001)
             except Exception:
                 pass
-        # Shablon faylni oldindan tayyorlab qo'yamiz
         create_template_excel()
 
-        # Worker oqimlarni ishga tushiramiz
         for w_i in range(1, MAX_PARALLEL_WORKERS + 1):
             t = threading.Thread(target=self.worker_loop, args=(w_i,), daemon=True)
             t.start()
 
-        # Har soatlik tahlil (analytics) oqimini ishga tushiramiz
         analytics_thread = threading.Thread(target=self.hourly_analytics_loop, daemon=True)
         analytics_thread.start()
 
-        # Qo'shimcha kompyuterlar ko'prigi (cluster_master_bridge.py) doimiy avtomatik ishlashini ta'minlaymiz
         def _cluster_bridge_watchdog():
-            import subprocess
             while True:
                 try:
                     r = requests.get("http://127.0.0.1:8766/cluster/ping", timeout=3)
@@ -1634,7 +1948,6 @@ class TelegramBotServer:
 
         threading.Thread(target=_cluster_bridge_watchdog, daemon=True).start()
 
-        # Admin ga yangilangan knopkalarni darhol chiqarib beramiz va chala qolgan buyurtmani avtomat davom ettiramiz
         if self.admin_id:
             try:
                 if os.path.exists("startup_orders.json"):
@@ -1656,6 +1969,11 @@ class TelegramBotServer:
         print("Telegramdan botga /start yoki /tahlil deb yozishingiz mumkin!")
         print("=" * 70)
 
+        try:
+            requests.post(f"{self.api_url}/deleteWebhook", params={"drop_pending_updates": False}, timeout=10)
+        except Exception:
+            pass
+
         while True:
             try:
                 resp = requests.get(
@@ -1663,10 +1981,22 @@ class TelegramBotServer:
                     params={"offset": self.offset, "timeout": 20},
                     timeout=(6, 26),
                 ).json()
+                if not resp.get("ok"):
+                    err_desc = resp.get("description", "Unknown error")
+                    err_code = resp.get("error_code")
+                    if err_code == 401:
+                        print("[POLL XATO 401] Bot token yaroqsiz! Telegram BotFather dagi yangi tokenni GitHub Secrets ga qo'yish kerak.")
+                    else:
+                        print(f"[POLL XATO] getUpdates ok=False ({err_code}): {err_desc}")
+                    time.sleep(2.0)
+                    continue
                 for upd in resp.get("result", []):
                     self.offset = upd["update_id"] + 1
+                    u_txt = (upd.get("message") or {}).get("text") or (upd.get("callback_query") or {}).get("data")
+                    print(f"[TG UPDATE] ID={upd['update_id']} | Text/Data: {str(u_txt)[:60]}")
                     threading.Thread(target=self.process_update, args=(upd,), daemon=True).start()
             except Exception as e:
+                print(f"[POLL EXCEPTION] {e}")
                 time.sleep(1.5)
 
     def approve_and_start_order(self, admin_chat_id, target_uid: int, paid_now: int, mode_label: str):
@@ -1727,14 +2057,29 @@ class TelegramBotServer:
             user_name,
             order_info["students"],
             paid_info={"total": total_price, "paid": paid_now, "debt": debt_added},
+            orig_fname=order_info.get("orig_fname", "Buyurtma"),
         )
 
     def process_update(self, upd):
-        # 1. Inline tugmalar bosilganda (Mijoz yoki Admin)
         if "callback_query" in upd:
             cb = upd["callback_query"]
             data = cb.get("data", "")
             from_id = cb["from"]["id"]
+
+            if data.startswith("cl_scr|"):
+                try:
+                    _, n_id = data.split("|", 1)
+                    import urllib.parse
+                    q_n = urllib.parse.quote(n_id)
+                    requests.get(f"http://127.0.0.1:8766/cluster/request_screenshot?node={q_n}&chat_id={from_id}", timeout=5)
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": f"📸 {n_id} kompyuteriga yashirin skrinshot buyrug'i yuborildi! (2-4 soniyada keladi)", "show_alert": True},
+                        timeout=5,
+                    )
+                except Exception as e:
+                    print(f"[CL_SCR XATO] {e}")
+                return
 
             if data.startswith("cl_set|"):
                 try:
@@ -1791,6 +2136,121 @@ class TelegramBotServer:
                 self.send_cluster_agent_selector(from_id)
                 return
 
+            if data.startswith("cl_toggle|"):
+                try:
+                    _, n_id, action = data.split("|", 2)
+                    import urllib.parse
+                    q_n = urllib.parse.quote(n_id)
+                    if action == "off":
+                        requests.get(f"http://127.0.0.1:8766/cluster/approve?node={q_n}&w=0&act=no", timeout=5)
+                        alert_t = f"🔴 {n_id} to'xtatildi! Chala qolgan vazifalari boshqa kompyuterlarga o'tkazildi."
+                    else:
+                        requests.get(f"http://127.0.0.1:8766/cluster/approve?node={q_n}&w=4&act=yes", timeout=5)
+                        alert_t = f"🟢 {n_id} yoqildi! 4 ta AI Agent vazifalarni bo'lib olishga kirishdi."
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": alert_t, "show_alert": True},
+                        timeout=5,
+                    )
+                    self.send_cluster_agent_selector(from_id)
+                except Exception as e:
+                    print(f"[CL_TOGGLE ERROR] {e}")
+                return
+
+            if data.startswith("cl_spawn_one|") or data.startswith("cl_spawn_idx|"):
+                try:
+                    parts = data.split("|")
+                    pc_num = parts[1] if len(parts) > 1 else "2"
+                    target_nodes = max(1, min(6, int(pc_num) - 1))
+                    trigger_cluster_dispatch(nodes_count=target_nodes)
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": f"🚀 {pc_num}-Virtual kompyuter ishga tushirilmoqda (30-60 soniyada ulanadi)...", "show_alert": True},
+                        timeout=5,
+                    )
+                    self.send_message(
+                        from_id,
+                        f"🚀 <b>{pc_num}-VIRTUAL KOMPYUTER ISHGA TUSHIRILMOQDA!</b>\n\n"
+                        f"⚡ GitHub Actions orqali 16 GB li Virtual kompyuter faollashtirildi.\n"
+                        f"⏳ Taxminan 30-60 soniyada ulanib, 4 ta AI Agent ishga tushadi!",
+                        reply_markup=self.get_reply_keyboard(from_id),
+                    )
+                    self.send_cluster_agent_selector(from_id)
+                except Exception as e:
+                    print(f"[CL_SPAWN ERROR] {e}")
+                return
+
+            if data == "stop_cluster_all":
+                try:
+                    requests.get("http://127.0.0.1:8766/cluster/stop_all", timeout=5)
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": "🛑 Barcha klaster kompyuterlari to'xtatildi! Vazifalar xavfsiz saqlandi.", "show_alert": True},
+                        timeout=5,
+                    )
+                    self.send_cluster_agent_selector(from_id)
+                except Exception as e:
+                    print(f"[STOP_CLUSTER_ALL ERROR] {e}")
+                return
+
+            if data == "start_cluster_manual":
+                try:
+                    requests.get("http://127.0.0.1:8766/cluster/start_all", timeout=5)
+                    trigger_cluster_dispatch(nodes_count=15)
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": "⚡ 15 ta Virtual Kompyuter (60 ta AI Agent) ishga tushirish buyrug'i yuborildi!", "show_alert": True},
+                        timeout=5,
+                    )
+                    self.send_message(
+                        from_id,
+                        "🚀 <b>BARCHA 15 TA KLASTER KOMPYUTERI YOQILMOQDA!</b>\n\n"
+                        "⚡ GitHub Actions orqali 15 ta Virtual kompyuter (60 ta AI Agent) faollashtirildi.\n"
+                        "⏳ Taxminan 30-60 soniyada kompyuterlar ulanib, navbatdagi barcha o'quvchilarni bo'lib oladi!",
+                        reply_markup=self.get_reply_keyboard(from_id),
+                    )
+                except Exception as e:
+                    print(f"[START_CLUSTER_MANUAL ERROR] {e}")
+                return
+
+            if data == "distribute_work_all":
+                try:
+                    r_reb = requests.get("http://127.0.0.1:8766/cluster/rebalance", timeout=5).json()
+                    active_c = r_reb.get("active_nodes", 0)
+                    rem_c = r_reb.get("remaining_tasks", 0)
+                    if active_c < 2 and rem_c > 0:
+                        trigger_cluster_dispatch(students_count=rem_c, nodes_count=4)
+                    alert_text = f"⚡ Ishlar {max(1, active_c) + 1} ta kompyuterga bo'lindi! Qolgan vazifalar: {rem_c} ta"
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": alert_text, "show_alert": True},
+                        timeout=5,
+                    )
+                    self.send_message(
+                        from_id,
+                        f"⚡ <b>BARCHA KOMPYUTERLARGA ISH BO'LINDI!</b>\n\n"
+                        f"• <b>1-Kompyuter (Asosiy Server):</b> 1-o'quvchidan boshlab olmoqda (Boshidan)\n"
+                        f"• <b>Klaster Kompyuterlari ({max(1, active_c)} ta faol):</b> Oxiridan ({rem_c} ta qolgan vazifalarni) bo'lib olmoqda\n\n"
+                        f"🚀 Barcha faol AI Agentlar parallel ravishda ishga kirishdi!\n"
+                        f"Har bir kompyuter o'z natijasini to'g'ridan-to'g'ri botga xabar qiladi.",
+                        reply_markup=self.get_reply_keyboard(from_id),
+                    )
+                except Exception as e:
+                    print(f"[DISTRIBUTE_WORK ERROR] {e}")
+                return
+
+            if data == "refresh_cluster_status":
+                try:
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": "🔄 Klaster holati yangilanmoqda..."},
+                        timeout=5,
+                    )
+                except Exception:
+                    pass
+                self.send_cluster_agent_selector(from_id)
+                return
+
             if data == "refresh_tahlil":
                 rep = self.build_hourly_analytics_text(reset_window=False)
                 self.send_message(
@@ -1805,7 +2265,6 @@ class TelegramBotServer:
                 )
                 return
 
-            # Mijoz "📸 To'lov chekini yuborish" tugmasini bosganda
             if data.startswith("send_check_") or data.startswith("credit_req_"):
                 target_uid = int(data.split("_")[2])
                 self.card_info = load_config().get("card_info", self.card_info)
@@ -1816,8 +2275,7 @@ class TelegramBotServer:
                         f"📸 <b>TO'LOV CHEKINI YUBORISH:</b>\n"
                         f"━━━━━━━━━━━━━━━━━━━━━━\n"
                         f"🏦 Karta: <code>{self.card_info}</code>\n\n"
-                        f"To'lovni (100% to'liq yoki 50% avans) amalga oshirib, <b>chek rasmini (skrinshot) shu yerga chatga tashlang!</b>\n"
-                        f"<i>(Agar o'quvchilar ro'yxatini hali tashlamagan bo'lsangiz, avval Excel shablon yoki ro'yxatni yuboring).</i>",
+                        f"To'lovni (100% to'liq yoki 50% avans) amalga oshirib, <b>chek rasmini (skrinshot) shu yerga chatga tashlang!</b>",
                     )
                     return
                 half_p = order_info["price"] // 2
@@ -1830,12 +2288,10 @@ class TelegramBotServer:
                     f"🌗 Yoki 50% Avans (Yarim to'lov): <b>{half_p:,} so'm</b>\n"
                     f"🏦 Karta: <code>{self.card_info}</code>\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"👇 <b>To'lovni o'tkazib, chek rasmini (skrinshotini) shu yerga botga yuboring!</b>\n"
-                    f"<i>Admin tasdiqlashi bilan bot darhol sertifikatlarni tayyorlashni boshlaydi (50% avans to'lasangiz, qolgan 50% qismi tayyor Excel jadval chiqqach to'lanadi).</i>",
+                    f"👇 <b>To'lovni o'tkazib, chek rasmini (skrinshotini) shu yerga botga yuboring!</b>",
                 )
                 return
 
-            # Admin tasdiqlash tugmalari
             if data.startswith("approve_full_"):
                 target_uid = int(data.split("_")[2])
                 order_info = pending_orders.get(target_uid)
@@ -1885,7 +2341,6 @@ class TelegramBotServer:
                 self.send_message(target_uid, f"❌ <b>To'lov tasdiqlanmadi.</b> Iltimos, qayta tekshirib yuboring yoki Admin bilan bog'laning: {ADMIN_USERNAME}")
                 return
 
-            # Admin qolgan 50% to'lovni yopish tugmalari
             if data.startswith("debt_clear_"):
                 target_uid = int(data.split("_")[2])
                 entry = record_debt_payment(target_uid, pay_amount=0)
@@ -1916,22 +2371,38 @@ class TelegramBotServer:
         username = msg["from"].get("username", "")
         text = (msg.get("text") or "").strip()
 
-        # Handle video messages with caption containing student data
-        if msg.get("video"):
-            video = msg["video"]
-            file_id = video["file_id"]
-            # Download video to temporary path (optional)
-            video_path = os.path.join("tmp", f"video_{chat_id}_{int(time.time())}.mp4")
-            os.makedirs(os.path.dirname(video_path), exist_ok=True)
-            self.download_file(file_id, video_path)
-            caption = msg.get("caption", "").strip()
+        # VIDEO YUBORILGANDA:
+        if msg.get("video") or (msg.get("document") and str(msg["document"].get("mime_type", "")).startswith("video/")):
+            vid_obj = msg.get("video") or msg.get("document")
+            file_id = vid_obj["file_id"]
+            caption = (msg.get("caption") or "").strip()
+
             if caption:
                 students = parse_students_from_text(caption)
                 if students:
                     self.handle_students_submission(chat_id, user_name, username, students)
                     return
-            self.send_message(chat_id, "⚠️ Video qabul qilindi, lekin captionda amal qiluvchi o'quvchi ma'lumotlari topilmadi.", reply_markup=self.get_reply_keyboard(chat_id))
-            return
+
+            # Agar Admin tashlasa: /start videosi sifatida eslab qoladi
+            if self.admin_id and chat_id == self.admin_id:
+                self.start_video_id = file_id
+                self.cfg["start_video_id"] = file_id
+                save_config(self.cfg)
+                self.send_message(
+                    chat_id,
+                    "🎥 <b>Kirish videosi muvaffaqiyatli saqlandi!</b>\n\n"
+                    "✅ Endi har qanday foydalanuvchi botga <b>/start</b> bosganida, "
+                    "matndan keyin ushbu video avtomatik yuboriladi.",
+                    reply_markup=self.get_reply_keyboard(chat_id),
+                )
+                return
+            else:
+                self.send_message(
+                    chat_id,
+                    "⚠️ Video qabul qilindi, lekin o'quvchilar ro'yxati topilmadi. Ro'yxatni matn yoki Excel ko'rinishida yuboring.",
+                    reply_markup=self.get_reply_keyboard(chat_id),
+                )
+                return
 
         # Agar admin_id hali 0 bo'lsa, birinchi yozgan odamni Admin qilib saqlaymiz
         if not self.admin_id:
@@ -1948,12 +2419,11 @@ class TelegramBotServer:
                 "🛠 <b>AI DASTURCHIGA XABAR YOKI SKRINSHOT YUBORISH:</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
                 "✍️ Qanday yangilik, o'zgartirish yoki kamchilik borligini oddiy matn qilib yozing yoki <b>skrinshot (rasm)</b> tashlang!\n\n"
-                "⚡ <i>Kompyuterga va AI Agentlarga umuman nagruzka (yuklama) tushirmaydi — yozganlaringiz va skrinshotlaringiz to'g'ridan-to'g'ri AI Dasturchi qutisiga saqlanadi!</i>",
+                "⚡ <i>Kompyuterga va AI Agentlarga umuman nagruzka (yuklama) tushirmaydi!</i>",
                 reply_markup=self.get_reply_keyboard(chat_id),
             )
             return
 
-        # Admin avans summasini yoki AI Dasturchiga xabar kiritayotgan bo'lsa:
         if chat_id in admin_input_state and text and not text.startswith("/"):
             st_cur = admin_input_state.get(chat_id, {})
             if st_cur.get("action") == "ai_dev_note" and text not in (
@@ -1983,7 +2453,6 @@ class TelegramBotServer:
                 })
                 with open(inbox_file, "w", encoding="utf-8") as f:
                     json.dump(items, f, ensure_ascii=False, indent=2)
-                print(f"[AI-DASTURCHI-XABAR] {text}")
                 smart_ans = self.build_ai_dev_smart_answer(text)
                 self.send_message(
                     chat_id,
@@ -2018,10 +2487,221 @@ class TelegramBotServer:
                         )
                 return
 
-        # Doimiy Pastki Knopkalar (Reply Keyboard) va Buyruqlar:
+        if text in ("📸 Kompyuterdan Skrinshot", "/screen", "/skrin"):
+            import socket
+            pc1_name = socket.gethostname()
+            rows = [[{"text": f"📸 1-Kompyuter [{pc1_name}] (Asosiy)", "callback_data": "cl_scr|MASTER_PC"}]]
+            if os.path.exists("cluster_nodes_state.json"):
+                try:
+                    st_nodes = json.load(open("cluster_nodes_state.json", "r", encoding="utf-8"))
+                    for idx_pc, (nid, ninfo) in enumerate(st_nodes.items(), start=2):
+                        pc_n = ninfo.get("pc_name", nid)
+                        ago_s = max(0, int(time.time() - float(ninfo.get("last_seen", 0))))
+                        badge = "🟢" if ago_s < 180 else "🔴"
+                        rows.append([{"text": f"📸 {idx_pc}-Kompyuter [{pc_n}] ({badge})", "callback_data": f"cl_scr|{nid}"}])
+                except Exception:
+                    pass
+            self.send_message(
+                chat_id,
+                "📸 <b>QAYSI KOMPYUTER EKRANIDAN SKRINSHOT OLAYLIK?</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                "<i>Tanlagan kompyuteringizda hech qanday oyna ochilmaydi — rasm 100% orqa fonda olinib, 2–4 soniyada shu yerga keladi:</i>",
+                reply_markup={"inline_keyboard": rows}
+            )
+            return
+
+        if text in ("🖥 AnyDesk Jonli Ulanish", "/anydesk", "/any", "/desk", "/rdp"):
+            admin_input_state.pop(chat_id, None)
+            aid = ""
+            pwd = "UzbekCoders2026!"
+            if os.path.exists("anydesk_info.json"):
+                try:
+                    d = json.load(open("anydesk_info.json", "r", encoding="utf-8"))
+                    aid = d.get("anydesk_id", "")
+                    pwd = d.get("password", pwd)
+                except Exception:
+                    pass
+            if not aid and os.path.exists("anydesk_id.txt"):
+                try:
+                    lns = open("anydesk_id.txt", "r", encoding="utf-8").read().splitlines()
+                    if lns:
+                        aid = lns[0].strip()
+                    if len(lns) > 1:
+                        pwd = lns[1].strip()
+                except Exception:
+                    pass
+
+            if aid:
+                self.send_message(
+                    chat_id,
+                    f"🖥 <b>VIRTUAL KOMPYUTERGA JONLI ULASH (ANYDESK):</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🆔 <b>AnyDesk ID:</b> <code>{aid}</code>\n"
+                    f"🔑 <b>Parol:</b> <code>{pwd}</code>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"👀 <b>Ko'rsatma:</b>\n"
+                    f"1. Kompyuteringizda <b>AnyDesk</b> dasturini oching.\n"
+                    f"2. Qidiruv qatoriga <code>{aid}</code> deb yozing va Enter bosing.\n"
+                    f"3. So'ralganda parolni kiriting: <code>{pwd}</code>\n\n"
+                    f"⚡ <b>Virtual kompyuter ekrani va ochilayotgan brauzer to'g'ridan-to'g'ri ko'zingiz oldida jonli ko'rinadi!</b>\n"
+                    f"<i>(Brauzer ochiq holda ishlaydi, har bir qadamni ko'rishingiz mumkin)</i>",
+                    reply_markup=self.get_reply_keyboard(chat_id),
+                )
+            else:
+                self.send_message(
+                    chat_id,
+                    "⏳ <b>AnyDesk ID serverda sozlanmoqda...</b>\n"
+                    "Server yuklanishi bilan AnyDesk ID avtomatik shu yerga yuboriladi!\n"
+                    "Iltimos, 15-20 soniyadan so'ng qayta bosing.",
+                    reply_markup=self.get_reply_keyboard(chat_id),
+                )
+            return
+
+        if text in ("🤖 Robot Agentlar Dashboard", "🤖 Dashboard", "/dashboard", "/robots", "/agentlar"):
+            admin_input_state.pop(chat_id, None)
+            tunnel_url = ""
+            try:
+                r = requests.get("http://127.0.0.1:8766/cluster/tg_status", timeout=3)
+                if r.status_code == 200:
+                    tunnel_url = r.json().get("tunnel_url", "")
+            except Exception:
+                pass
+            if not tunnel_url and os.path.exists("cluster_url.txt"):
+                try:
+                    tunnel_url = open("cluster_url.txt", "r", encoding="utf-8").read().strip()
+                except Exception:
+                    pass
+
+            if tunnel_url:
+                dash_url = f"{tunnel_url}/dashboard"
+                web_url = f"{tunnel_url}/web_any"
+                inline_markup = {
+                    "inline_keyboard": [
+                        [{"text": "🤖 Robot Dashboardni Ochish (Mini App)", "web_app": {"url": dash_url}}],
+                        [{"text": "🔗 Maxfiy Havolada Ochish", "url": dash_url}],
+                        [{"text": "🌐 Web Any (Jonli Ekran)", "web_app": {"url": web_url}}]
+                    ]
+                }
+                self.send_message(
+                    chat_id,
+                    f"🤖 <b>ROBOT AGENTLAR JONLI DASHBOARD:</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"👑 <b>Bosh Ish Beruvchi Robot:</b> Barcha kompyuterlar va navbatdagi ishlarni nazorat qiladi\n"
+                    f"💼 <b>Agentlar Holati:</b> Har bir robotning qaysi o'quvchini ishlayotgani (klaviaturada yozish animatsiyasi), bo'sh yoki o'chiqligi\n"
+                    f"⏱ <b>Tezlik va Sertifikatlar:</b> Har bir agent nechta sertifikat olgani va oxirgi sertifikatni necha minutda bajargani real vaqtda ko'rsatiladi!\n\n"
+                    f"👇 Quyidagi tugmani bosing:",
+                    reply_markup=inline_markup
+                )
+            else:
+                self.send_message(
+                    chat_id,
+                    "⏳ <b>Dashboard tunnel tayyorlanmoqda...</b>\n"
+                    "Cloudflare tunnel ulanishi bilan ochiladi. Iltimos, 10-15 soniyadan so'ng qayta bosing.",
+                    reply_markup=self.get_reply_keyboard(chat_id)
+                )
+            return
+
+        if text in ("🌐 Web Any (Brauzerda)", "🌐 Web Any", "/webany", "/web_any", "/anyweb", "web any", "webany"):
+            admin_input_state.pop(chat_id, None)
+            tunnel_url = ""
+            try:
+                r = requests.get("http://127.0.0.1:8766/cluster/dashboard_data", timeout=3)
+                if r.status_code == 200:
+                    tunnel_url = r.json().get("tunnel_url", "")
+            except Exception:
+                pass
+            if not tunnel_url:
+                try:
+                    r2 = requests.get("http://127.0.0.1:8766/cluster/tg_status", timeout=3)
+                    if r2.status_code == 200:
+                        tunnel_url = r2.json().get("tunnel_url", "")
+                except Exception:
+                    pass
+            if not tunnel_url and os.path.exists("cluster_url.txt"):
+                try:
+                    tunnel_url = open("cluster_url.txt", "r", encoding="utf-8").read().strip()
+                except Exception:
+                    pass
+
+            if tunnel_url:
+                web_url = f"{tunnel_url}/web_any"
+                dash_url = f"{tunnel_url}/dashboard"
+                inline_markup = {
+                    "inline_keyboard": [
+                        [{"text": "🌐 Web AnyDesk (Mini App)", "web_app": {"url": web_url}}],
+                        [{"text": "🔗 Brauzerda ochish", "url": web_url}],
+                        [{"text": "🤖 Robot Agentlar Dashboard", "web_app": {"url": dash_url}}]
+                    ]
+                }
+                self.send_message(
+                    chat_id,
+                    f"🌐 <b>WEB ANYDESK — JONLI EKRAN VA BOSHQARUV:</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"AnyDesk ilovasi o'rnatilishi shart emas! To'g'ridan-to'g'ri Telegram Mini App yoki brauzeringizda ochiladi.\n\n"
+                    f"🔗 <b>Jonli havola:</b>\n{web_url}\n\n"
+                    f"📱 <b>Qulayliklari:</b>\n"
+                    f"• Ekranni har 1 soniyada jonli ko'rsatib turadi\n"
+                    f"• Barmog'ingiz bilan rasmning istalgan joyiga bossangiz — virtual kompyuterda ko'rinadigan sichqoncha bilan kordinata bosiladi!\n"
+                    f"• Qulay yozish paneli, parol, Tab, Ctrl+A, Ctrl+V tugmalari mavjud.",
+                    reply_markup=inline_markup
+                )
+            else:
+                self.send_message(
+                    chat_id,
+                    "⏳ <b>Web AnyDesk tunnel tayyorlanmoqda...</b>\n"
+                    "Cloudflare tunnel 10-15 soniyada tayyor bo'ladi. Iltimos, birozdan so'ng qayta bosing.",
+                    reply_markup=self.get_reply_keyboard(chat_id)
+                )
+            return
+
+        if text in ("⏸ To'xtatish (Pauza)", "⏸ To'xtatish", "/stop", "/pause", "/toxtat"):
+            admin_input_state.pop(chat_id, None)
+            self.pause_all_tasks(chat_id)
+            return
+
         if text in ("▶️ Qolgan joyidan davom ettirish", "/davom", "/resume"):
             admin_input_state.pop(chat_id, None)
+            if os.path.exists("cluster_pause_state.txt"):
+                try:
+                    os.remove("cluster_pause_state.txt")
+                except Exception:
+                    pass
+            self.is_paused = False
             self.resume_latest_unfinished_order(notify_chat_id=chat_id, manual=True)
+            return
+
+        if text in ("🧹 Keshni tozalash (Yangi buyurtma)", "🧹 Keshni tozalash", "🗑 Yangi buyurtma (Eskisini o'chirish)", "🗑 Yangi buyurtma", "/clear", "/tozalash", "/kesh"):
+            admin_input_state.pop(chat_id, None)
+            self.clear_and_archive_old_orders()
+            self.send_message(
+                chat_id,
+                "🗑 <b>ESKI BUYURTMALAR TO'LIQ TOZALANDI!</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                "Endi botga yangi <b>Excel (.xlsx)</b> fayl yoki o'quvchilar ro'yxatini yuboring.\n"
+                "Tizim faqat yangi ro'yxat bilan ishlaydi!",
+                reply_markup=self.get_reply_keyboard(chat_id),
+            )
+            return
+
+        if text in ("⚡ Ishlarni bo'lish (Klasterga)", "⚡ Ishlarni bo'lish", "/rebalance", "/bolish"):
+            admin_input_state.pop(chat_id, None)
+            try:
+                r_reb = requests.get("http://127.0.0.1:8766/cluster/rebalance", timeout=5).json()
+                active_c = r_reb.get("active_nodes", 0)
+                rem_c = r_reb.get("remaining_tasks", 0)
+                if active_c < 2 and rem_c > 0:
+                    trigger_cluster_dispatch(students_count=rem_c, nodes_count=4)
+                self.send_message(
+                    chat_id,
+                    f"⚡ <b>ISHLAR BARCHA KOMPYUTERLARGA BO'LINDI!</b>\n\n"
+                    f"• <b>1-Kompyuter (Asosiy Server):</b> 1-o'quvchidan boshlab olmoqda (Boshidan)\n"
+                    f"• <b>Klaster Kompyuterlari ({max(1, active_c)} ta faol):</b> Oxiridan ({rem_c} ta qolgan vazifalarni) bo'lib olmoqda\n\n"
+                    f"🚀 Barcha faol AI Agentlar parallel ravishda ishga kirishdi!\n"
+                    f"Har bir kompyuter o'z natijasini to'g'ridan-to'g'ri botga xabar qiladi.",
+                    reply_markup=self.get_reply_keyboard(chat_id),
+                )
+            except Exception as e:
+                self.send_message(chat_id, f"⚠️ Qayta taqsimlashda xatolik: {e}")
             return
 
         if text in ("🖥 Klaster (Kompyuterlar holati)", "🖥 Qo'shimcha Oqim (Agent tanlash)", "/klaster", "/oqim", "/cluster"):
@@ -2085,8 +2765,7 @@ class TelegramBotServer:
                     f"🌗 Yoki 50% Avans (Yarim to'lov): <b>{half_p:,} so'm</b>\n"
                     f"🏦 Karta: <code>{self.card_info}</code>\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"👇 <b>To'lovni o'tkazib, chek rasmini (skrinshotini) shu yerga botga yuboring!</b>\n"
-                    f"<i>Admin tasdiqlashi bilan bot darhol sertifikatlarni tayyorlashni boshlaydi.</i>",
+                    f"👇 <b>To'lovni o'tkazib, chek rasmini (skrinshotini) shu yerga botga yuboring!</b>",
                 )
             else:
                 self.send_message(
@@ -2094,8 +2773,7 @@ class TelegramBotServer:
                     f"📸 <b>TO'LOV CHEKINI YUBORISH:</b>\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n"
                     f"🏦 Karta: <code>{self.card_info}</code>\n\n"
-                    f"👇 <b>To'lovni amalga oshirib, chek rasmini (skrinshotini) shu yerga chatga yuboring!</b>\n"
-                    f"<i>(Agar yangi buyurtma bermoqchi bo'lsangiz, avval o'quvchilar ro'yxatini yoki to'ldirilgan Excel shablonni tashlang).</i>",
+                    f"👇 <b>To'lovni amalga oshirib, chek rasmini shu yerga chatga yuboring!</b>",
                 )
             return
 
@@ -2107,15 +2785,16 @@ class TelegramBotServer:
             self.send_message(chat_id, f"👨‍💼 <b>Admin bilan bog'lanish:</b> {ADMIN_USERNAME}", reply_markup={"inline_keyboard": [[{"text": f"👨‍💼 Adminga yozish ({ADMIN_USERNAME})", "url": ADMIN_TG_URL}]]})
             return
 
+        # /START BOSILGANDA (AVVAL MATN, KETIDAN AVTOMATIK VIDEO YUBORILADI):
         if text.startswith("/start"):
             self.card_info = load_config().get("card_info", self.card_info)
             users_db = load_users_db()
+            total_members = get_total_users_count(chat_id)
             free_avail = "🎁 <b>Sizda 1 ta BEPUL sinov imkoniyati bor!</b>" if chat_id not in users_db.get("free_trial_used", []) else "✅ <i>Bepul sinovdan foydalangansiz</i>"
-            total_students = get_total_students_count()
             welcome = (
                 f"Assalomu alaykum, <b>{user_name}</b>! 👋\n\n"
                 f"🤖 <b>UzbekCoders (Coursera) 100% Avtomat Sertifikat AI Agentiga xush kelibsiz!</b>\n"
-                f"📊 <b>Jami sertifikat olgan o'quvchilar soni: {total_students} ta</b>\n"
+                f"👥 <b>Botning haqiqiy a'zolari:</b> <b>{total_members} nafar</b>\n"
                 f"<i>(Agentimiz test rejimida ishni boshladi — taklif va hamkorlik bo'lsa Adminga {ADMIN_USERNAME} yozishingiz mumkin!)</i>\n\n"
                 f"{free_avail}\n"
                 f"<i>Biz halol ishlaymiz — dasturimizni tekshirib ko'rishingiz uchun 1 ta o'quvchini mutlaqo BEPUL qilib beramiz!</i>\n\n"
@@ -2129,24 +2808,29 @@ class TelegramBotServer:
                 f"🏦 <b>Karta:</b> <code>{self.card_info}</code>\n\n"
                 f"🔄 <b>100% Almashtirish kafolati:</b>\n"
                 f"Agar ro'yxatingizda sertifikat olinmagan (oldin ro'yxatdan o'tgan yoki o'tmagan) o'quvchilar chiqsa, ularning o'rniga boshqa o'quvchilar berilsa <b>bepul to'ldirib beriladi!</b>\n\n"
-                f"⏳ <b>Eslatma:</b> Sayt (aileaders.uz / Coursera) ishlamay qolsa, qotib qolsa yoki so'rov ko'payganda sertifikat olish biroz sekinlashishi mumkin (sayt ishlashi bilan avtomatik davom etadi — sabr qilishingizni so'raymiz. Buyurtma berilganda taxminiy tayyor bo'lish vaqti aytiladi).\n\n"
+                f"⏳ <b>Eslatma:</b> Sayt (aileaders.uz / Coursera) ishlamay qolsa, qotib qolsa yoki so'rov ko'payganda sertifikat olish biroz sekinlashishi mumkin (sayt ishlashi bilan avtomatik davom etadi — sabr qilishingizni so'raymiz).\n\n"
                 f"📥 <b>Buyurtma berish uchun:</b>\n"
                 f"Pastdagi <b>«📥 Excel Shablon olish»</b> tugmasini bosib shablonni to'ldirib yuboring yoki oddiy xabar ko'rinishida tashlang:\n"
                 f"<code>FAMILIYA ISM SHARIF | 12.10.2015 | I-FR | 923446 | 5-V</code>\n\n"
                 f"📊 Yakunda har bir o'quvchining <b>Email, Parol, Sertifikat havolasi va ID raqami</b> yozilgan tayyor <b>Excel (.xlsx)</b> jadvalni olasiz!"
             )
-            self.send_video(chat_id, "YOUR_VIDEO_FILE_ID_HERE", caption=welcome)
-            # self.send_message(chat_id, welcome, reply_markup=self.get_reply_keyboard(chat_id)) # Replaced by send_video
-            # Note: The keyboard needs to be sent separately if using send_video, but send_video doesn't support reply_markup directly in the same way.
-            # Actually, send_video supports reply_markup. Let's fix that.
-            # Wait, I need to update send_video to accept reply_markup.
+            # 1. Matn yuboriladi
+            self.send_message(chat_id, welcome, reply_markup=self.get_reply_keyboard(chat_id))
+
+            # 2. Darhol ketidan video yuboriladi
+            eff_video = self.get_effective_start_video()
+            if eff_video:
+                self.send_video(
+                    chat_id,
+                    eff_video,
+                    caption="📹 <b>👋 Assalomu alaykum! Ushbu videoda AI agentining real vaqtdagi ish jarayoni ko'rsatilgan. Texnologiyalar yordamida har bir jarayonni yanada oson va avtomatlashtirilgan qilish mumkin! ⚡️</b>",
+                )
             return
 
-        # 2. Agar foydalanuvchi rasm / skrinshot yuborgan bo'lsa
+        # Rasm / Skrinshot kelganda:
         if "photo" in msg:
             photo_id = msg["photo"][-1]["file_id"]
             uname_str = f"@{username}" if username else "—"
-            # Agar rasm yuboruvchi ADMIN bo'lsa — uni AI Dasturchi uchun skrinshot sifatida saqlaymiz!
             if self.admin_id and chat_id == self.admin_id:
                 admin_input_state.pop(chat_id, None)
                 cap_txt = (msg.get("caption") or "").strip()
@@ -2215,63 +2899,51 @@ class TelegramBotServer:
                 self.send_message(chat_id, f"✅ <b>To'lov chekingiz Adminga ({ADMIN_USERNAME}) yuborildi!</b>")
             return
 
-        # 3. Agar foydalanuvchi .xlsx yoki .txt fayl tashlagan bo'lsa
+        # Excel yoki matn fayl kelganda:
         if "document" in msg:
             doc = msg["document"]
-            fname = doc.get("file_name", "").lower()
+            orig_fname = (doc.get("file_name") or "").strip()
+            clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
+            fname = orig_fname.lower()
             if fname.endswith(".xlsx"):
-                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}.xlsx"))
+                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}_{clean_base}.xlsx"))
                 students = parse_students_from_excel(local_p)
-                self.handle_students_submission(chat_id, user_name, username, students)
+                self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
                 return
             elif fname.endswith(".txt") or fname.endswith(".csv"):
-                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}.txt"))
+                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}_{clean_base}.txt"))
                 with open(local_p, "r", encoding="utf-8", errors="replace") as f:
                     students = parse_students_from_text(f.read())
-                self.handle_students_submission(chat_id, user_name, username, students)
+                self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
                 return
 
-        # 4. Agar foydalanuvchi matn yuborgan bo'lsa: avval o'quvchi ro'yxatimi yoki savolmi tekshiramiz
         if text:
             students = parse_students_from_text(text)
             if students:
-                self.handle_students_submission(chat_id, user_name, username, students)
+                self.handle_students_submission(chat_id, user_name, username, students, orig_fname="Matn_Buyurtma")
             else:
                 self.handle_smart_question(chat_id, user_name, text)
 
 
 if __name__ == "__main__":
-    class _TeeLog:
-        def __init__(self, orig, log_path):
-            self.orig = orig
-            self.log_f = open(log_path, "a", encoding="utf-8", errors="replace")
-
-        def write(self, data):
-            try:
-                self.orig.write(data)
-                self.orig.flush()
-            except Exception:
-                pass
-            try:
-                self.log_f.write(data)
-                self.log_f.flush()
-            except Exception:
-                pass
-
-        def flush(self):
-            try:
-                self.orig.flush()
-                self.log_f.flush()
-            except Exception:
-                pass
-
     _bot_lock_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
+        _bot_lock_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         _bot_lock_sock.bind(("127.0.0.1", 49880))
-    except OSError:
-        sys.exit(0)
-    sys.stdout = _TeeLog(sys.stdout, "bot.log")
-    sys.stderr = _TeeLog(sys.stderr, "bot.log")
-    config = load_config()
-    bot_server = TelegramBotServer(config)
-    bot_server.run_forever()
+    except Exception:
+        pass
+
+    try:
+        config = load_config()
+        bot_server = TelegramBotServer(config)
+        bot_server.run_forever()
+    except Exception as ex:
+        import traceback
+        traceback.print_exc()
+        try:
+            with open("tg_crash.log", "a", encoding="utf-8") as cf:
+                cf.write(f"\n--- CRASH AT {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+                traceback.print_exc(file=cf)
+        except Exception:
+            pass
+        sys.exit(1)
