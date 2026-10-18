@@ -503,10 +503,10 @@ def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
                     pass
             if t_url.startswith("https://"):
                 if nodes_count is not None:
-                    n_cnt = max(1, min(15, nodes_count))
+                    n_cnt = max(1, min(10, nodes_count))
                 else:
                     needed = max(1, students_count - 3)
-                    n_cnt = min(15, max(1, (needed + 5) // 6))
+                    n_cnt = min(10, max(1, (needed + 5) // 6))
                 print(f"[DIRECT CLUSTER DISPATCH] {n_cnt} ta Virtual Kompyuter chaqirilmoqda (o'quvchilar: {students_count}, tunnel: {t_url})...")
                 try:
                     r = requests.post(
@@ -1757,7 +1757,7 @@ class TelegramBotServer:
         node_keys = list(st_nodes.keys())
         cluster_buttons = []
 
-        for p1, p2 in [(2, 3), (4, 5), (6, 7), (8, 9), (10, 11), (12, 13), (14, 15)]:
+        for p1, p2 in [(2, 3), (4, 5), (6, 7), (8, 9), (10, 11)]:
             row = []
             for pc_num in (p1, p2):
                 idx_n = pc_num - 2
@@ -1779,7 +1779,7 @@ class TelegramBotServer:
             {"text": "⚡ BARCHA KOMPYUTERLARGA ISH BO'LISH 🚀", "callback_data": "distribute_work_all"},
         ])
         cluster_buttons.append([
-            {"text": "⚡ BARCHASINI YOQISH (15 ta Kompyuter / 60 ta Agent)", "callback_data": "start_cluster_manual"},
+            {"text": "⚡ BARCHASINI YOQISH (10 ta Kompyuter / 60 ta Agent)", "callback_data": "start_cluster_manual"},
         ])
         cluster_buttons.append([
             {"text": "🛑 Barchasini to'xtatish", "callback_data": "stop_cluster_all"},
@@ -2196,16 +2196,16 @@ class TelegramBotServer:
             if data == "start_cluster_manual":
                 try:
                     requests.get("http://127.0.0.1:8766/cluster/start_all", timeout=5)
-                    trigger_cluster_dispatch(nodes_count=15)
+                    trigger_cluster_dispatch(nodes_count=10)
                     requests.post(
                         f"{self.api_url}/answerCallbackQuery",
-                        data={"callback_query_id": cb["id"], "text": "⚡ 15 ta Virtual Kompyuter (60 ta AI Agent) ishga tushirish buyrug'i yuborildi!", "show_alert": True},
+                        data={"callback_query_id": cb["id"], "text": "⚡ 10 ta Virtual Kompyuter (60 ta AI Agent) ishga tushirish buyrug'i yuborildi!", "show_alert": True},
                         timeout=5,
                     )
                     self.send_message(
                         from_id,
-                        "🚀 <b>BARCHA 15 TA KLASTER KOMPYUTERI YOQILMOQDA!</b>\n\n"
-                        "⚡ GitHub Actions orqali 15 ta Virtual kompyuter (60 ta AI Agent) faollashtirildi.\n"
+                        "🚀 <b>BARCHA 10 TA KLASTER KOMPYUTERI YOQILMOQDA!</b>\n\n"
+                        "⚡ GitHub Actions orqali 10 ta Virtual kompyuter (60 ta AI Agent) faollashtirildi.\n"
                         "⏳ Taxminan 30-60 soniyada kompyuterlar ulanib, navbatdagi barcha o'quvchilarni bo'lib oladi!",
                         reply_markup=self.get_reply_keyboard(from_id),
                     )
