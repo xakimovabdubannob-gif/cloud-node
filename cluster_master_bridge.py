@@ -1311,6 +1311,8 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             now_t = time.time()
             done_s = get_completed_students()
             unrec_s = get_unrecoverable_students()
+            done_norm = {normalize_student_key(x) for x in done_s}
+            unrec_norm = {normalize_student_key(x) for x in unrec_s}
 
             total_s_count = 0
             rem_s_count = 0
@@ -1376,26 +1378,26 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
 
                         st_name = "—"
                         step_label = "🟡 Bo'sh (Kutmoqda)"
-                        m_sn = re.match(r"^\[\d+/\d+\]\s+(.+?)\s+[-—]\s*(.*)$", st_txt)
-                        if m_sn:
-                            st_name = m_sn.group(1).strip()
-                            step_label = m_sn.group(2).strip() or "Ishlanmoqda..."
-                        elif (nid, wid_str) in _worker_assigned:
-                            st_name = _worker_assigned[(nid, wid_str)]
-                            step_label = st_txt or "🚀 Ishlanmoqda..."
-                        elif st_txt and "Bo'sh" not in st_txt:
-                            pts = re.split(r"[-—]", st_txt, maxsplit=1)
-                            st_name = pts[0].strip() if len(pts) > 1 else st_txt
-                            step_label = pts[1].strip() if len(pts) > 1 else "🚀 Ishlanmoqda..."
-
-                        if not is_online or not is_approved or w_max == 0:
-                            ag_state = "offline"
-                            step_label = "🔴 O'chiq"
-                        elif "Bo'sh" in st_txt or (not st_txt and st_name == "—"):
-                            ag_state = "idle"
-                            step_label = "🟡 Bo'sh (Kutmoqda)"
+                        cur_assigned_student = _worker_assigned.get((nid, wid_str))
+                        if (
+                            cur_assigned_student
+                            and normalize_student_key(cur_assigned_student) not in done_norm
+                            and normalize_student_key(cur_assigned_student) not in unrec_norm
+                        ):
+                            st_name = cur_assigned_student
+                            m_sn = re.match(r"^\[\d+/\d+\]\s+(.+?)\s+[-—]\s*(.*)$", st_txt)
+                            if m_sn:
+                                step_label = m_sn.group(2).strip() or "🚀 Ishlanmoqda..."
+                            elif st_txt and "Bo'sh" not in st_txt:
+                                pts = re.split(r"[-—]", st_txt, maxsplit=1)
+                                step_label = pts[1].strip() if len(pts) > 1 else st_txt
+                            else:
+                                step_label = "🚀 Ishlanmoqda..."
+                            ag_state = "working" if (is_online and is_approved and w_max > 0) else "offline"
                         else:
-                            ag_state = "working"
+                            st_name = "—"
+                            step_label = "🔴 O'chiq" if (not is_online or not is_approved or w_max == 0) else "🟡 Bo'sh (Kutmoqda)"
+                            ag_state = "offline" if (not is_online or not is_approved or w_max == 0) else "idle"
 
                         if ag_state == "working":
                             active_count += 1
@@ -2005,9 +2007,12 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                             f"└ 🚀 Jarayon boshlanmoqda..."
                         )
                         threading.Thread(target=send_tg, args=(cid, start_msg), daemon=True).start()
-                elif task.get("all_done") and node_id in cluster_nodes:
+                elif not task.get("has_task") and node_id in cluster_nodes:
                     with nodes_lock:
-                        cluster_nodes[node_id]["status"] = "🟡 Bo'sh (Yangi buyurtma kutilmoqda)"
+                        if "worker_statuses" in cluster_nodes[node_id]:
+                            cluster_nodes[node_id]["worker_statuses"][worker_id] = "🟡 Bo'sh (Kutmoqda)"
+                        if task.get("all_done"):
+                            cluster_nodes[node_id]["status"] = "🟡 Bo'sh (Yangi buyurtma kutilmoqda)"
                         save_nodes_state(force=False)
                 self._send_json(task)
             except Exception as e:
@@ -2083,8 +2088,13 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         _worker_assigned.pop(w_key, None)
                         in_progress_students.pop(s_name, None)
                         tried_cluster_set.add(s_name)
-                if node_id in cluster_nodes and status == "COMPLETED":
-                    cluster_nodes[node_id]["completed_count"] = cluster_nodes[node_id].get("completed_count", 0) + 1
+                if node_id in cluster_nodes:
+                    if "worker_statuses" not in cluster_nodes[node_id]:
+                        cluster_nodes[node_id]["worker_statuses"] = {}
+                    if status in ("COMPLETED", "UNRECOVERABLE") or not _sticky_workers.get(w_key):
+                        cluster_nodes[node_id]["worker_statuses"][str(worker_id)] = "🟡 Bo'sh (Kutmoqda)"
+                    if status == "COMPLETED":
+                        cluster_nodes[node_id]["completed_count"] = cluster_nodes[node_id].get("completed_count", 0) + 1
                 all_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC"]
                 all_keys.insert(0, "MASTER_PC")
                 pc_idx_fin = (all_keys.index(node_id) + 1) if node_id in all_keys else 2
