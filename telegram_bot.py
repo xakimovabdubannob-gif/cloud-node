@@ -31,7 +31,7 @@ import socket
 import threading
 import subprocess
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
@@ -452,6 +452,104 @@ def save_students_to_excel(students: list, target_path: str):
         return False
 
 
+_cert_files_short_map = {}
+
+
+def get_excel_order_info(file_path: str):
+    """Excel fayldan buyurtma haqidagi ma'lumotlarni (title, total, done, students) qaytaradi."""
+    if not os.path.exists(file_path):
+        return None
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(file_path, data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        wb.close()
+        if not rows:
+            return None
+        r0 = rows[0]
+        title = ""
+        done = 0
+        students = []
+        certs_map = get_certificate_map()
+        accs_map = get_existing_accounts()
+
+        if r0 and str(r0[0] or "").startswith("COURSERA"):
+            title = str(r0[1] or "").replace("MAKTAB / SINF:", "").replace("MAKTAB:", "").strip()
+            for r in rows[2:]:
+                if r and len(r) >= 2 and r[1]:
+                    sname = str(r[1]).strip().upper()
+                    if len(sname) >= 4 and "F.I.SH" not in sname:
+                        acc = accs_map.get(sname, {})
+                        students.append({
+                            "name": sname,
+                            "birth_date": str(r[2] or acc.get("birth_date", "")).strip(),
+                            "doc_series": str(r[3] or acc.get("doc_series", "")).strip(),
+                            "doc_number": str(r[4] or acc.get("doc_number", "")).strip(),
+                            "class": str(r[5] or acc.get("class", "")).strip(),
+                        })
+                        if len(r) >= 9 and r[8] and str(r[8]).startswith("http"):
+                            done += 1
+                        elif sname in certs_map:
+                            done += 1
+        else:
+            sts = parse_students_from_excel(file_path)
+            for s in sts:
+                sname = s.get("name", "").strip().upper()
+                if sname:
+                    students.append(s)
+                    if sname in certs_map:
+                        done += 1
+            bn = os.path.basename(file_path)
+            if bn.startswith("in_"):
+                parts = bn.split("_", 3)
+                title = parts[3].rsplit(".", 1)[0] if len(parts) >= 4 else bn
+            else:
+                title = bn.rsplit(".", 1)[0]
+
+        if not title:
+            title = os.path.basename(file_path).rsplit(".", 1)[0]
+        title = title.replace("_", " ").replace("Sertifikatlar", "").strip() or "Buyurtma"
+        return {"title": title, "total": len(students), "done": done, "students": students}
+    except Exception as e:
+        print(f"[GET_ORDER_INFO ERROR] {e}")
+        return None
+
+
+def _get_orders_by_date():
+    """bot_orders va archived papkalaridagi buyurtmalarni sanalar bo'yicha guruhlaydi."""
+    if not os.path.exists(ORDERS_DIR):
+        return {}
+
+    all_files = []
+    for fn in os.listdir(ORDERS_DIR):
+        if fn.endswith(".xlsx") and not fn.startswith("Oquvchilar_Shablon") and not fn.startswith("Yigma_") and not fn.startswith("Barcha_Tayyor_"):
+            all_files.append((os.path.join(ORDERS_DIR, fn), fn))
+
+    arch_dir = os.path.join(ORDERS_DIR, "archived")
+    if os.path.exists(arch_dir):
+        for fn in os.listdir(arch_dir):
+            if fn.endswith(".xlsx") and not fn.startswith("Oquvchilar_Shablon") and not fn.startswith("Yigma_") and not fn.startswith("Barcha_Tayyor_"):
+                all_files.append((os.path.join(arch_dir, fn), fn))
+
+    date_groups = {}
+    for fpath, fn in all_files:
+        try:
+            mtime = os.path.getmtime(fpath)
+            dt = datetime.fromtimestamp(mtime)
+            dt_key = dt.strftime("%Y-%m-%d")
+            if dt_key not in date_groups:
+                date_groups[dt_key] = []
+            date_groups[dt_key].append((fpath, fn, mtime))
+        except Exception:
+            pass
+
+    for dt_key in date_groups:
+        date_groups[dt_key].sort(key=lambda x: x[2], reverse=True)
+
+    return date_groups
+
+
 def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
     """Buyurtma kelganda o'quvchilar soniga mos ravishda kerakli miqdorda Virtual Kompyuter chaqiradi."""
     def _run():
@@ -503,10 +601,10 @@ def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
                     pass
             if t_url.startswith("https://"):
                 if nodes_count is not None:
-                    n_cnt = max(1, min(15, nodes_count))
+                    n_cnt = max(1, min(10, nodes_count))
                 else:
                     needed = max(1, students_count - 3)
-                    n_cnt = min(15, max(1, (needed + 5) // 6))
+                    n_cnt = min(10, max(1, (needed + 5) // 6))
                 print(f"[DIRECT CLUSTER DISPATCH] {n_cnt} ta Virtual Kompyuter chaqirilmoqda (o'quvchilar: {students_count}, tunnel: {t_url})...")
                 try:
                     r = requests.post(
@@ -602,7 +700,6 @@ def create_template_excel(output_path: str = None):
 
 def generate_results_excel(students, output_path: str):
     """O'quvchilarning barcha ma'lumotlari bilan Excel (.xlsx) yaratadi."""
-    export_results_to_excel(students)
     return export_results_to_excel(students, output_file=output_path)
 
 
@@ -687,8 +784,10 @@ class TelegramBotServer:
                         time.sleep(1.0)
         return last_res
 
-    def edit_message(self, chat_id, message_id, text):
+    def edit_message(self, chat_id, message_id, text, reply_markup=None):
         payload = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": "HTML"}
+        if reply_markup:
+            payload["reply_markup"] = json.dumps(reply_markup) if isinstance(reply_markup, dict) else reply_markup
         try:
             requests.post(f"{self.api_url}/editMessageText", data=payload, timeout=(5, 8))
         except Exception:
@@ -761,6 +860,300 @@ class TelegramBotServer:
             "🤖 Bot avtomatik o'quvchilar sonini sanab, sertifikatlarni tayyorlab beradi!"
         )
         self.send_document(chat_id, tpl_path, caption=caption)
+
+    def send_certificate_dates_menu(self, chat_id, message_id=None):
+        """Mijozga mavjud sanalar ro'yxatini chiqaradi (Bugun, Kecha, Oldingi sanalar)."""
+        date_groups = _get_orders_by_date()
+        if not date_groups:
+            msg = "⚠️ Hozircha bazada buyurtmalar yoki tayyor sertifikatlar topilmadi."
+            if message_id:
+                self.edit_message(chat_id, message_id, msg)
+            else:
+                self.send_message(chat_id, msg)
+            return
+
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        buttons = []
+        for d_key in sorted(date_groups.keys(), reverse=True):
+            file_count = len(date_groups[d_key])
+            try:
+                dt_obj = datetime.strptime(d_key, "%Y-%m-%d")
+                d_formatted = dt_obj.strftime("%d.%m.%Y")
+            except Exception:
+                d_formatted = d_key
+
+            if d_key == today_str:
+                label = f"📅 Bugun ({d_formatted}) — {file_count} ta buyurtma"
+            elif d_key == yesterday_str:
+                label = f"📅 Kecha ({d_formatted}) — {file_count} ta buyurtma"
+            else:
+                label = f"📅 {d_formatted} — {file_count} ta buyurtma"
+
+            buttons.append([{"text": label, "callback_data": f"cert_date|{d_key}"}])
+
+        total_certs = len(get_completed_students())
+        buttons.append([
+            {"text": f"📊 Barcha vaqtlardagi JAMI sertifikatlar ({total_certs} ta)", "callback_data": "cert_export_all"}
+        ])
+
+        menu_text = (
+            "📥 <b>TAYYOR SERTIFIKATLAR (EXCEL) BO'LIMI:</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Kerakli <b>sanani tanlang</b>. Shunda o'sha kundagi barcha buyurtmalar va sinflar ro'yxati chiqadi.\n\n"
+            "👇 Qaysi kundagi natijalarni yuklamoqchisiz?"
+        )
+        markup = {"inline_keyboard": buttons}
+        if message_id:
+            self.edit_message(chat_id, message_id, menu_text, reply_markup=markup)
+        else:
+            self.send_message(chat_id, menu_text, reply_markup=markup)
+
+    def send_certificate_orders_menu(self, chat_id, target_date, message_id=None):
+        """Tanlangan kunga tegishli buyurtmalar (sinflar) ro'yxatini va holatini chiqaradi."""
+        global _cert_files_short_map
+        date_groups = _get_orders_by_date()
+        orders_for_date = date_groups.get(target_date, [])
+
+        try:
+            dt_obj = datetime.strptime(target_date, "%Y-%m-%d")
+            d_formatted = dt_obj.strftime("%d.%m.%Y")
+        except Exception:
+            d_formatted = target_date
+
+        if not orders_for_date:
+            msg = f"⚠️ <b>{d_formatted}</b> sanasida hech qanday buyurtma topilmadi."
+            markup = {"inline_keyboard": [[{"text": "⬅️ Sanalar ro'yxatiga qaytish", "callback_data": "cert_menu_dates"}]]}
+            if message_id:
+                self.edit_message(chat_id, message_id, msg, reply_markup=markup)
+            else:
+                self.send_message(chat_id, msg, reply_markup=markup)
+            return
+
+        buttons = []
+        orders_summary = []
+        total_day_students = 0
+        total_day_done = 0
+        seen_titles = set()
+
+        for idx, (fpath, fname, mtime) in enumerate(orders_for_date, start=1):
+            info = get_excel_order_info(fpath)
+            if not info or info["total"] == 0:
+                continue
+
+            title = info["title"]
+            tot = info["total"]
+            done = info["done"]
+            dedup_key = f"{title}_{tot}"
+            if dedup_key in seen_titles:
+                continue
+            seen_titles.add(dedup_key)
+
+            total_day_students += tot
+            total_day_done += done
+
+            status_icon = "✅" if (done >= tot and tot > 0) else "⏳"
+            btn_text = f"📁 {title} ({done}/{tot} ta) {status_icon}"
+
+            short_key = f"f_{len(_cert_files_short_map) + 1}_{abs(hash(fname)) % 10000}"
+            _cert_files_short_map[short_key] = fpath
+
+            buttons.append([{"text": btn_text, "callback_data": f"cert_f|{short_key}"}])
+            orders_summary.append(f"• <b>{title}</b>: {done}/{tot} ta tayyor {status_icon}")
+
+        if not buttons:
+            msg = f"⚠️ <b>{d_formatted}</b> sanasidagi fayllarda o'quvchilar ro'yxati aniqlanmadi."
+            markup = {"inline_keyboard": [[{"text": "⬅️ Orqaga", "callback_data": "cert_menu_dates"}]]}
+            if message_id:
+                self.edit_message(chat_id, message_id, msg, reply_markup=markup)
+            else:
+                self.send_message(chat_id, msg, reply_markup=markup)
+            return
+
+        buttons.append([
+            {"text": f"📊 Shu kundagi BARCHASI (Yig'ma Excel - {total_day_done}/{total_day_students} ta)", "callback_data": f"cert_allday|{target_date}"}
+        ])
+        buttons.append([
+            {"text": "⬅️ Barcha sanalar ro'yxatiga qaytish", "callback_data": "cert_menu_dates"}
+        ])
+
+        summary_preview = "\n".join(orders_summary[:12])
+        if len(orders_summary) > 12:
+            summary_preview += f"\n... va yana {len(orders_summary) - 12} ta buyurtma"
+
+        text = (
+            f"📅 <b>{d_formatted} SANASIDAGI BUYURTMALAR:</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👥 Jami o'quvchilar: <b>{total_day_students} ta</b>\n"
+            f"✅ Tayyor sertifikatlar: <b>{total_day_done} ta</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{summary_preview}\n\n"
+            f"👇 Kerakli <b>sinf / buyurtmani tanlang</b> (darhol Excel fayli yuboriladi):"
+        )
+
+        markup = {"inline_keyboard": buttons}
+        if message_id:
+            self.edit_message(chat_id, message_id, text, reply_markup=markup)
+        else:
+            self.send_message(chat_id, text, reply_markup=markup)
+
+    def export_and_send_order(self, chat_id, file_path):
+        """Bitta buyurtmaning so'nggi ma'lumotlarini Excel qilib mijozga yuboradi."""
+        info = get_excel_order_info(file_path)
+        if not info or not info.get("students"):
+            self.send_message(chat_id, "⚠️ Bu buyurtma faylidan ma'lumotlarni o'qib bo'lmadi.")
+            return
+
+        title = info["title"]
+        students = info["students"]
+        total = len(students)
+        certs_map = get_certificate_map()
+        accs_map = get_existing_accounts()
+        unrec_set = get_unrecoverable_students()
+
+        for s in students:
+            nm = s.get("name", "").strip().upper()
+            if nm in accs_map:
+                acc = accs_map[nm]
+                if not s.get("birth_date") and acc.get("birth_date"):
+                    s["birth_date"] = acc["birth_date"]
+                if not s.get("doc_series") and acc.get("doc_series"):
+                    s["doc_series"] = acc["doc_series"]
+                if not s.get("doc_number") and acc.get("doc_number"):
+                    s["doc_number"] = acc["doc_number"]
+                if not s.get("class") and acc.get("class"):
+                    s["class"] = acc["class"]
+
+        done_cnt = sum(1 for s in students if s.get("name", "").strip().upper() in certs_map)
+        unrec_cnt = sum(1 for s in students if s.get("name", "").strip().upper() in unrec_set)
+        in_prog_cnt = max(0, total - done_cnt - unrec_cnt)
+
+        safe_title = re.sub(r'[\\/*?:"<>|]', "", title).strip() or "Buyurtma"
+        cur_time_str = datetime.now().strftime("%d.%m.%Y_%H-%M")
+        out_name = f"{safe_title}_Sertifikatlar_{cur_time_str}.xlsx"
+        out_path = os.path.join(ORDERS_DIR, out_name)
+
+        generate_results_excel(students, out_path)
+
+        caption = (
+            f"📁 <b>{title.upper()} — TAYYOR SERTIFIKATLAR (EXCEL)</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👥 Jami o'quvchilar: <b>{total} ta</b>\n"
+            f"✅ Sertifikat tayyor: <b>{done_cnt} ta</b>\n"
+        )
+        if in_prog_cnt > 0:
+            caption += f"⏳ Jarayonda: <b>{in_prog_cnt} ta</b>\n"
+        if unrec_cnt > 0:
+            caption += f"⚠️ Boshqa joydan o'tgan (parol yo'q): <b>{unrec_cnt} ta</b>\n"
+        caption += (
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📎 Fayl ichida har bir o'quvchining <b>Email, Parol, Sertifikat havolasi va Sertifikat ID raqami</b> joylangan!"
+        )
+
+        self.send_document(chat_id, out_path, caption=caption)
+
+    def export_and_send_day_orders(self, chat_id, target_date):
+        """Shu kundagi barcha buyurtmalarni bitta yig'ma Excel faylga birlashtirib beradi."""
+        date_groups = _get_orders_by_date()
+        orders_for_date = date_groups.get(target_date, [])
+        try:
+            dt_obj = datetime.strptime(target_date, "%Y-%m-%d")
+            d_formatted = dt_obj.strftime("%d.%m.%Y")
+        except Exception:
+            d_formatted = target_date
+
+        if not orders_for_date:
+            self.send_message(chat_id, f"⚠️ <b>{d_formatted}</b> sanasidagi buyurtmalar topilmadi.")
+            return
+
+        all_students = []
+        seen_names = set()
+        accs_map = get_existing_accounts()
+        certs_map = get_certificate_map()
+        unrec_set = get_unrecoverable_students()
+
+        for fpath, fname, mtime in orders_for_date:
+            info = get_excel_order_info(fpath)
+            if info and info.get("students"):
+                for s in info["students"]:
+                    sname = s.get("name", "").strip().upper()
+                    if sname and sname not in seen_names:
+                        seen_names.add(sname)
+                        if sname in accs_map:
+                            acc = accs_map[sname]
+                            if not s.get("birth_date") and acc.get("birth_date"):
+                                s["birth_date"] = acc["birth_date"]
+                            if not s.get("doc_series") and acc.get("doc_series"):
+                                s["doc_series"] = acc["doc_series"]
+                            if not s.get("doc_number") and acc.get("doc_number"):
+                                s["doc_number"] = acc["doc_number"]
+                            if not s.get("class") and acc.get("class"):
+                                s["class"] = acc["class"]
+                        all_students.append(s)
+
+        if not all_students:
+            self.send_message(chat_id, f"⚠️ <b>{d_formatted}</b> sanasidagi buyurtmalarda o'quvchilar topilmadi.")
+            return
+
+        total = len(all_students)
+        done_cnt = sum(1 for s in all_students if s.get("name", "").strip().upper() in certs_map)
+        unrec_cnt = sum(1 for s in all_students if s.get("name", "").strip().upper() in unrec_set)
+        in_prog_cnt = max(0, total - done_cnt - unrec_cnt)
+
+        cur_time_str = datetime.now().strftime("%d.%m.%Y_%H-%M")
+        out_name = f"Yigma_Sertifikatlar_{d_formatted}_{cur_time_str}.xlsx"
+        out_path = os.path.join(ORDERS_DIR, out_name)
+        generate_results_excel(all_students, out_path)
+
+        caption = (
+            f"📊 <b>YIG'MA EXCEL: {d_formatted} SANASIDAGI BARCHA BUYURTMALAR</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👥 Jami o'quvchilar: <b>{total} ta</b>\n"
+            f"✅ Sertifikat tayyor: <b>{done_cnt} ta</b>\n"
+        )
+        if in_prog_cnt > 0:
+            caption += f"⏳ Jarayonda: <b>{in_prog_cnt} ta</b>\n"
+        if unrec_cnt > 0:
+            caption += f"⚠️ Boshqa joydan o'tgan: <b>{unrec_cnt} ta</b>\n"
+        caption += (
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📎 Shu kundagi barcha sinflar va buyurtmalar bitta umumiy jadvalga birlashtirildi!"
+        )
+        self.send_document(chat_id, out_path, caption=caption)
+
+    def export_and_send_all_certificates(self, chat_id):
+        """Bazada mavjud bo'lgan barcha tayyor sertifikatlarni bitta Excel faylga saqlab yuboradi."""
+        certs_map = get_certificate_map()
+        if not certs_map:
+            self.send_message(chat_id, "⚠️ Hozircha bazada birorta ham tayyor sertifikat topilmadi.")
+            return
+
+        accs_map = get_existing_accounts()
+
+        all_students = []
+        for sname in sorted(certs_map.keys()):
+            acc = accs_map.get(sname, {})
+            all_students.append({
+                "name": sname,
+                "birth_date": acc.get("birth_date", ""),
+                "doc_series": acc.get("doc_series", ""),
+                "doc_number": acc.get("doc_number", ""),
+                "class": acc.get("class", ""),
+            })
+
+        out_name = f"Barcha_Tayyor_Sertifikatlar_{datetime.now().strftime('%d.%m.%Y_%H-%M')}.xlsx"
+        out_path = os.path.join(ORDERS_DIR, out_name)
+        generate_results_excel(all_students, out_path)
+
+        caption = (
+            f"📊 <b>BARCHA VAQTLARDAGI JAMI TAYYOR SERTIFIKATLAR</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🏅 Jami sertifikatlar soni: <b>{len(all_students)} ta</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📎 Jadval ichida barcha o'quvchilarning <b>Login, Parol, Sertifikat havolasi va Sertifikat ID</b> raqamlari mavjud!"
+        )
+        self.send_document(chat_id, out_path, caption=caption)
 
     def _get_latest_order_progress(self):
         done_set = get_completed_students()
@@ -1757,7 +2150,7 @@ class TelegramBotServer:
         node_keys = list(st_nodes.keys())
         cluster_buttons = []
 
-        for p1, p2 in [(2, 3), (4, 5), (6, 7), (8, 9), (10, 11), (12, 13), (14, 15)]:
+        for p1, p2 in [(2, 3), (4, 5), (6, 7), (8, 9), (10, 11)]:
             row = []
             for pc_num in (p1, p2):
                 idx_n = pc_num - 2
@@ -1779,7 +2172,7 @@ class TelegramBotServer:
             {"text": "⚡ BARCHA KOMPYUTERLARGA ISH BO'LISH 🚀", "callback_data": "distribute_work_all"},
         ])
         cluster_buttons.append([
-            {"text": "⚡ BARCHASINI YOQISH (15 ta Kompyuter / 60 ta Agent)", "callback_data": "start_cluster_manual"},
+            {"text": "⚡ BARCHASINI YOQISH (10 ta Kompyuter / 60 ta Agent)", "callback_data": "start_cluster_manual"},
         ])
         cluster_buttons.append([
             {"text": "🛑 Barchasini to'xtatish", "callback_data": "stop_cluster_all"},
@@ -2196,16 +2589,16 @@ class TelegramBotServer:
             if data == "start_cluster_manual":
                 try:
                     requests.get("http://127.0.0.1:8766/cluster/start_all", timeout=5)
-                    trigger_cluster_dispatch(nodes_count=15)
+                    trigger_cluster_dispatch(nodes_count=10)
                     requests.post(
                         f"{self.api_url}/answerCallbackQuery",
-                        data={"callback_query_id": cb["id"], "text": "⚡ 15 ta Virtual Kompyuter (60 ta AI Agent) ishga tushirish buyrug'i yuborildi!", "show_alert": True},
+                        data={"callback_query_id": cb["id"], "text": "⚡ 10 ta Virtual Kompyuter (60 ta AI Agent) ishga tushirish buyrug'i yuborildi!", "show_alert": True},
                         timeout=5,
                     )
                     self.send_message(
                         from_id,
-                        "🚀 <b>BARCHA 15 TA KLASTER KOMPYUTERI YOQILMOQDA!</b>\n\n"
-                        "⚡ GitHub Actions orqali 15 ta Virtual kompyuter (60 ta AI Agent) faollashtirildi.\n"
+                        "🚀 <b>BARCHA 10 TA KLASTER KOMPYUTERI YOQILMOQDA!</b>\n\n"
+                        "⚡ GitHub Actions orqali 10 ta Virtual kompyuter (60 ta AI Agent) faollashtirildi.\n"
                         "⏳ Taxminan 30-60 soniyada kompyuterlar ulanib, navbatdagi barcha o'quvchilarni bo'lib oladi!",
                         reply_markup=self.get_reply_keyboard(from_id),
                     )
@@ -2358,6 +2751,54 @@ class TelegramBotServer:
                     f"💵 <b>{d_info.get('name', 'Mijoz')}</b> qolgan to'lovidan (<b>{d_info.get('remaining_debt', 0):,} so'm</b>) hozir qancha to'ladi?\n\n"
                     f"Summani raqam bilan yozib yuboring (masalan: <code>50000</code>):",
                 )
+                return
+
+            if data == "cert_menu_dates":
+                msg_id = cb.get("message", {}).get("message_id")
+                self.send_certificate_dates_menu(from_id, message_id=msg_id)
+                return
+
+            if data.startswith("cert_date|"):
+                _, t_date = data.split("|", 1)
+                msg_id = cb.get("message", {}).get("message_id")
+                self.send_certificate_orders_menu(from_id, target_date=t_date, message_id=msg_id)
+                return
+
+            if data.startswith("cert_f|"):
+                _, short_key = data.split("|", 1)
+                fpath = _cert_files_short_map.get(short_key)
+                if fpath and os.path.exists(fpath):
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": "⏳ Excel fayl tayyorlanmoqda va yuborilmoqda..."},
+                        timeout=5,
+                    )
+                    self.export_and_send_order(from_id, fpath)
+                else:
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": "⚠️ Fayl topilmadi yoki muddati o'tgan.", "show_alert": True},
+                        timeout=5,
+                    )
+                return
+
+            if data.startswith("cert_allday|"):
+                _, t_date = data.split("|", 1)
+                requests.post(
+                    f"{self.api_url}/answerCallbackQuery",
+                    data={"callback_query_id": cb["id"], "text": f"⏳ {t_date} sanasidagi barcha buyurtmalar yig'ilmoqda..."},
+                    timeout=5,
+                )
+                self.export_and_send_day_orders(from_id, target_date=t_date)
+                return
+
+            if data == "cert_export_all":
+                requests.post(
+                    f"{self.api_url}/answerCallbackQuery",
+                    data={"callback_query_id": cb["id"], "text": "⏳ Barcha sertifikatlar yig'ilmoqda..."},
+                    timeout=5,
+                )
+                self.export_and_send_all_certificates(from_id)
                 return
 
             return
@@ -2740,11 +3181,8 @@ class TelegramBotServer:
             return
 
         if text in ("📥 Tayyor Sertifikatlar (Excel)", "/sertifikatlar"):
-            out_all = export_results_to_excel()
-            if os.path.exists(out_all):
-                self.send_document(chat_id, out_all, caption=f"📊 <b>Bazadagi barcha tayyor sertifikatlar ({len(get_completed_students())} ta)</b>")
-            else:
-                self.send_message(chat_id, "⚠️ Hozircha tayyor sertifikatlar fayli topilmadi.")
+            admin_input_state.pop(chat_id, None)
+            self.send_certificate_dates_menu(chat_id)
             return
 
         if text in ("📄 Bo'sh Shablon (.xlsx)", "📥 Excel Shablon olish", "/shablon", "/excel"):
