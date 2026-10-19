@@ -55,6 +55,11 @@ def generate_student_password(name=""):
     letter = random.choice(["A", "B", "C", "D", "X", "Y", "Z"])
     return f"{pfx}{digits}{special}{letter}"
 
+def normalize_name(name):
+    if not name:
+        return ""
+    return re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ]", "", str(name).strip().upper())
+
 COMMON_PASSWORD = "@Ak101095"
 PHONE_FORMATTED = "+998 (88) 667 10 60"
 PHONE_RAW = "886671060"
@@ -95,7 +100,7 @@ def get_completed_students():
                             completed.add(fn)
                             completed.add(fn.replace("`", "'"))
                             completed.add(fn.replace("'", "`"))
-                            completed.add(re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", fn))
+                            completed.add(normalize_name(fn))
         return completed
 
 def get_unrecoverable_students():
@@ -114,7 +119,7 @@ def get_unrecoverable_students():
                             unrec.add(fn)
                             unrec.add(fn.replace("`", "'"))
                             unrec.add(fn.replace("'", "`"))
-                            unrec.add(re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", fn))
+                            unrec.add(normalize_name(fn))
         return unrec
 
 def save_unrecoverable_student(full_name, class_name, reason):
@@ -144,17 +149,14 @@ def get_existing_accounts():
                         accounts[full_name] = {"email": email, "password": password}
                         accounts[full_name.replace("`", "'")] = {"email": email, "password": password}
                         accounts[full_name.replace("'", "`")] = {"email": email, "password": password}
-                        clean_n = re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", full_name)
-                        accounts[clean_n] = {"email": email, "password": password}
+                        accounts[normalize_name(full_name)] = {"email": email, "password": password}
                     elif len(parts) >= 3:
                         full_name = parts[0].upper()
                         email = parts[1]
                         password = parts[2]
                         accounts[full_name] = {"email": email, "password": password}
                         accounts[full_name.replace("`", "'")] = {"email": email, "password": password}
-                        accounts[full_name.replace("'", "`")] = {"email": email, "password": password}
-                        clean_n = re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", full_name)
-                        accounts[clean_n] = {"email": email, "password": password}
+                        accounts[normalize_name(full_name)] = {"email": email, "password": password}
         return accounts
 
 def save_certificate_result(full_name, class_name, cert_url):
