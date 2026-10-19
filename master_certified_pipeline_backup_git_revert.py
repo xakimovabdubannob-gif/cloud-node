@@ -2448,16 +2448,27 @@ RESULTS_EXCEL = os.path.join(SCRIPT_DIR, "natijalar_sertifikatlar.xlsx")
 def get_certificate_map():
     with FILE_LOCK:
         cert_map = {}
+        docs_db = load_student_docs()
         if os.path.exists(RESULTS_FILE):
             with open(RESULTS_FILE, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if line and "http" in line:
                         parts = [p.strip() for p in line.split("|")]
-                        if len(parts) >= 3:
-                            cert_map[parts[0].upper()] = parts[2]
-                        elif len(parts) == 2:
-                            cert_map[parts[0].upper()] = parts[1]
+                        cert_u = parts[2] if len(parts) >= 3 else parts[1]
+                        fn = parts[0].upper()
+                        cert_map[fn] = cert_u
+                        cert_map[fn.replace("`", "'")] = cert_u
+                        cert_map[fn.replace("'", "`")] = cert_u
+                        norm = normalize_name(fn)
+                        cert_map[norm] = cert_u
+                        cert_map[re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ\s]+", "", fn)] = cert_u
+                        if len(parts) >= 4 and parts[3]:
+                            dk = parts[3].replace(" ", "").replace("-", "").upper()
+                            cert_map[dk] = cert_u
+                        dk_found = docs_db.get("by_name", {}).get(norm)
+                        if dk_found:
+                            cert_map[dk_found] = cert_u
         return cert_map
 
 def get_error_reason_map():
@@ -2608,8 +2619,36 @@ def export_results_to_excel(students, output_file=RESULTS_EXCEL, school_info="")
         ws = wb.active
         ws.title = "Coursera Natijalar"
 
+        def _get_student_cert(st):
+            nm = st.get("name", "").strip().upper()
+            dk = st.get("doc_key", "")
+            if not dk and st.get("doc_series") and st.get("doc_number"):
+                dk = f"{st['doc_series']}{st['doc_number']}".replace(" ", "").replace("-", "").upper()
+            return (
+                (certs.get(dk) if dk else None) or
+                certs.get(nm) or
+                certs.get(nm.replace("`", "'")) or
+                certs.get(nm.replace("'", "`")) or
+                certs.get(normalize_name(nm)) or
+                certs.get(re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ\s]+", "", nm)) or ""
+            )
+
+        def _get_student_acc(st):
+            nm = st.get("name", "").strip().upper()
+            dk = st.get("doc_key", "")
+            if not dk and st.get("doc_series") and st.get("doc_number"):
+                dk = f"{st['doc_series']}{st['doc_number']}".replace(" ", "").replace("-", "").upper()
+            return (
+                (accounts.get(dk) if dk else None) or
+                accounts.get(nm) or
+                accounts.get(nm.replace("`", "'")) or
+                accounts.get(nm.replace("'", "`")) or
+                accounts.get(normalize_name(nm)) or
+                accounts.get(re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ\s]+", "", nm)) or {}
+            )
+
         total_cnt = len(students)
-        done_cnt = sum(1 for s in students if s["name"] in certs)
+        done_cnt = sum(1 for s in students if _get_student_cert(s))
         classes_set = sorted({s.get("class", "") for s in students if s.get("class", "")})
         class_label = ", ".join(classes_set) if classes_set else "—"
         if school_info:
@@ -2666,16 +2705,16 @@ def export_results_to_excel(students, output_file=RESULTS_EXCEL, school_info="")
 
         for idx, st in enumerate(students, 1):
             name = st["name"]
-            acc = accounts.get(name, {})
+            acc = _get_student_acc(st)
             email = acc.get("email", "—")
             password = acc.get("password", "—")
-            cert_url = certs.get(name, "")
+            cert_url = _get_student_cert(st)
 
             if cert_url:
                 cert_id = cert_url.rstrip("/").split("/")[-1]
                 cert_status = cert_id
                 r_fill = ok_fill
-            elif name in unrec_set:
+            elif name in unrec_set or st.get("doc_key") in unrec_set:
                 reason = errors.get(name, "Oldin ro'yxatdan o'tgan (bazada login-paroli yo'q)")
                 cert_status = f"ILOJI YO'Q: {reason}"
                 r_fill = skip_fill
