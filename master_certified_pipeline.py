@@ -91,7 +91,11 @@ def get_completed_students():
                     if line and "http" in line:
                         parts = [p.strip() for p in line.split("|")]
                         if len(parts) >= 1:
-                            completed.add(parts[0].upper())
+                            fn = parts[0].upper()
+                            completed.add(fn)
+                            completed.add(fn.replace("`", "'"))
+                            completed.add(fn.replace("'", "`"))
+                            completed.add(re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", fn))
         return completed
 
 def get_unrecoverable_students():
@@ -106,7 +110,11 @@ def get_unrecoverable_students():
                     if "ILOJI_YOQ" in line:
                         parts = [p.strip() for p in line.split("|")]
                         if len(parts) >= 1:
-                            unrec.add(parts[0].upper())
+                            fn = parts[0].upper()
+                            unrec.add(fn)
+                            unrec.add(fn.replace("`", "'"))
+                            unrec.add(fn.replace("'", "`"))
+                            unrec.add(re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", fn))
         return unrec
 
 def save_unrecoverable_student(full_name, class_name, reason):
@@ -2134,11 +2142,18 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
     class_name = student.get("class", "")
     tag = f"[OQIM #{worker_id}] " if worker_id else ""
 
-    if full_name in get_completed_students():
+    fn_variants = [
+        full_name,
+        full_name.replace("`", "'"),
+        full_name.replace("'", "`"),
+        re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", full_name)
+    ]
+
+    if any(v in get_completed_students() for v in fn_variants):
         print(f"{tag}[CHECK] {full_name} allaqachon sertifikat olgan. Keyingi o'quvchiga o'tiladi.")
         return "COMPLETED"
 
-    if full_name in get_unrecoverable_students():
+    if any(v in get_unrecoverable_students() for v in fn_variants):
         print(f"{tag}[SKIP - ILOJI YO'Q] {full_name} oldin ro'yxatdan o'tgan va bazada paroli yo'q (yoki kirib bo'lmaydi). Qayta urinilmaydi!")
         return "UNRECOVERABLE"
 
