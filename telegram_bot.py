@@ -527,7 +527,15 @@ def get_excel_order_info(file_path: str):
         accs_map = get_existing_accounts()
 
         if r0 and str(r0[0] or "").startswith("COURSERA"):
-            title = str(r0[1] or "").replace("MAKTAB / SINF:", "").replace("MAKTAB:", "").strip()
+            cand = str(r0[1] or "").replace("MAKTAB / SINF:", "").replace("MAKTAB:", "").strip()
+            if not cand or len(cand) < 2:
+                bn = os.path.basename(file_path)
+                if bn.startswith("in_"):
+                    parts = bn.split("_", 3)
+                    cand = parts[3].rsplit(".", 1)[0] if len(parts) >= 4 else bn
+                else:
+                    cand = bn.rsplit(".", 1)[0]
+            title = cand
             for r in rows[2:]:
                 if r and len(r) >= 2 and r[1]:
                     sname = str(r[1]).strip().upper()
@@ -562,10 +570,46 @@ def get_excel_order_info(file_path: str):
         if not title:
             title = os.path.basename(file_path).rsplit(".", 1)[0]
         title = title.replace("_", " ").replace("Sertifikatlar", "").strip() or "Buyurtma"
+        if "6 Sinf 211" in title or "6-Sinf 211" in title:
+            title = "6-Sinf (211 ta o'quvchi)"
         return {"title": title, "total": len(students), "done": done, "students": students}
     except Exception as e:
         print(f"[GET_ORDER_INFO ERROR] {e}")
         return None
+
+
+def get_order_file_date_and_ts(fpath, fn):
+    """Fayl nomidagi 10 xonali timestamp yoki sanani ajratib oladi (GitHub Runnerda mtime bugungi bo'lib qolmasligi uchun)."""
+    m_ts = re.search(r'[_](\d{10})[_.]', fn) or re.search(r'(\d{10})', fn)
+    if m_ts:
+        try:
+            ts = int(m_ts.group(1))
+            if 1700000000 <= ts <= 1900000000:
+                dt_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+                return dt_str, ts
+        except Exception:
+            pass
+    m_d = re.search(r'(\d{2})[._-](\d{2})[._-](\d{4})', fn)
+    if m_d:
+        try:
+            d, m, y = m_d.group(1), m_d.group(2), m_d.group(3)
+            dt_obj = datetime.strptime(f"{y}-{m}-{d}", "%Y-%m-%d")
+            return dt_obj.strftime("%Y-%m-%d"), int(dt_obj.timestamp())
+        except Exception:
+            pass
+    m_iso = re.search(r'(\d{4})-(\d{2})-(\d{2})', fn)
+    if m_iso:
+        try:
+            y, m, d = m_iso.group(1), m_iso.group(2), m_iso.group(3)
+            dt_obj = datetime.strptime(f"{y}-{m}-{d}", "%Y-%m-%d")
+            return dt_obj.strftime("%Y-%m-%d"), int(dt_obj.timestamp())
+        except Exception:
+            pass
+    try:
+        mtime = os.path.getmtime(fpath)
+        return datetime.fromtimestamp(mtime).strftime("%Y-%m-%d"), mtime
+    except Exception:
+        return datetime.now().strftime("%Y-%m-%d"), time.time()
 
 
 def _get_orders_by_date():
@@ -587,12 +631,10 @@ def _get_orders_by_date():
     date_groups = {}
     for fpath, fn in all_files:
         try:
-            mtime = os.path.getmtime(fpath)
-            dt = datetime.fromtimestamp(mtime)
-            dt_key = dt.strftime("%Y-%m-%d")
+            dt_key, ts = get_order_file_date_and_ts(fpath, fn)
             if dt_key not in date_groups:
                 date_groups[dt_key] = []
-            date_groups[dt_key].append((fpath, fn, mtime))
+            date_groups[dt_key].append((fpath, fn, ts))
         except Exception:
             pass
 
