@@ -730,6 +730,24 @@ def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
     threading.Thread(target=_run, daemon=True).start()
 
 
+def cancel_all_cluster_workflows():
+    """Barcha faol GitHub Actions klaster (Virtual Kompyuter) jarayonlarini darhol to'xtatadi."""
+    def _run():
+        try:
+            GH_TOKEN = os.environ.get("GH_TOKEN", "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1])
+            GH_OWNER = "xakimovabdubannob-gif"
+            GH_REPO = "cloud-node"
+            hdr = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"}
+            r_act = requests.get(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs?status=in_progress", headers=hdr, timeout=8)
+            if r_act.status_code == 200:
+                for r in r_act.json().get("workflow_runs", []):
+                    if "Cluster" in r.get("name", ""):
+                        requests.post(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs/{r['id']}/cancel", headers=hdr, timeout=5)
+        except Exception as e:
+            print(f"[CANCEL CLUSTER RUNS ERROR] {e}")
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def create_template_excel(output_path: str = None):
     """Mijozlar to'ldirishi uchun chiroyli, tushunarli Excel (.xlsx) shablon yaratadi."""
     if not output_path:
@@ -1673,6 +1691,12 @@ class TelegramBotServer:
         self.send_message(chat_id, msg, reply_markup=client_markup)
 
     def enqueue_order(self, chat_id, user_name, students, paid_info=None, silent=False, orig_fname: str = "Buyurtma"):
+        if os.path.exists("cluster_pause_state.txt"):
+            try:
+                os.remove("cluster_pause_state.txt")
+            except Exception:
+                pass
+        self.is_paused = False
         q_pos = order_queue.qsize() + 1
         est_mins = max(3, ((q_pos - 1) * 15) + int(len(students) * 1.2))
         if not silent:
@@ -2047,6 +2071,17 @@ class TelegramBotServer:
         """Eski buyurtmalarni va xatolarni tozalaydi/arxivlaydi.
         FAQAT akkountlar.txt (Login/Parollar) va natijalar_sertifikatlar.txt (Tayyor sertifikatlar) saqlanadi!"""
         import shutil
+        self.is_paused = True
+        try:
+            with open("cluster_pause_state.txt", "w", encoding="utf-8") as f:
+                f.write("PAUSED")
+        except Exception:
+            pass
+        cancel_all_cluster_workflows()
+        try:
+            requests.get("http://127.0.0.1:8766/cluster/stop_all", timeout=3)
+        except Exception:
+            pass
         if os.path.exists(ORDERS_DIR):
             arch_dir = os.path.join(ORDERS_DIR, "archived")
             os.makedirs(arch_dir, exist_ok=True)
@@ -2077,7 +2112,7 @@ class TelegramBotServer:
                 order_queue.task_done()
             except Exception:
                 break
-        for f in ("cluster_tried_students.json", "cluster_nodes_state.json", "cluster_pause_state.txt"):
+        for f in ("cluster_tried_students.json", "cluster_nodes_state.json"):
             if os.path.exists(f):
                 try:
                     os.remove(f)
@@ -2087,13 +2122,17 @@ class TelegramBotServer:
             requests.get("http://127.0.0.1:8766/cluster/clear_cache", timeout=3)
         except Exception:
             pass
-        self.is_paused = False
 
     def pause_all_tasks(self, chat_id: int):
         self.is_paused = True
         try:
             with open("cluster_pause_state.txt", "w", encoding="utf-8") as f:
                 f.write("PAUSED")
+        except Exception:
+            pass
+        cancel_all_cluster_workflows()
+        try:
+            requests.get("http://127.0.0.1:8766/cluster/stop_all", timeout=3)
         except Exception:
             pass
         with self.shared_lock:
@@ -2106,13 +2145,13 @@ class TelegramBotServer:
                 break
         self.send_message(
             chat_id,
-            "⏸ <b>JARAYON TO'XTATILDI (PAUZA)!</b>\n"
+            "⏸ <b>JARAYON TO'LIQ TO'XTATILDI (PAUZA)!</b>\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
-            "🛑 Yangi o'quvchilar navbati vaqtinchalik to'xtatildi.\n\n"
+            "🛑 Barcha AI Agentlar va Virtual kompyuterlar to'xtatildi.\n\n"
             "👉 <b>Quyidagilardan birini tanlang:</b>\n"
             "1️⃣ <b>▶️ Qolgan joyidan davom ettirish</b> — to'xtatilgan ro'yxat qolgan joyidan davom etadi.\n"
-            "2️⃣ <b>📁 Yangi Excel yoki matn tashlang</b> — eski ro'yxat to'liq bekor qilinadi va <b>FAQAT YANGI BUYURTMA</b> bajariladi!\n"
-            "3️⃣ <b>🗑 Yangi buyurtma (Eskisini o'chirish)</b> — eski navbatlarni butunlay tozalaydi.",
+            "2️⃣ <b>📁 Yangi Excel yoki matn tashlang</b> — faqat yangi ro'yxat bajariladi!\n"
+            "3️⃣ <b>🧹 Keshni tozalash</b> — navbatlarni butunlay tozalaydi.",
             reply_markup=self.get_reply_keyboard(chat_id),
         )
 
