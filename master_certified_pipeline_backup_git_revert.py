@@ -24,6 +24,7 @@ import ssl
 import random
 import threading
 import urllib.request
+import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from playwright.sync_api import sync_playwright
 
@@ -160,6 +161,10 @@ def save_certificate_result(full_name, class_name, cert_url):
 def dismiss_all_popups(page):
     try:
         page.evaluate("""() => {
+            // 0. Remove Pendo walkthroughs and transparent click-blocking backdrops
+            const pendos = Array.from(document.querySelectorAll('[id^="pendo"], [class*="pendo"], .cds-Modal-backdrop, div[data-testid="overlay"]'));
+            pendos.forEach(p => { try { p.remove(); } catch(e) {} });
+
             // 1. Coursera Cookie & Privacy Banner removal
             const acceptBtn = Array.from(document.querySelectorAll('button, a')).find(b => {
                 const t = (b.innerText || '').trim();
@@ -185,8 +190,10 @@ def dismiss_all_popups(page):
                 }
             });
             const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
-            if (document.body && document.body.innerText.includes('My commitment') && cbs.length > 0 && !cbs[0].checked) {
-                try { cbs[0].click(); } catch(e) {}
+            if (document.body && document.body.innerText.includes('My commitment') && cbs.length > 0) {
+                cbs.forEach(cb => {
+                    try { if (!cb.checked) cb.click(); } catch(e) {}
+                });
             }
 
             const btns = Array.from(document.querySelectorAll('button, a'));
@@ -209,6 +216,20 @@ def dismiss_all_popups(page):
             acc.click(force=True, timeout=800)
     except Exception:
         pass
+    try:
+        # Extra safeguard: Python-level click on commitment checkbox and Start the course
+        cb = page.locator("input[type='checkbox']").first
+        if cb.count() > 0 and cb.is_visible():
+            try:
+                if not cb.is_checked():
+                    cb.click(force=True, timeout=500)
+            except Exception:
+                pass
+        st = page.locator("button:has-text('Start the course'), button:has-text('Go To Course')").first
+        if st.count() > 0 and st.is_visible():
+            st.click(force=True, timeout=800)
+    except Exception:
+        pass
 
 def safe_navigate(page, url, max_retries=3, wait_sec=1.5):
     for _ in range(max_retries):
@@ -221,6 +242,100 @@ def safe_navigate(page, url, max_retries=3, wait_sec=1.5):
             time.sleep(1.0)
     return False
 
+def login_via_magic_link(page, email):
+    """Pochtaga 'Email me a login link' orqali kirish havolasi yuborib, 100% kirish kafolati!"""
+    mail_tok = None
+    for p_candidate in [MAILTM_PASS, COMMON_PASSWORD, "Password123!"]:
+        try:
+            r = requests.post('https://api.mail.tm/token', json={'address': email, 'password': p_candidate}, timeout=8)
+            if r.status_code == 200:
+                mail_tok = r.json().get('token')
+                break
+        except Exception:
+            pass
+
+    if not mail_tok:
+        return False
+
+    headers = {'Authorization': f'Bearer {mail_tok}'}
+    try:
+        init_msgs = requests.get('https://api.mail.tm/messages', headers=headers, timeout=8).json().get('hydra:member', [])
+        init_count = len(init_msgs)
+    except Exception:
+        init_count = 0
+
+    print(f"   [MAGIC LINK] {email} uchun pochtaga kirish havolasi (login link) so'ralmoqda...")
+    try:
+        page.goto("https://www.coursera.org/?authMode=login", wait_until="domcontentloaded", timeout=22000)
+        time.sleep(2.5)
+
+        em_inp = page.locator("input[type='email']").first
+        if not em_inp.is_visible():
+            login_btn = page.locator("a[href*='authMode=login'], button[data-e2e='header-login-button'], a:has-text('Войти'), button:has-text('Войти'), a:has-text('Log In')").first
+            if login_btn.count() > 0 and login_btn.is_visible():
+                login_btn.click(force=True)
+            time.sleep(2.0)
+
+        em_inp = page.locator("input[type='email']").first
+        if em_inp.count() > 0 and em_inp.is_visible():
+            em_inp.fill(email)
+            time.sleep(0.5)
+            cont_btn = page.locator("div[role='dialog'] button:has-text('Continue'), form button:has-text('Continue'), button:has-text('Continue'), button:has-text('Продолжить')").first
+            if cont_btn.count() > 0 and cont_btn.is_visible():
+                cont_btn.click(force=True)
+            else:
+                page.keyboard.press("Enter")
+            time.sleep(2.5)
+
+        forgot = page.locator("a:has-text('Forgot password'), button:has-text('Forgot password'), a:has-text('Забыли пароль')").first
+        if forgot.count() > 0 and forgot.is_visible():
+            forgot.click(force=True)
+            time.sleep(2.0)
+
+        f_inp = page.locator("div[role='dialog'] input[type='email'], form input[type='email']").first
+        if f_inp.count() > 0 and f_inp.is_visible():
+            f_inp.fill(email)
+            time.sleep(0.5)
+
+        magic_btn = page.locator("button:has-text('Email me a login link'), button:has-text('Отправить мне ссылку для входа')").first
+        if magic_btn.count() > 0 and magic_btn.is_visible():
+            magic_btn.click(force=True)
+            time.sleep(2.0)
+            print("   [MAGIC LINK] So'rov yuborildi, xat kutilmoqda...")
+
+        login_link = None
+        for _ in range(25):
+            time.sleep(2.0)
+            try:
+                res = requests.get('https://api.mail.tm/messages', headers=headers, timeout=8).json()
+                new_msgs = res.get('hydra:member', [])
+                if len(new_msgs) > init_count:
+                    latest = new_msgs[0]
+                    det = requests.get(f"https://api.mail.tm/messages/{latest['id']}", headers=headers, timeout=8).json()
+                    html = ''.join(det.get('html', [])) if isinstance(det.get('html'), list) else str(det.get('html'))
+                    for u, txt in re.findall(r'<a\s+[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)</a>', html, re.S):
+                        clean_txt = re.sub(r'<[^>]+>', '', txt).strip().lower()
+                        if 'log in' in clean_txt or 'sign in' in clean_txt:
+                            login_link = u
+                            break
+                    if login_link:
+                        break
+            except Exception:
+                pass
+
+        if login_link:
+            print("   [MAGIC LINK] Havola olindi, tizimga kirilmoqda...")
+            page.goto(login_link, wait_until="load", timeout=35000)
+            time.sleep(6.0)
+            dismiss_all_popups(page)
+            cookies = [c.get("name", "") for c in page.context.cookies()]
+            if any("CAUTH" in c for c in cookies):
+                print(f"[LOGIN] Magic Link orqali muvaffaqiyatli kirildi! ({email})")
+                return True
+    except Exception as e:
+        print(f"   [!] Magic link jarayonida ogohlantirish: {e}")
+    return False
+
 def login_coursera(page, email, password, full_name=""):
     print(f"[LOGIN] Kirish boshlanmoqda: {email}...")
     clean_name = (full_name or "").replace("`", "'").strip()
@@ -228,66 +343,82 @@ def login_coursera(page, email, password, full_name=""):
     for try_idx in range(1, 4):
         try:
             page.goto("https://www.coursera.org/?authMode=login", wait_until="domcontentloaded", timeout=22000)
-            for _ in range(12):
-                if page.locator("input[type='email']").first.is_visible():
-                    break
-                login_btn = page.locator("a[href*='authMode=login'], button[data-e2e='header-login-button'], a:has-text('Войти'), button:has-text('Войти'), a:has-text('Log In')").first
-                if login_btn.is_visible():
-                    login_btn.click(force=True)
-                time.sleep(0.4)
+            time.sleep(3)
 
-            email_inp = page.locator("input[type='email']").first
-            if email_inp.is_visible():
-                email_inp.fill(email)
-                page.keyboard.press("Enter")
-                for _ in range(12):
+            # Agar email maydoni ko'rinmasa, faqat shundagina Log In tugmasini bosamiz
+            em_inp = page.locator("input[type='email']").first
+            if not em_inp.is_visible():
+                login_btn = page.locator("a[href*='authMode=login'], button[data-e2e='header-login-button'], a:has-text('Войти'), button:has-text('Войти'), a:has-text('Log In')").first
+                if login_btn.count() > 0 and login_btn.is_visible():
+                    login_btn.click(force=True)
+                time.sleep(2)
+
+            em_inp = page.locator("input[type='email']").first
+            if em_inp.count() > 0 and em_inp.is_visible():
+                em_inp.fill(email)
+                time.sleep(0.5)
+                cont_btn = page.locator("div[role='dialog'] button:has-text('Continue'), form button:has-text('Continue'), button:has-text('Continue'), button:has-text('Продолжить')").first
+                if cont_btn.count() > 0 and cont_btn.is_visible():
+                    cont_btn.click(force=True)
+                else:
+                    page.keyboard.press("Enter")
+                for _ in range(15):
                     if page.locator("input[type='password']").first.is_visible():
                         break
                     time.sleep(0.3)
 
-            # Agar Sign up oynasi chiqib qolsa (Full Name so'rasa), demak hali 1-HAVOLA (Set Password) bajarilmagan -> darhol tiklashga o'tamiz!
-            fn_inp = page.locator("input[name='fullName'], input[placeholder*='full name' i], input[placeholder*='имя' i]").first
-            if fn_inp.count() > 0 and fn_inp.is_visible():
-                print(f"   [ANIQLANDI] {email} hali Coursera taklifnomasini (Set Password) faollashtirmagan. Pochtadan 1-havola ochiladi...")
-                return False, True
-
             pwd_inp = page.locator("input[type='password']").first
-            if pwd_inp.is_visible():
+            if pwd_inp.count() > 0 and pwd_inp.is_visible():
                 pwd_inp.fill(password)
+                time.sleep(0.5)
                 sub_btn = page.locator("div[role='dialog'] button.cds-button-primary, form button.cds-button-primary").first
-                if sub_btn.is_visible():
+                if sub_btn.count() > 0 and sub_btn.is_visible():
                     sub_btn.click(force=True)
                 else:
                     page.keyboard.press("Enter")
-                for _ in range(22):
+
+                for _ in range(25):
                     time.sleep(0.4)
                     cookies = [c.get("name", "") for c in page.context.cookies()]
                     if any("CAUTH" in c for c in cookies) or ("authMode=login" not in page.url and page.locator("input[type='password']").count() == 0):
                         break
-                time.sleep(1.2)
+                time.sleep(1.5)
                 dismiss_all_popups(page)
                 cookies = [c.get("name", "") for c in page.context.cookies()]
                 if any("CAUTH" in c for c in cookies):
                     print(f"[LOGIN] Tizimga muvaffaqiyatli kirildi! ({email})")
                     return True, was_signup
-        except Exception:
+            else:
+                # Faqat parol maydoni CHIQMAGAN va Full Name chiqqan holdagina Sign Up deb qabul qilamiz!
+                fn_inp = page.locator("input[name='fullName'], input[placeholder*='full name' i], input[placeholder*='имя' i]").first
+                if fn_inp.count() > 0 and fn_inp.is_visible():
+                    print(f"   [ANIQLANDI] {email} hali Coursera taklifnomasini (Set Password) faollashtirmagan. Pochtadan 1-havola ochiladi...")
+                    return False, True
+        except Exception as e:
+            print(f"   [!] Login urinishida ogohlantirish: {e}")
             time.sleep(1.5)
+
+    # Agar oddiy parol bilan kirib bo'lmasa yoki tashkilot loginiga o'tib ketgan bo'lsa -> Magic Link bilan 100% kiramiz!
+    cookies = [c.get("name", "") for c in page.context.cookies()]
+    if not any("CAUTH" in c for c in cookies):
+        if login_via_magic_link(page, email):
+            return True, False
     return False, was_signup
 
 def ensure_enrolled_on_coursera(page):
     """Agar o'quvchi kursga hali Enroll ('Enroll Starts Oct 11' / 'Зарегистрироваться') bo'lmagan bo'lsa,
-    Enroll tugmasini bosib, kursning ichiga (/home/module/1) kirganini 100% tekshiradi!"""
+    Enroll yoki Go To Course tugmasini bosib, kursning ichiga (/home/welcome yoki /home/module/1) kirganini 100% tekshiradi!"""
     for _ in range(3):
         try:
             for _ in range(3):
                 dismiss_all_popups(page)
                 time.sleep(0.25)
 
-            # Agar /home/ ichida bo'lsa va Quiz 1 ko'rinib turgan bo'lsa — haqiqatan Enroll bo'lgan!
-            if "/home/" in page.url and page.locator("a:has-text('Quiz 1')").count() > 0:
+            # Agar /home/ yoki /welcome ichida bo'lsa va Quiz 1 ko'rinib turgan bo'lsa — haqiqatan Enroll bo'lgan!
+            if ("/home/" in page.url or "/welcome" in page.url) and page.locator("a:has-text('Quiz 1')").count() > 0:
                 return True
 
-            # Agar DEDC dasturi sahifasida 'Join Program' / 'Continue' chiqib turgan bo'lsa, darhol bosamiz
+            # 1. DEDC dasturi sahifasida 'Join Program' / 'Continue' chiqib turgan bo'lsa, darhol bosamiz
             try:
                 prog_btn = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе'), div[role='dialog'] button:has-text('Continue'), div[role='dialog'] button:has-text('Продолжить')").first
                 if prog_btn.count() > 0 and prog_btn.is_visible():
@@ -296,47 +427,58 @@ def ensure_enrolled_on_coursera(page):
             except Exception:
                 pass
 
-            # MUHIM: Enroll tugmasi faqat kursning asosiy sahifasida (/learn/introduction-to-generative-ai) chiqadi, /home/module/1 da chiqmaydi!
-            safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai", wait_sec=2.5)
+            # 2. Avval DEDC tashkilot sahifasi orqali tekshirish
+            safe_navigate(page, "https://www.coursera.org/organizations/dedc/learn/introduction-to-generative-ai", wait_sec=2.5)
+            dismiss_all_popups(page)
 
-            for _ in range(12):
+            # Agar 'Go To Course' yoki 'Resume' bo'lsa, bosib kiramiz!
+            go_course_btn = page.locator("button:has-text('Go To Course'), a:has-text('Go To Course'), button:has-text('Resume')").first
+            if go_course_btn.count() > 0 and go_course_btn.is_visible():
+                print("   [ENROLL] 'Go To Course' tugmasi topildi va bosilmoqda...")
+                go_course_btn.click(force=True)
+                time.sleep(4.0)
                 dismiss_all_popups(page)
-                if "/home/" in page.url and page.locator("a:has-text('Quiz 1')").count() > 0:
+                if ("/home/" in page.url or "/welcome" in page.url) and page.locator("a:has-text('Quiz 1')").count() > 0:
                     return True
-                enr_btn = page.locator(
-                    "button[data-e2e='enroll-button'], "
-                    "button:has-text('Enroll'), "
-                    "button:has-text('Зарегистрироваться'), "
-                    "button:has-text('Начать обучение')"
-                ).first
-                if enr_btn.count() > 0 and enr_btn.is_visible():
-                    b_txt = (enr_btn.inner_text() or "").strip().lower()
-                    if "trial" in b_txt or "пробный" in b_txt or "free trial" in b_txt:
-                        print(f"   [!] Kurs pullik rejimda ('{b_txt}') — DEDC dasturiga ulanmagan!")
-                        return False
-                    print("   [ENROLL] 'Enroll' (Kursga yozilish) tugmasi topildi va bosilmoqda...")
-                    box = enr_btn.bounding_box()
-                    if box:
-                        page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
-                    else:
-                        enr_btn.click(force=True)
-                    time.sleep(2.5)
-                    dismiss_all_popups(page)
-                    page.evaluate("""() => {
-                        const btns = Array.from(document.querySelectorAll('div[role="dialog"] button, button, a'));
-                        const cont = btns.find(b => {
-                            const t = (b.innerText || '').toLowerCase();
-                            return t.includes('go to course') || t.includes('continue') || t.includes('start learning') ||
-                                   t.includes('продолжить') || t.includes('начать обучение') || t.includes('перейти к курсу');
-                        });
-                        if (cont) cont.click();
-                    }""")
-                    time.sleep(3.0)
-                    break
+
+            # Agar Enroll tugmasi bo'lsa
+            enr_btn = page.locator(
+                "button[data-e2e='enroll-button'], "
+                "button:has-text('Enroll'), "
+                "button:has-text('Зарегистрироваться'), "
+                "button:has-text('Начать обучение')"
+            ).first
+            if enr_btn.count() > 0 and enr_btn.is_visible():
+                b_txt = (enr_btn.inner_text() or "").strip().lower()
+                if "trial" in b_txt or "пробный" in b_txt or "free trial" in b_txt:
+                    print(f"   [!] Kurs pullik rejimda ('{b_txt}') — DEDC dasturiga ulanmagan!")
+                    return False
+                print("   [ENROLL] 'Enroll' (Kursga yozilish) tugmasi topildi va bosilmoqda...")
+                enr_btn.click(force=True)
+                time.sleep(3.0)
+                dismiss_all_popups(page)
+                page.evaluate("""() => {
+                    const btns = Array.from(document.querySelectorAll('div[role="dialog"] button, button, a'));
+                    const cont = btns.find(b => {
+                        const t = (b.innerText || '').toLowerCase();
+                        return t.includes('go to course') || t.includes('continue') || t.includes('start learning') ||
+                               t.includes('продолжить') || t.includes('начать обучение') || t.includes('перейти к курсу');
+                    });
+                    if (cont) cont.click();
+                }""")
+                time.sleep(3.0)
+
+            # 3. Kurs uy sahifasiga kirish
+            safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/welcome", wait_sec=2.5)
+            dismiss_all_popups(page)
+            for _ in range(8):
+                if page.locator("a:has-text('Quiz 1')").count() > 0:
+                    return True
                 time.sleep(0.5)
 
             safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/module/1", wait_sec=2.5)
-            for _ in range(6):
+            dismiss_all_popups(page)
+            for _ in range(8):
                 if page.locator("a:has-text('Quiz 1')").count() > 0:
                     return True
                 time.sleep(0.5)
@@ -350,8 +492,10 @@ def check_module1_overview(page):
     - Qaysi Video yoki Reading bajarilmagan (yashil ptichkasi yo'q)?
     - Qaysi Quizlar 100% PASSED, qaysilari NEEDS_TAKE?
     """
-    safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/module/1", wait_sec=2.2)
-    if "/home/" not in page.url or page.locator("a:has-text('Quiz 1')").count() == 0 or page.locator("button[data-e2e='enroll-button'], button:has-text('Enroll'), button:has-text('Зарегистрироваться')").count() > 0:
+    safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/welcome", wait_sec=2.2)
+    if ("/home/" not in page.url and "/welcome" not in page.url) or page.locator("a:has-text('Quiz 1')").count() == 0:
+        safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/module/1", wait_sec=2.2)
+    if ("/home/" not in page.url and "/welcome" not in page.url) or page.locator("a:has-text('Quiz 1')").count() == 0 or page.locator("button[data-e2e='enroll-button'], button:has-text('Enroll'), button:has-text('Зарегистрироваться')").count() > 0:
         ensure_enrolled_on_coursera(page)
 
     quiz_overview = page.evaluate("""() => {
@@ -403,7 +547,7 @@ def check_module1_overview(page):
             const t = (a.innerText || '').trim();
             if (!h.includes('introduction-to-generative-ai')) return;
             for (let i = 1; i <= 4; i++) {
-                if (t.includes('Quiz ' + i)) {
+                if (t.includes('Quiz ' + i) || h.toLowerCase().includes('quiz-' + i)) {
                     res.quiz_urls['Quiz ' + i] = h;
                     const row = getItemRow(a);
                     const rTxt = (row ? row.innerText : '') || '';
@@ -653,9 +797,22 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
             if q_url.split("?")[0].rstrip("/") not in page.url or "/attempt" in page.url:
                 safe_navigate(page, q_url, wait_sec=2.5 * mult)
 
+            # Agar URL ochilmasa yoki 404 bo'lsa (DEDC team manzili tekshiriladi)
+            page_title_lower = (page.title() or "").lower()
+            if "sorry" in page_title_lower or page.locator("text='looks like you found a page that does not exist'").count() > 0:
+                team_url_map = {
+                    1: "https://www.coursera.org/learn/introduction-to-generative-ai/team/UOf9n/quiz-1",
+                    2: "https://www.coursera.org/learn/introduction-to-generative-ai/team/PbAYx/quiz-2",
+                    3: "https://www.coursera.org/learn/introduction-to-generative-ai/team/68izF/quiz-3",
+                    4: "https://www.coursera.org/learn/introduction-to-generative-ai/team/QR1K5/quiz-4"
+                }
+                fallback_url = team_url_map.get(q_num)
+                if fallback_url:
+                    safe_navigate(page, fallback_url, wait_sec=2.5 * mult)
+
             # Agar hali kursga Enroll ('Enroll Starts Oct 11') bo'lmagani uchun landing sahifaga qaytib qolgan bo'lsa, darhol Enroll qilamiz!
             enr_check = page.locator("button[data-e2e='enroll-button'], button:has-text('Enroll'), button:has-text('Зарегистрироваться')").first
-            if ("/organizations/" in page.url and "/attempt" not in page.url) or (enr_check.count() > 0 and enr_check.is_visible()):
+            if ("/organizations/dedc/learn" in page.url and "/home" not in page.url and "/attempt" not in page.url and enr_check.count() > 0 and enr_check.is_visible()):
                 ensure_enrolled_on_coursera(page)
                 safe_navigate(page, q_url, wait_sec=2.5 * mult)
 
@@ -2016,12 +2173,20 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
             launch_args = common_media_args + ["--window-position=0,0", "--window-size=960,1030"]
         elif worker_id == 2:
             launch_args = common_media_args + ["--window-position=960,0", "--window-size=960,1030"]
+        elif worker_id == 99:
+            launch_args = common_media_args + ["--window-position=-32000,-32000", "--window-size=1920,1080"]
         else:
             launch_args = common_media_args + ["--start-maximized"]
-        ctx_kwargs = {
-            "no_viewport": True,
-            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
-        }
+        if worker_id == 99:
+            ctx_kwargs = {
+                "viewport": {"width": 1920, "height": 1080},
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+            }
+        else:
+            ctx_kwargs = {
+                "no_viewport": True,
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+            }
 
     try:
         with sync_playwright() as p:
@@ -2113,6 +2278,11 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                                 has_cauth = any("CAUTH" in c for c in cookies)
                     except Exception as rec_e:
                         print(f"{tag}[!] Pochtadan tiklashda ogohlantirish: {rec_e}")
+
+                if not has_cauth:
+                    if login_via_magic_link(page, email):
+                        cookies = [c.get("name", "") for c in context.cookies()]
+                        has_cauth = any("CAUTH" in c for c in cookies)
 
                 if not has_cauth:
                     print(f"{tag}[!] {email} ga bu safar kirib bo'lmadi, keyingi bosqichda qayta tekshiriladi!")
