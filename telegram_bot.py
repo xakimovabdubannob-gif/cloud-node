@@ -279,10 +279,12 @@ def get_certificate_map():
                 line = line.strip()
                 if line and "http" in line:
                     parts = [p.strip() for p in line.split("|")]
-                    if len(parts) >= 3:
-                        cert_map[parts[0].upper()] = parts[2]
-                    elif len(parts) == 2:
-                        cert_map[parts[0].upper()] = parts[1]
+                    cert_u = parts[2] if len(parts) >= 3 else parts[1]
+                    fn = parts[0].upper()
+                    cert_map[fn] = cert_u
+                    cert_map[fn.replace("`", "'")] = cert_u
+                    cert_map[fn.replace("'", "`")] = cert_u
+                    cert_map[re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", fn)] = cert_u
     return cert_map
 
 
@@ -1745,8 +1747,8 @@ class TelegramBotServer:
         if result_status == "COMPLETED":
             certs = get_certificate_map()
             accs = get_existing_accounts()
-            ac = accs.get(s_name, {})
-            c_url = certs.get(s_name, "")
+            ac = (accs.get(s_name) or accs.get(s_name.replace("`", "'")) or accs.get(s_name.replace("'", "`")) or accs.get(re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", s_name)) or {})
+            c_url = (certs.get(s_name) or certs.get(s_name.replace("`", "'")) or certs.get(s_name.replace("'", "`")) or certs.get(re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", s_name)) or "")
             self.send_message(
                 chat_id,
                 f"🎉 <b>[{idx}/{total}] MUVAFFAQIYATLI OLINDI!</b>\n"
