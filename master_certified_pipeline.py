@@ -1297,31 +1297,35 @@ def verify_student_name_with_3_checks(page, student_name):
     for v_try in range(1, 4):
         try:
             mult = v_try
-            safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=CERTIFICATES")
-            time.sleep(3.5 * mult)
+            # Avval to'g'ridan-to'g'ri ism tasdiqlash URLiga kirib ko'ramiz (Eng tezkor usul!)
+            safe_navigate(page, "https://www.coursera.org/user-verification/name", wait_sec=2.5 * mult)
             dismiss_all_popups(page)
-            time.sleep(1.0)
 
-            v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
-            if not v_btn.is_visible():
-                safe_navigate(page, "https://www.coursera.org/organizations/dedc")
-                time.sleep(3.5 * mult)
+            # Agar to'g'ridan-to'g'ri user-verification ga kirmagan bo'lsa, DEDC portali orqali tugmani bosib ochamiz
+            if "/user-verification" not in page.url:
+                safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=CERTIFICATES", wait_sec=2.5 * mult)
+                time.sleep(1.5 * mult)
                 dismiss_all_popups(page)
-                time.sleep(1.0)
-                v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
 
-            if not v_btn.is_visible():
-                print("[ISMNI TASDIQLASH] 'Verify My Name' tugmasi yo'q (ism allaqachon tasdiqlangan!).")
-                return True
+                v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Подтвердить имя'), a:has-text('Подтвердить имя'), button:has-text('Подтвердить'), a:has-text('Подтвердить'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя'), a[href*='user-verification']").first
+                if not v_btn.is_visible():
+                    safe_navigate(page, "https://www.coursera.org/organizations/dedc", wait_sec=2.5 * mult)
+                    time.sleep(1.5 * mult)
+                    dismiss_all_popups(page)
+                    v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Подтвердить имя'), a:has-text('Подтвердить имя'), button:has-text('Подтвердить'), a:has-text('Подтвердить'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя'), a[href*='user-verification']").first
 
-            print(f"[ISMNI TASDIQLASH] 'Verify My Name' bosilmoqda (urinish #{v_try}/3 | {mult}x)...")
-            box_v = v_btn.bounding_box()
-            if box_v:
-                page.mouse.click(box_v['x'] + box_v['width']/2, box_v['y'] + box_v['height']/2)
-            else:
-                v_btn.click(force=True)
-            time.sleep(3.5 * mult)
-            dismiss_all_popups(page)
+                if v_btn.is_visible():
+                    print(f"[ISMNI TASDIQLASH] 'Verify My Name' bosilmoqda (urinish #{v_try}/3 | {mult}x)...")
+                    box_v = v_btn.bounding_box()
+                    if box_v:
+                        page.mouse.click(box_v['x'] + box_v['width']/2, box_v['y'] + box_v['height']/2)
+                    else:
+                        v_btn.click(force=True)
+                    time.sleep(3.5 * mult)
+                    dismiss_all_popups(page)
+                elif "/user-verification" not in page.url:
+                    print("[ISMNI TASDIQLASH] 'Verify My Name' tugmasi yo'q (ism allaqachon tasdiqlangan!).")
+                    return True
 
             # 1. Ism bo'laklarini ajratib olamiz
             parts = student_name.split()
@@ -1483,46 +1487,113 @@ def verify_student_name_with_3_checks(page, student_name):
     return False
 
 def extract_certificate_with_3_checks(page, student_name=""):
-    """Sertifikat havolasini 3 martagacha (1x, 2x, 3x kutish bilan) tekshirib oladi. Agar kurs hali IN_PROGRESS bo'lsa, o'sha yerdagi kamchilikni (Quiz yoki Video) darhol topib bajaradi!"""
+    """Sertifikat havolasini 3 martagacha (API, DOM, Yangi Tab va IN_PROGRESS orqali) tekshirib oladi."""
     for c_try in range(1, 4):
         try:
             mult = c_try
             print(f"[SERTIFIKAT QIDIRUV #{c_try}/3 | Kutish: {mult}x] Tekshirilmoqda...")
+
+            # 0. Coursera internal REST API orqali tekshirish (Eng tez va 100% aniq!)
+            for api_attempt in range(2):
+                api_cert = page.evaluate("""async () => {
+                    try {
+                        const r = await fetch('/api/certificates.v1?q=my');
+                        if (r.ok) {
+                            const d = await r.json();
+                            for (const el of (d.elements || [])) {
+                                const cid = el.id || el.certificateCode || el.certificateId;
+                                if (cid) return 'https://www.coursera.org/account/accomplishments/verify/' + cid;
+                            }
+                        }
+                    } catch(e) {}
+                    try {
+                        const r2 = await fetch('/api/openCourseMemberships.v1?q=none&includes=certificates');
+                        if (r2.ok) {
+                            const d2 = await r2.json();
+                            const certs = (d2.linked && d2.linked['certificates.v1']) || [];
+                            for (const c of certs) {
+                                const cid = c.id || c.certificateCode;
+                                if (cid) return 'https://www.coursera.org/account/accomplishments/verify/' + cid;
+                            }
+                        }
+                    } catch(e) {}
+                    return null;
+                }""")
+                if api_cert:
+                    print(f"[SERTIFIKAT TOPILDI - API] {api_cert}")
+                    return api_cert
+                time.sleep(0.5)
+
             # 1. Global Accomplishments sahifasi (/account/accomplishments)
-            safe_navigate(page, "https://www.coursera.org/account/accomplishments")
-            time.sleep(3.5 * mult)
+            safe_navigate(page, "https://www.coursera.org/account/accomplishments", wait_sec=2.5 * mult)
             dismiss_all_popups(page)
-            links = page.evaluate("""() => Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h && h.includes('/account/accomplishments/verify/'))""")
-            if links:
-                print(f"[SERTIFIKAT TOPILDI] {links[0]}")
-                return links[0]
+
+            # Accomplishments sahifasi kontekstida ham API va DOM ni tekshiramiz
+            api_cert = page.evaluate("""async () => {
+                try {
+                    const r = await fetch('/api/certificates.v1?q=my');
+                    if (r.ok) {
+                        const d = await r.json();
+                        for (const el of (d.elements || [])) {
+                            const cid = el.id || el.certificateCode || el.certificateId;
+                            if (cid) return 'https://www.coursera.org/account/accomplishments/verify/' + cid;
+                        }
+                    }
+                } catch(e) {}
+                return null;
+            }""")
+            if api_cert:
+                print(f"[SERTIFIKAT TOPILDI - API] {api_cert}")
+                return api_cert
+
+            dom_cert = page.evaluate("""() => {
+                const as = Array.from(document.querySelectorAll('a'));
+                const hs = as.map(a => a.href || '').filter(Boolean);
+                const v = hs.find(h => h.includes('/account/accomplishments/verify/'));
+                if (v) return v;
+                const c = hs.find(h => h.includes('/account/accomplishments/certificate/') || h.includes('/account/accomplishments/records/'));
+                if (c) return c;
+                return null;
+            }""")
+            if dom_cert:
+                print(f"[SERTIFIKAT TOPILDI - DOM] {dom_cert}")
+                return dom_cert
 
             # 2. Certificates tab (DEDC portali)
-            safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=CERTIFICATES")
-            time.sleep(3.5 * mult)
+            safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=CERTIFICATES", wait_sec=2.5 * mult)
             dismiss_all_popups(page)
-            links = page.evaluate("""() => Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h && h.includes('/account/accomplishments/verify/'))""")
-            if links:
-                print(f"[SERTIFIKAT TOPILDI] {links[0]}")
-                return links[0]
+            dom_cert = page.evaluate("""() => {
+                const as = Array.from(document.querySelectorAll('a'));
+                const hs = as.map(a => a.href || '').filter(Boolean);
+                const v = hs.find(h => h.includes('/account/accomplishments/verify/'));
+                if (v) return v;
+                const c = hs.find(h => h.includes('/account/accomplishments/certificate/') || h.includes('/account/accomplishments/records/'));
+                if (c) return c;
+                return null;
+            }""")
+            if dom_cert:
+                print(f"[SERTIFIKAT TOPILDI - DEDC] {dom_cert}")
+                return dom_cert
 
-            vc = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Посмотреть сертификат'), button:has-text('Посмотреть сертификат')").first
+            vc = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Посмотреть сертификат'), button:has-text('Посмотреть сертификат'), a:has-text('Сертификат'), button:has-text('Сертификат'), a[data-e2e*='certificate']").first
             if vc.is_visible():
                 vc.click(force=True)
-                time.sleep(4.5 * mult)
+                time.sleep(3.5 * mult)
+                for p_ctx in page.context.pages:
+                    if "/account/accomplishments/verify/" in p_ctx.url:
+                        print(f"[SERTIFIKAT TOPILDI - TAB] {p_ctx.url}")
+                        return p_ctx.url
                 if "/account/accomplishments/verify/" in page.url:
                     print(f"[SERTIFIKAT TOPILDI] {page.url}")
                     return page.url
 
             # Agar CERTIFICATES bo'sh bo'lsa, IN_PROGRESS tabini tekshiramiz: qaysi Quiz yoki Video qolib ketganini ko'ramiz!
-            safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=IN_PROGRESS")
-            time.sleep(4)
+            safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=IN_PROGRESS", wait_sec=3.0)
             dismiss_all_popups(page)
             in_prog_text = page.evaluate("() => (document.body ? document.body.innerText : '')")
             if "Introduction to Generative AI" in in_prog_text and "% complete" in in_prog_text:
                 print("[!] DIQQAT: Kurs hali 'In Progress' da turibdi! IN_PROGRESS ichida qolib ketgan Quiz/Video tekshirilmoqda...")
                 handled_in_prog = False
-                # Birinchi o'rinda IN_PROGRESS kartochkasida qaysi Quiz yozilganini tekshiramiz
                 for q_name, default_url, q_num in QUIZZES_INFO:
                     if q_name in in_prog_text and student_name:
                         print(f"[IN_PROGRESS] '{q_name}' qolib ketgani aniqlandi! Darhol yechilmoqda...")
@@ -1530,7 +1601,6 @@ def extract_certificate_with_3_checks(page, student_name=""):
                         handled_in_prog = True
                         break
 
-                # Agar aniq Quiz nomi ko'rinmasa yoki Video/Reading qolib ketgan bo'lsa, 'Resume' tugmasini bosib kiramiz
                 if not handled_in_prog:
                     resume_btn = page.locator("a:has-text('Resume'), button:has-text('Resume'), a:has-text('Продолжить'), button:has-text('Продолжить')").first
                     if resume_btn.is_visible():
@@ -1569,18 +1639,45 @@ def extract_certificate_with_3_checks(page, student_name=""):
                     continue
                 return None
 
-            # 2. Accomplishments sahifasi
-            safe_navigate(page, "https://www.coursera.org/account/accomplishments")
-            time.sleep(5)
+            # Qayta Accomplishments sahifasi
+            safe_navigate(page, "https://www.coursera.org/account/accomplishments", wait_sec=3.0)
             dismiss_all_popups(page)
-            links = page.evaluate("""() => Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h && h.includes('/account/accomplishments/verify/'))""")
-            if links:
-                return links[0]
+            api_cert = page.evaluate("""async () => {
+                try {
+                    const r = await fetch('/api/certificates.v1?q=my');
+                    if (r.ok) {
+                        const d = await r.json();
+                        for (const el of (d.elements || [])) {
+                            const cid = el.id || el.certificateCode || el.certificateId;
+                            if (cid) return 'https://www.coursera.org/account/accomplishments/verify/' + cid;
+                        }
+                    }
+                } catch(e) {}
+                return null;
+            }""")
+            if api_cert:
+                print(f"[SERTIFIKAT TOPILDI - API] {api_cert}")
+                return api_cert
 
-            vc2 = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Посмотреть сертификат')").first
+            dom_cert = page.evaluate("""() => {
+                const as = Array.from(document.querySelectorAll('a'));
+                const hs = as.map(a => a.href || '').filter(Boolean);
+                const v = hs.find(h => h.includes('/account/accomplishments/verify/'));
+                if (v) return v;
+                const c = hs.find(h => h.includes('/account/accomplishments/certificate/') || h.includes('/account/accomplishments/records/'));
+                if (c) return c;
+                return null;
+            }""")
+            if dom_cert:
+                return dom_cert
+
+            vc2 = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Посмотреть сертификат'), a:has-text('Сертификат')").first
             if vc2.is_visible():
                 vc2.click(force=True)
-                time.sleep(5)
+                time.sleep(4)
+                for p_ctx in page.context.pages:
+                    if "/account/accomplishments/verify/" in p_ctx.url:
+                        return p_ctx.url
                 if "/account/accomplishments/verify/" in page.url:
                     return page.url
         except Exception as e:
