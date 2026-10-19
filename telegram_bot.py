@@ -572,6 +572,19 @@ def get_excel_order_info(file_path: str):
         title = title.replace("_", " ").replace("Sertifikatlar", "").strip() or "Buyurtma"
         if "6 Sinf 211" in title or "6-Sinf 211" in title:
             title = "6-Sinf (211 ta o'quvchi)"
+        elif title.isdigit():
+            title = f"{title} ta Sertifikat"
+        elif (title.startswith("in ") or "in " in title or title.startswith("in_") or ".xlsx" in title.lower() or "Buyurtma" in title):
+            if len(students) == 1:
+                s_name = students[0].get("name", "").strip()
+                if s_name:
+                    title = s_name
+            elif len(students) > 1:
+                classes = sorted(list(set(s.get("class", "").strip() for s in students if s.get("class", "").strip())))
+                if classes:
+                    title = f"{', '.join(classes[:3])} ({len(students)} ta o'quvchi)"
+                else:
+                    title = f"{students[0].get('name', 'Buyurtma')[:20]} (+{len(students)-1} ta)"
         return {"title": title, "total": len(students), "done": done, "students": students}
     except Exception as e:
         print(f"[GET_ORDER_INFO ERROR] {e}")
@@ -580,11 +593,12 @@ def get_excel_order_info(file_path: str):
 
 def get_order_file_date_and_ts(fpath, fn):
     """Fayl nomidagi 10 xonali timestamp yoki sanani ajratib oladi (GitHub Runnerda mtime bugungi bo'lib qolmasligi uchun)."""
-    m_ts = re.search(r'[_](\d{10})[_.]', fn) or re.search(r'(\d{10})', fn)
-    if m_ts:
+    # E'tibor: fn ichida user_id (masalan 6580113791) ham 10 xonali, lekin unix timestamp 1700000000..1850000000 oraliqda bo'ladi:
+    all_10 = re.findall(r'(\d{10})', fn)
+    for s_ts in all_10:
         try:
-            ts = int(m_ts.group(1))
-            if 1700000000 <= ts <= 1900000000:
+            ts = int(s_ts)
+            if 1700000000 <= ts <= 1850000000:
                 dt_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
                 return dt_str, ts
         except Exception:
