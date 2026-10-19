@@ -87,12 +87,25 @@ for fn in ("akkountlar.txt", "natijalar_sertifikatlar.txt", "xatolar.txt"):
     open(fn, "a", encoding="utf-8").close()
 
 os.makedirs("bot_orders", exist_ok=True)
+arch_dir = os.path.join("bot_orders", "archived")
+os.makedirs(arch_dir, exist_ok=True)
 if os.path.exists("orders_archive.zip"):
     try:
-        import zipfile
+        import zipfile, shutil
         with zipfile.ZipFile("orders_archive.zip", "r") as z:
             z.extractall(".")
         print("[ORDERS] orders_archive.zip (barcha sanalar va buyurtmalar) muvaffaqiyatli ochildi!")
+        # Tarixiy fayllarni archived papkasiga o'tkazamiz, bot ularni yangi faol buyurtma deb o'ylamaydi:
+        for fn in os.listdir("bot_orders"):
+            if fn.startswith("in_") and fn.endswith(".xlsx"):
+                src = os.path.join("bot_orders", fn)
+                dst = os.path.join(arch_dir, fn)
+                try:
+                    if os.path.exists(dst):
+                        os.remove(dst)
+                    shutil.move(src, dst)
+                except Exception:
+                    pass
     except Exception as e:
         print(f"[ORDERS UNZIP ERROR] {e}")
 
