@@ -2524,8 +2524,6 @@ class TelegramBotServer:
                         self.enqueue_order(st_data.get("chat_id", self.admin_id), st_data.get("user_name", "Mijoz"), st_data["students"], silent=st_data.get("silent", True))
                     elif isinstance(st_data, list) and st_data:
                         self.enqueue_order(self.admin_id, "Admin", st_data, silent=True)
-                else:
-                    self.resume_latest_unfinished_order(notify_chat_id=self.admin_id, manual=False)
             except Exception as e:
                 print(f"[STARTUP WARN] {e}")
 
