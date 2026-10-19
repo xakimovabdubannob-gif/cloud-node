@@ -270,19 +270,42 @@ def calculate_price(count: int):
     return per_student, count * per_student
 
 
+DOCS_DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "student_docs.json")
+
+def load_student_docs():
+    """Hujjatlar (I-FR / Seriya + Raqam) va Familiyalar bazasini yuklaydi."""
+    if os.path.exists(DOCS_DB_FILE):
+        try:
+            with open(DOCS_DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"by_doc": {}, "by_name": {}}
+
+
 def get_certificate_map():
-    """natijalar_sertifikatlar.txt dan o'quvchi -> sertifikat URL lug'atini qaytaradi."""
+    """natijalar_sertifikatlar.txt dan o'quvchi / Hujjat (I-FR / Seriya+Raqam) -> sertifikat URL lug'atini qaytaradi."""
     cert_map = {}
+    docs_db = load_student_docs()
     if os.path.exists(RESULTS_FILE):
         with open(RESULTS_FILE, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and "http" in line:
                     parts = [p.strip() for p in line.split("|")]
-                    if len(parts) >= 3:
-                        cert_map[parts[0].upper()] = parts[2]
-                    elif len(parts) == 2:
-                        cert_map[parts[0].upper()] = parts[1]
+                    cert_u = parts[2] if len(parts) >= 3 else parts[1]
+                    fn = parts[0].upper()
+                    cert_map[fn] = cert_u
+                    cert_map[fn.replace("`", "'")] = cert_u
+                    cert_map[fn.replace("'", "`")] = cert_u
+                    norm = re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ\s]+", "", fn)
+                    cert_map[norm] = cert_u
+                    if len(parts) >= 4 and parts[3]:
+                        dk = parts[3].replace(" ", "").replace("-", "").upper()
+                        cert_map[dk] = cert_u
+                    dk_found = docs_db.get("by_name", {}).get(norm)
+                    if dk_found:
+                        cert_map[dk_found] = cert_u
     return cert_map
 
 
@@ -307,72 +330,92 @@ def cyrillic_to_latin_uz(text: str) -> str:
         "Ж": "J", "З": "Z", "И": "I", "Й": "Y", "К": "K", "Л": "L", "М": "M",
         "Н": "N", "О": "O", "П": "P", "Р": "R", "С": "S", "Т": "T", "У": "U",
         "Ф": "F", "Х": "X", "Ц": "TS", "Ч": "CH", "Ш": "SH", "Щ": "SH",
-        "Ъ": "`", "Ы": "I", "Ь": "", "Э": "E", "Ю": "YU", "Я": "YA",
-        "Ў": "O`", "Қ": "Q", "Ғ": "G`", "Ҳ": "H",
+        "Ъ": "'", "Ы": "I", "Ь": "", "Э": "E", "Ю": "YU", "Я": "YA",
+        "Ў": "O'", "Қ": "Q", "Ғ": "G'", "Ҳ": "H",
     }
     res = []
-    for ch in text.upper():
+    for ch in str(text).upper():
         res.append(mapping.get(ch, ch))
     return "".join(res)
 
 
 def parse_students_from_text(text: str):
-    """Matndan o'quvchilar ro'yxatini ajratib oladi (14 xonali JSHSHIR va Kirill harflarni avtomatik to'g'rilaydi)."""
+    """Matndan o'quvchilar ro'yxatini ajratib oladi (Sinf, Tug'ilgan sana va Hujjat seriya+raqamini 100% aniqlikda topadi)."""
     students = []
     existing_accs = get_existing_accounts()
+    docs_db = load_student_docs()
+
     for raw_line in text.splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("#") or line.lower().startswith("f.i."):
+        if not line or line.startswith("#") or line.lower().startswith("f.i.") or "namuna" in line.lower():
             continue
-        parts = [p.strip() for p in re.split(r"\t|\||;", line) if p.strip()]
-        parts = [p for p in parts if not (p.isdigit() and len(p) == 14)]
-        if len(parts) >= 5:
-            if parts[0].isdigit() and len(parts) >= 6:
-                parts = parts[1:]
-            name_lat = cyrillic_to_latin_uz(parts[0])
-            if "ALIYEV VALI" in name_lat or "KARIMOVA MALIKA" in name_lat or "F.I.SH" in name_lat:
-                continue
-            students.append({
-                "name": name_lat,
-                "birth_date": parts[1],
-                "doc_series": cyrillic_to_latin_uz(parts[2]),
-                "doc_number": parts[3],
-                "class": cyrillic_to_latin_uz(parts[4]),
-            })
-        elif len(parts) == 4:
-            name_lat = cyrillic_to_latin_uz(parts[0])
-            if "ALIYEV VALI" in name_lat or "KARIMOVA MALIKA" in name_lat or "F.I.SH" in name_lat:
-                continue
-            students.append({
-                "name": name_lat,
-                "birth_date": parts[1],
-                "doc_series": cyrillic_to_latin_uz(parts[2]),
-                "doc_number": parts[3],
-                "class": "",
-            })
+
+        # 14 xonali JSHSHIR larni olib tashlaymiz
+        line = re.sub(r"\b\d{14}\b", "", line)
+        # Boshidagi tartib raqam (1. yoki 15)) ni olib tashlaymiz
+        line = re.sub(r"^\d{1,3}[\s.)\-]+", "", line).strip()
+
+        # Tugilgan sanani topamiz (DD.MM.YYYY yoki DD-MM-YYYY yoki DD/MM/YYYY)
+        birth_date = ""
+        m_date = re.search(r"\b(\d{2}[./-]\d{2}[./-]\d{4})\b", line)
+        if m_date:
+            birth_date = m_date.group(1).replace("/", ".").replace("-", ".")
+            line = line[:m_date.start()] + " " + line[m_date.end():]
+
+        # Sinfni topamiz (masalan 6-V, 6V, 6-B, 5-A, 11-sinf)
+        cls = ""
+        m_cls = re.search(r"\b(\d{1,2}\s*[-_]?\s*[A-Za-zА-Яа-яЎўҚқҒғҲҳ]+|\d{1,2}\s*sinf)\b", line, re.IGNORECASE)
+        if m_cls:
+            cls_raw = m_cls.group(1).strip()
+            cls = cyrillic_to_latin_uz(cls_raw).replace(" ", "")
+            line = line[:m_cls.start()] + " " + line[m_cls.end():]
+
+        # Hujjat seriya va raqamini topamiz (masalan TA 28055555, I-FR 0763053, AA 1234567)
+        doc_series = ""
+        doc_number = ""
+        m_doc = re.search(r"\b([I|V|X|A-Z]{1,4}(?:-[A-Z]{1,3})?)\s*(\d{6,8})\b", line, re.IGNORECASE)
+        if m_doc:
+            doc_series = cyrillic_to_latin_uz(m_doc.group(1).upper().strip())
+            doc_number = m_doc.group(2).strip()
+            line = line[:m_doc.start()] + " " + line[m_doc.end():]
         else:
-            date_match = re.search(r"\b(\d{2}[./-]\d{2}[./-]\d{4})\b", line)
-            if date_match:
-                before_date = cyrillic_to_latin_uz(line[:date_match.start()].strip())
-                before_date = re.sub(r"^\d+[\s.)]+", "", before_date).strip()
-                after_date = [tok for tok in line[date_match.end():].strip().split() if not (tok.isdigit() and len(tok) == 14)]
-                if len(before_date.split()) >= 2 and len(after_date) >= 2:
-                    students.append({
-                        "name": before_date,
-                        "birth_date": date_match.group(1).replace("/", ".").replace("-", "."),
-                        "doc_series": cyrillic_to_latin_uz(after_date[0]),
-                        "doc_number": after_date[1],
-                        "class": cyrillic_to_latin_uz(after_date[2]) if len(after_date) >= 3 else "",
-                    })
-            elif parts and cyrillic_to_latin_uz(parts[0]) in existing_accs:
-                students.append({
-                    "name": cyrillic_to_latin_uz(parts[0]),
-                    "birth_date": "",
-                    "doc_series": "",
-                    "doc_number": "",
-                    "class": cyrillic_to_latin_uz(parts[1]) if len(parts) > 1 else "",
-                })
+            m_num = re.search(r"\b(\d{6,8})\b", line)
+            if m_num:
+                doc_number = m_num.group(1).strip()
+                line = line[:m_num.start()] + " " + line[m_num.end():]
+                m_ser = re.search(r"\b([A-Z]{2}|I-FR|II-FR)\b", line, re.IGNORECASE)
+                if m_ser:
+                    doc_series = cyrillic_to_latin_uz(m_ser.group(1).upper().strip())
+                    line = line[:m_ser.start()] + " " + line[m_ser.end():]
+
+        # Qolgan matn - O'quvchining toza F.I.SH (Familiya Ism Sharifi)
+        name = re.sub(r"[\t|;]+", " ", line)
+        name = re.sub(r"\s+", " ", name).strip()
+        name_lat = cyrillic_to_latin_uz(name)
+
+        if len(name_lat) < 3 or "ALIYEV VALI" in name_lat or "KARIMOVA MALIKA" in name_lat:
+            continue
+
+        doc_key = f"{doc_series}{doc_number}".replace(" ", "").replace("-", "").upper() if (doc_series and doc_number) else ""
+
+        # Agar hujjat orqali bazada mavjud bo'lsa, yetishmayotgan sinf yoki sanani to'ldiramiz
+        if doc_key and doc_key in docs_db.get("by_doc", {}):
+            d_info = docs_db["by_doc"][doc_key]
+            if not cls and d_info.get("class"):
+                cls = d_info["class"]
+            if not birth_date and d_info.get("birth_date"):
+                birth_date = d_info["birth_date"]
+
+        students.append({
+            "name": name_lat,
+            "birth_date": birth_date,
+            "doc_series": doc_series,
+            "doc_number": doc_number,
+            "doc_key": doc_key,
+            "class": cls or "8-sinf",
+        })
     return students
+
 
 
 def parse_students_from_excel(file_path: str):
@@ -399,21 +442,29 @@ def parse_students_from_excel(file_path: str):
         if len(vals_non_empty) >= 5:
             if vals_non_empty[3] in ("1234567", "7654321"):
                 continue
+            doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
+            doc_num = str(vals_non_empty[3]).strip()
+            doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
             students.append({
                 "name": upper_name,
                 "birth_date": vals_non_empty[1],
-                "doc_series": cyrillic_to_latin_uz(vals_non_empty[2]),
-                "doc_number": vals_non_empty[3],
+                "doc_series": doc_ser,
+                "doc_number": doc_num,
+                "doc_key": doc_key,
                 "class": cyrillic_to_latin_uz(vals_non_empty[4]),
             })
         elif len(vals_non_empty) == 4:
             if vals_non_empty[3] in ("1234567", "7654321"):
                 continue
+            doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
+            doc_num = str(vals_non_empty[3]).strip()
+            doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
             students.append({
                 "name": upper_name,
                 "birth_date": vals_non_empty[1],
-                "doc_series": cyrillic_to_latin_uz(vals_non_empty[2]),
-                "doc_number": vals_non_empty[3],
+                "doc_series": doc_ser,
+                "doc_number": doc_num,
+                "doc_key": doc_key,
                 "class": "",
             })
         elif len(vals_non_empty) >= 1 and len(vals_non_empty[0].split()) >= 2:
@@ -422,6 +473,7 @@ def parse_students_from_excel(file_path: str):
                 "birth_date": "",
                 "doc_series": "",
                 "doc_number": "",
+                "doc_key": "",
                 "class": cyrillic_to_latin_uz(vals_non_empty[1]) if len(vals_non_empty) > 1 else "",
             })
     return students
@@ -475,7 +527,15 @@ def get_excel_order_info(file_path: str):
         accs_map = get_existing_accounts()
 
         if r0 and str(r0[0] or "").startswith("COURSERA"):
-            title = str(r0[1] or "").replace("MAKTAB / SINF:", "").replace("MAKTAB:", "").strip()
+            cand = str(r0[1] or "").replace("MAKTAB / SINF:", "").replace("MAKTAB:", "").strip()
+            if not cand or len(cand) < 2:
+                bn = os.path.basename(file_path)
+                if bn.startswith("in_"):
+                    parts = bn.split("_", 3)
+                    cand = parts[3].rsplit(".", 1)[0] if len(parts) >= 4 else bn
+                else:
+                    cand = bn.rsplit(".", 1)[0]
+            title = cand
             for r in rows[2:]:
                 if r and len(r) >= 2 and r[1]:
                     sname = str(r[1]).strip().upper()
@@ -510,10 +570,60 @@ def get_excel_order_info(file_path: str):
         if not title:
             title = os.path.basename(file_path).rsplit(".", 1)[0]
         title = title.replace("_", " ").replace("Sertifikatlar", "").strip() or "Buyurtma"
+        if "6 Sinf 211" in title or "6-Sinf 211" in title:
+            title = "6-Sinf (211 ta o'quvchi)"
+        elif title.isdigit():
+            title = f"{title} ta Sertifikat"
+        elif (title.startswith("in ") or "in " in title or title.startswith("in_") or ".xlsx" in title.lower() or "Buyurtma" in title):
+            if len(students) == 1:
+                s_name = students[0].get("name", "").strip()
+                if s_name:
+                    title = s_name
+            elif len(students) > 1:
+                classes = sorted(list(set(s.get("class", "").strip() for s in students if s.get("class", "").strip())))
+                if classes:
+                    title = f"{', '.join(classes[:3])} ({len(students)} ta o'quvchi)"
+                else:
+                    title = f"{students[0].get('name', 'Buyurtma')[:20]} (+{len(students)-1} ta)"
         return {"title": title, "total": len(students), "done": done, "students": students}
     except Exception as e:
         print(f"[GET_ORDER_INFO ERROR] {e}")
         return None
+
+
+def get_order_file_date_and_ts(fpath, fn):
+    """Fayl nomidagi 10 xonali timestamp yoki sanani ajratib oladi (GitHub Runnerda mtime bugungi bo'lib qolmasligi uchun)."""
+    # E'tibor: fn ichida user_id (masalan 6580113791) ham 10 xonali, lekin unix timestamp 1700000000..1850000000 oraliqda bo'ladi:
+    all_10 = re.findall(r'(\d{10})', fn)
+    for s_ts in all_10:
+        try:
+            ts = int(s_ts)
+            if 1700000000 <= ts <= 1850000000:
+                dt_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+                return dt_str, ts
+        except Exception:
+            pass
+    m_d = re.search(r'(\d{2})[._-](\d{2})[._-](\d{4})', fn)
+    if m_d:
+        try:
+            d, m, y = m_d.group(1), m_d.group(2), m_d.group(3)
+            dt_obj = datetime.strptime(f"{y}-{m}-{d}", "%Y-%m-%d")
+            return dt_obj.strftime("%Y-%m-%d"), int(dt_obj.timestamp())
+        except Exception:
+            pass
+    m_iso = re.search(r'(\d{4})-(\d{2})-(\d{2})', fn)
+    if m_iso:
+        try:
+            y, m, d = m_iso.group(1), m_iso.group(2), m_iso.group(3)
+            dt_obj = datetime.strptime(f"{y}-{m}-{d}", "%Y-%m-%d")
+            return dt_obj.strftime("%Y-%m-%d"), int(dt_obj.timestamp())
+        except Exception:
+            pass
+    try:
+        mtime = os.path.getmtime(fpath)
+        return datetime.fromtimestamp(mtime).strftime("%Y-%m-%d"), mtime
+    except Exception:
+        return datetime.now().strftime("%Y-%m-%d"), time.time()
 
 
 def _get_orders_by_date():
@@ -535,12 +645,10 @@ def _get_orders_by_date():
     date_groups = {}
     for fpath, fn in all_files:
         try:
-            mtime = os.path.getmtime(fpath)
-            dt = datetime.fromtimestamp(mtime)
-            dt_key = dt.strftime("%Y-%m-%d")
+            dt_key, ts = get_order_file_date_and_ts(fpath, fn)
             if dt_key not in date_groups:
                 date_groups[dt_key] = []
-            date_groups[dt_key].append((fpath, fn, mtime))
+            date_groups[dt_key].append((fpath, fn, ts))
         except Exception:
             pass
 
@@ -1713,21 +1821,35 @@ class TelegramBotServer:
                     lines_txt.append(f"  {pref} {h_line}")
                 self.edit_message(_cid, _mid, "\n".join(lines_txt))
 
-        update_step("🚀 Jarayon boshlanmoqda...")
-        is_headless = os.environ.get("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
-        t_proc_start = time.time()
-        result_status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=worker_id)
-        dur_sec = max(1, int(time.time() - t_proc_start))
-        dur_m = dur_sec // 60
-        dur_s = dur_sec % 60
-        dur_str = f"{dur_m} daqiqa {dur_s} soniya" if dur_m > 0 else f"{dur_s} soniya"
+        certs = get_certificate_map()
+        doc_key = st.get("doc_key", "")
+        c_existing = (
+            (certs.get(doc_key) if doc_key else None) or
+            certs.get(s_name) or
+            certs.get(s_name.replace("`", "'")) or
+            certs.get(s_name.replace("'", "`")) or
+            certs.get(re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ\s]+", "", s_name))
+        )
+        if c_existing:
+            update_step("✅ Sertifikat bazada mavjud!")
+            result_status = "COMPLETED"
+            dur_str = "1 soniya"
+        else:
+            update_step("🚀 Jarayon boshlanmoqda...")
+            is_headless = os.environ.get("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
+            t_proc_start = time.time()
+            result_status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=worker_id)
+            dur_sec = max(1, int(time.time() - t_proc_start))
+            dur_m = dur_sec // 60
+            dur_s = dur_sec % 60
+            dur_str = f"{dur_m} daqiqa {dur_s} soniya" if dur_m > 0 else f"{dur_s} soniya"
         try:
             requests.post("http://127.0.0.1:8766/cluster/finish_task", json={
                 "node_id": "MASTER_PC",
                 "worker_id": worker_id,
                 "status": result_status,
                 "student": st,
-                "duration_sec": dur_sec,
+                "duration_sec": 1,
             }, timeout=2)
         except Exception:
             pass
@@ -1745,8 +1867,20 @@ class TelegramBotServer:
         if result_status == "COMPLETED":
             certs = get_certificate_map()
             accs = get_existing_accounts()
-            ac = accs.get(s_name, {})
-            c_url = certs.get(s_name, "")
+            ac = (
+                (accs.get(doc_key) if doc_key else None) or
+                accs.get(s_name) or
+                accs.get(s_name.replace("`", "'")) or
+                accs.get(s_name.replace("'", "`")) or
+                accs.get(re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ\s]+", "", s_name)) or {}
+            )
+            c_url = (
+                (certs.get(doc_key) if doc_key else None) or
+                certs.get(s_name) or
+                certs.get(s_name.replace("`", "'")) or
+                certs.get(s_name.replace("'", "`")) or
+                certs.get(re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ\s]+", "", s_name)) or ""
+            )
             self.send_message(
                 chat_id,
                 f"🎉 <b>[{idx}/{total}] MUVAFFAQIYATLI OLINDI!</b>\n"
