@@ -470,7 +470,7 @@ def ensure_enrolled_on_coursera(page):
                 time.sleep(0.25)
 
             # Agar /home/ yoki /welcome ichida bo'lsa va Quiz 1 ko'rinib turgan bo'lsa — haqiqatan Enroll bo'lgan!
-            if ("/home/" in page.url or "/welcome" in page.url) and page.locator("a:has-text('Quiz 1')").count() > 0:
+            if ("/home/" in page.url or "/welcome" in page.url or "/module/" in page.url) and (page.locator("a[href*='quiz-1'], a:has-text('Quiz 1'), a:has-text('Тест 1'), a:has-text('Quiz')").count() > 0 or page.locator("a:has-text('Week 1'), a:has-text('Module 1')").count() > 0):
                 return True
 
             # 1. DEDC dasturi sahifasida 'Join Program' / 'Continue' chiqib turgan bo'lsa, darhol bosamiz
@@ -527,14 +527,14 @@ def ensure_enrolled_on_coursera(page):
             safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/welcome", wait_sec=2.5)
             dismiss_all_popups(page)
             for _ in range(8):
-                if page.locator("a:has-text('Quiz 1')").count() > 0:
+                if page.locator("a[href*='quiz-1'], a:has-text('Quiz 1'), a:has-text('Тест 1'), a:has-text('Quiz')").count() > 0 or page.locator("a:has-text('Week 1'), a:has-text('Module 1')").count() > 0:
                     return True
                 time.sleep(0.5)
 
             safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/module/1", wait_sec=2.5)
             dismiss_all_popups(page)
             for _ in range(8):
-                if page.locator("a:has-text('Quiz 1')").count() > 0:
+                if page.locator("a[href*='quiz-1'], a:has-text('Quiz 1'), a:has-text('Тест 1'), a:has-text('Quiz')").count() > 0 or page.locator("a:has-text('Week 1'), a:has-text('Module 1')").count() > 0:
                     return True
                 time.sleep(0.5)
         except Exception:
@@ -2296,31 +2296,12 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                         pass
                     return "FAILED"
                 acc = new_acc
-                # Yangi ochilgan profil Courseraga kirganini tekshiramiz, kirmagan bo'lsa kiramiz!
-                cookies = [c.get("name", "") for c in context.cookies()]
-                if not any("CAUTH" in c for c in cookies):
-                    login_coursera(page, acc["email"], acc["password"], full_name=full_name)
-                    try:
-                        existing_mail = TempMailAPI(existing_email=acc["email"])
-                        if existing_mail.token:
-                            complete_coursera_join_and_enroll(page, existing_mail, acc["password"], full_name=full_name, wait_timeout=15)
-                    except Exception:
-                        pass
-                cookies = [c.get("name", "") for c in context.cookies()]
-                if not any("CAUTH" in c for c in cookies):
-                    print(f"{tag}[!] {acc['email']} ga bu safar kirib bo'lmadi, keyingi bosqichda qayta tekshiriladi!")
-                    try:
-                        browser.close()
-                    except Exception:
-                        pass
-                    return "FAILED"
-                if not ensure_enrolled_on_coursera(page):
-                    try:
-                        existing_mail = TempMailAPI(existing_email=acc["email"])
-                        if existing_mail.token:
-                            complete_coursera_join_and_enroll(page, existing_mail, acc["password"], full_name=full_name, wait_timeout=18)
-                    except Exception:
-                        pass
+                # Yangi ochilgan profil Coursera DEDC dasturiga register_new_student_and_enroll ichida 100% ulandi.
+                # To'g'ridan-to'g'ri kurs darslariga o'tamiz (qayta login qilib sessiyani buzmaymiz!):
+                safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/module/1", wait_sec=3.0)
+                dismiss_all_popups(page)
+                if page.locator("button[data-e2e='enroll-button'], button:has-text('Enroll'), button:has-text('Зарегистрироваться')").count() > 0:
+                    ensure_enrolled_on_coursera(page)
             else:
                 email = acc["email"]
                 password = acc["password"]
@@ -2333,8 +2314,7 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                 cookies = [c.get("name", "") for c in context.cookies()]
                 has_cauth = any("CAUTH" in c for c in cookies)
 
-                # MUHIM HIMOYA: Agar pochta akkountlar.txt ga yozilgan bo'lsayu, lekin Coursera 'Join now' da uzilib qolgan bo'lsa
-                # YOKI hozirgina Sign Up (Full Name + Password) orqali yangi ochilgan bo'lsa -> mail.tm dan 1- va 2-Join havolalarini ochib DEDC dasturiga ulaymiz!
+                # MUHIM HIMOYA: Agar oddiy login o'tmasa yoki was_signup bo'lsa -> pochtadan DEDC Join now ochiladi
                 if not logged_ok or not has_cauth or was_signup:
                     print(f"{tag}[TIKLASH] {email} uchun mail.tm pochtasidan 1- va 2-Join havolalari ochilib DEDC dasturiga ulanmoqda...")
                     if status_callback:
@@ -2342,22 +2322,27 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                     try:
                         existing_mail = TempMailAPI(existing_email=email)
                         if existing_mail.token:
-                            complete_coursera_join_and_enroll(page, existing_mail, password, full_name=full_name, wait_timeout=15)
+                            joined_ok = complete_coursera_join_and_enroll(page, existing_mail, password, full_name=full_name, wait_timeout=15)
                             if status_callback:
                                 status_callback(f"✅ Coursera DEDC dasturiga ulandi va kursga yozildi!")
-                            cookies = [c.get("name", "") for c in context.cookies()]
-                            has_cauth = any("CAUTH" in c for c in cookies)
-                            if not has_cauth:
-                                logged_ok, _ = login_coursera(page, email, password, full_name=full_name)
-                                cookies = [c.get("name", "") for c in context.cookies()]
-                                has_cauth = any("CAUTH" in c for c in cookies)
+                            if joined_ok:
+                                has_cauth = True
                     except Exception as rec_e:
                         print(f"{tag}[!] Pochtadan tiklashda ogohlantirish: {rec_e}")
 
+                # Agar hali ham kirmagan bo'lsa, Magic link orqali kirish
                 if not has_cauth:
                     if login_via_magic_link(page, email):
                         cookies = [c.get("name", "") for c in context.cookies()]
                         has_cauth = any("CAUTH" in c for c in cookies)
+
+                # Kurs ichiga kirishni tekshiramiz: agar sahifada /home/ yoki /learn/ bo'lsa, sessiya faol!
+                safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/module/1", wait_sec=2.5)
+                dismiss_all_popups(page)
+                if ("/learn/" in page.url or "/home/" in page.url or "/programs/" in page.url) and "authMode=login" not in page.url:
+                    has_cauth = True
+                elif page.locator("a[href*='quiz-1'], a:has-text('Quiz 1'), a:has-text('Тест 1'), a:has-text('Quiz')").count() > 0:
+                    has_cauth = True
 
                 if not has_cauth:
                     print(f"{tag}[!] {email} ga bu safar kirib bo'lmadi, keyingi bosqichda qayta tekshiriladi!")
@@ -2367,20 +2352,7 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                         pass
                     return "FAILED"
 
-                # Agar kursga hali Enroll ('Enroll Starts Oct 11') bo'lmagan bo'lsa, Enroll qilishni 100% kafolatlaymiz!
-                # Agar DEDC dasturi ulanmagani sababli Enroll bo'lmasa, pochtadan DEDC taklifnomasini ochib ulaymiz!
-                if not ensure_enrolled_on_coursera(page):
-                    print(f"{tag}[DEDC-TIKLASH] {email} kursga hali yozilmagan — mail.tm dan DEDC dasturi taklifnomasi ochilmoqda...")
-                    if status_callback:
-                        status_callback(f"🔗 1-xabar tasdiqlandi! Coursera 2-xabar (Join now) ulanmoqda...")
-                    try:
-                        existing_mail = TempMailAPI(existing_email=email)
-                        if existing_mail.token:
-                            complete_coursera_join_and_enroll(page, existing_mail, password, full_name=full_name, wait_timeout=18)
-                            if status_callback:
-                                status_callback(f"✅ Coursera DEDC dasturiga ulandi va kursga yozildi!")
-                    except Exception as dedc_e:
-                        print(f"{tag}[!] DEDC tiklashda ogohlantirish: {dedc_e}")
+                ensure_enrolled_on_coursera(page)
 
             cert_url = None
             # Sertifikat chiqmasa, xatoni topib to'g'rilash uchun 3 marta to'liq tekshirib harakat qiladi!
