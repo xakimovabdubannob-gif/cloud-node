@@ -233,14 +233,15 @@ while time.time() - start_ts < 16200:
         except Exception:
             pass
 
-    # Yangi buyurtma kelganda yoki tugallanmagan vazifalar qolib, klaster o'chiq bo'lsa
+    # Yangi buyurtma kelganda yoki buyurtma berilganda klaster tekshiriladi
+    is_paused_now = os.path.exists("cluster_pause_state.txt")
     cur_orders = set(f for f in os.listdir("bot_orders") if f.startswith("in_") and f.endswith(".xlsx"))
     new_f = cur_orders - known_orders
 
     should_dispatch = False
     target_st_cnt = 0
 
-    if new_f and t_url.startswith("https://"):
+    if not is_paused_now and new_f and t_url.startswith("https://"):
         known_orders = cur_orders
         latest_f = os.path.join("bot_orders", sorted(list(new_f))[-1])
         try:
@@ -253,20 +254,8 @@ while time.time() - start_ts < 16200:
             should_dispatch = True
         else:
             print(f"[CLUSTER DISPATCH] {target_st_cnt} ta o'quvchi uchun 1-Kompyuter (3 ta Agent) yetarli, qo'shimcha kompyuter yoqilmadi.")
-    elif (time.time() - last_dispatch_ts > 180) and t_url.startswith("https://"):
-        # Failsafe: faqat 3 tadan ko'p o'quvchi qolgan bo'lsa klaster yoqiladi
-        try:
-            st_resp = requests.get("http://127.0.0.1:8766/cluster/tg_status", timeout=5).json()
-            rem = st_resp.get("remaining_count", 0)
-            online = st_resp.get("online_nodes", 0)
-            if rem > 3 and online == 0:
-                print(f"[FAILSAFE KLASTER] {rem} ta tugallanmagan o'quvchi bor (4+ ta), qo'shimcha kompyuter ishga tushirilmoqda...")
-                target_st_cnt = rem
-                should_dispatch = True
-        except Exception:
-            pass
 
-    if should_dispatch and t_url.startswith("https://") and target_st_cnt > 3:
+    if should_dispatch and not is_paused_now and t_url.startswith("https://") and target_st_cnt > 3:
         last_dispatch_ts = time.time()
         # O'quvchilar soniga qarab klaster kompyuterlari sonini avtomatik belgilash:
         # 1-3 ta zakaz: 1-Kompyuterning o'zi yetarli (qo'shimcha kompyuter = 0)
