@@ -58,7 +58,19 @@ def generate_student_password(name=""):
 def normalize_name(name):
     if not name:
         return ""
-    return re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ]", "", str(name).strip().upper())
+    return re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ\s]+", "", str(name).strip().upper())
+
+DOCS_DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "student_docs.json")
+
+def load_student_docs():
+    """Hujjatlar (I-FR / Seriya + Raqam) va Familiyalar bazasini yuklaydi."""
+    if os.path.exists(DOCS_DB_FILE):
+        try:
+            with open(DOCS_DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"by_doc": {}, "by_name": {}}
 
 COMMON_PASSWORD = "@Ak101095"
 PHONE_FORMATTED = "+998 (88) 667 10 60"
@@ -89,6 +101,7 @@ QUIZZES_INFO = [
 def get_completed_students():
     with FILE_LOCK:
         completed = set()
+        docs_db = load_student_docs()
         if os.path.exists(RESULTS_FILE):
             with open(RESULTS_FILE, "r", encoding="utf-8") as f:
                 for line in f:
@@ -100,7 +113,13 @@ def get_completed_students():
                             completed.add(fn)
                             completed.add(fn.replace("`", "'"))
                             completed.add(fn.replace("'", "`"))
-                            completed.add(normalize_name(fn))
+                            norm = normalize_name(fn)
+                            completed.add(norm)
+                            if len(parts) >= 4 and parts[3]:
+                                completed.add(parts[3].replace(" ", "").replace("-", "").upper())
+                            dk_found = docs_db.get("by_name", {}).get(norm)
+                            if dk_found:
+                                completed.add(dk_found)
         return completed
 
 def get_unrecoverable_students():
@@ -108,6 +127,7 @@ def get_unrecoverable_students():
     Bularga oxirida qayta urinilmaydi!"""
     with FILE_LOCK:
         unrec = set()
+        docs_db = load_student_docs()
         if os.path.exists(ERRORS_FILE):
             with open(ERRORS_FILE, "r", encoding="utf-8") as f:
                 for line in f:
@@ -119,10 +139,14 @@ def get_unrecoverable_students():
                             unrec.add(fn)
                             unrec.add(fn.replace("`", "'"))
                             unrec.add(fn.replace("'", "`"))
-                            unrec.add(normalize_name(fn))
+                            norm = normalize_name(fn)
+                            unrec.add(norm)
+                            dk_found = docs_db.get("by_name", {}).get(norm)
+                            if dk_found:
+                                unrec.add(dk_found)
         return unrec
 
-def save_unrecoverable_student(full_name, class_name, reason):
+def save_unrecoverable_student(full_name, class_name, reason, doc_key=None):
     with FILE_LOCK:
         print("\n" + "!" * 75)
         print(f"[ILOJI YO'Q - O'TKAZILDI] {full_name} ({class_name})")
@@ -130,11 +154,15 @@ def save_unrecoverable_student(full_name, class_name, reason):
         print("Bu o'quvchiga oxirida qayta urinilmaydi (bazada login-paroli yo'q / kirib bo'lmaydi)!")
         print("!" * 75)
         with open(ERRORS_FILE, "a", encoding="utf-8") as f:
-            f.write(f"{full_name} | {class_name} | ILOJI_YOQ: {reason}\n")
+            if doc_key:
+                f.write(f"{full_name} | {class_name} | ILOJI_YOQ: {reason} | {doc_key}\n")
+            else:
+                f.write(f"{full_name} | {class_name} | ILOJI_YOQ: {reason}\n")
 
 def get_existing_accounts():
     with FILE_LOCK:
         accounts = {}
+        docs_db = load_student_docs()
         if os.path.exists(ACCOUNTS_FILE):
             with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
                 for line in f:
@@ -146,27 +174,44 @@ def get_existing_accounts():
                         full_name = parts[0].upper()
                         email = parts[2]
                         password = parts[3]
-                        accounts[full_name] = {"email": email, "password": password}
-                        accounts[full_name.replace("`", "'")] = {"email": email, "password": password}
-                        accounts[full_name.replace("'", "`")] = {"email": email, "password": password}
-                        accounts[normalize_name(full_name)] = {"email": email, "password": password}
+                        doc_key = parts[4].replace(" ", "").replace("-", "").upper() if len(parts) >= 5 else ""
+                        acc_data = {"email": email, "password": password, "name": full_name}
+                        accounts[full_name] = acc_data
+                        accounts[full_name.replace("`", "'")] = acc_data
+                        accounts[full_name.replace("'", "`")] = acc_data
+                        norm = normalize_name(full_name)
+                        accounts[norm] = acc_data
+                        if doc_key:
+                            accounts[doc_key] = acc_data
+                        dk_found = docs_db.get("by_name", {}).get(norm)
+                        if dk_found:
+                            accounts[dk_found] = acc_data
                     elif len(parts) >= 3:
                         full_name = parts[0].upper()
                         email = parts[1]
                         password = parts[2]
-                        accounts[full_name] = {"email": email, "password": password}
-                        accounts[full_name.replace("`", "'")] = {"email": email, "password": password}
-                        accounts[normalize_name(full_name)] = {"email": email, "password": password}
+                        acc_data = {"email": email, "password": password, "name": full_name}
+                        accounts[full_name] = acc_data
+                        accounts[full_name.replace("`", "'")] = acc_data
+                        norm = normalize_name(full_name)
+                        accounts[norm] = acc_data
+                        dk_found = docs_db.get("by_name", {}).get(norm)
+                        if dk_found:
+                            accounts[dk_found] = acc_data
         return accounts
 
-def save_certificate_result(full_name, class_name, cert_url):
+def save_certificate_result(full_name, class_name, cert_url, doc_key=None):
     with FILE_LOCK:
         print("\n" + "=" * 75)
         print(f"MUVAFFAQIYAT! {full_name} SERTIFIKATI OLINDI:")
         print(cert_url)
         print("=" * 75)
         with open(RESULTS_FILE, "a", encoding="utf-8") as f:
-            f.write(f"{full_name} | {class_name} | {cert_url}\n")
+            if doc_key:
+                f.write(f"{full_name} | {class_name} | {cert_url} | {doc_key}\n")
+            else:
+                f.write(f"{full_name} | {class_name} | {cert_url}\n")
+
 
 def dismiss_all_popups(page):
     try:
@@ -2140,22 +2185,30 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
 
 def process_student(student, status_callback=None, headless=False, worker_id=0):
     t_start = time.time()
-    full_name = student["name"]
-    class_name = student.get("class", "")
+    full_name = student["name"].strip()
+    class_name = student.get("class", "").strip()
+    doc_series = student.get("doc_series", "") or student.get("cert_series", "")
+    doc_number = student.get("doc_number", "") or student.get("cert_number", "")
+    doc_key = student.get("doc_key") or f"{doc_series}{doc_number}".replace(" ", "").replace("-", "").upper()
     tag = f"[OQIM #{worker_id}] " if worker_id else ""
 
     fn_variants = [
         full_name,
         full_name.replace("`", "'"),
         full_name.replace("'", "`"),
-        re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", full_name)
+        normalize_name(full_name),
+        re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ]", "", full_name)
     ]
+    if doc_key:
+        fn_variants.append(doc_key)
 
-    if any(v in get_completed_students() for v in fn_variants):
-        print(f"{tag}[CHECK] {full_name} allaqachon sertifikat olgan. Keyingi o'quvchiga o'tiladi.")
+    completed_set = get_completed_students()
+    if (doc_key and doc_key in completed_set) or any(v in completed_set for v in fn_variants):
+        print(f"{tag}[CHECK] {full_name} ({doc_key}) allaqachon sertifikat olgan. Keyingi o'quvchiga o'tiladi.")
         return "COMPLETED"
 
-    if any(v in get_unrecoverable_students() for v in fn_variants):
+    unrec_set = get_unrecoverable_students()
+    if (doc_key and doc_key in unrec_set) or any(v in unrec_set for v in fn_variants):
         print(f"{tag}[SKIP - ILOJI YO'Q] {full_name} oldin ro'yxatdan o'tgan va bazada paroli yo'q (yoki kirib bo'lmaydi). Qayta urinilmaydi!")
         return "UNRECOVERABLE"
 
@@ -2163,12 +2216,17 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
         acc = {"email": student["email"].strip(), "password": student["password"].strip()}
     else:
         accounts = get_existing_accounts()
-        acc = (
-            accounts.get(full_name) or
-            accounts.get(full_name.replace("`", "'")) or
-            accounts.get(full_name.replace("'", "`")) or
-            accounts.get(re.sub(r"['`\u02bb\u02bc\u2018\u2019]", "", full_name))
-        )
+        acc = None
+        if doc_key:
+            acc = accounts.get(doc_key)
+        if not acc:
+            acc = (
+                accounts.get(full_name) or
+                accounts.get(full_name.replace("`", "'")) or
+                accounts.get(full_name.replace("'", "`")) or
+                accounts.get(normalize_name(full_name)) or
+                accounts.get(re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ]", "", full_name))
+            )
 
 
     common_media_args = [
@@ -2374,7 +2432,7 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
 
             elapsed = int(time.time() - t_start)
             if cert_url:
-                save_certificate_result(full_name, class_name, cert_url)
+                save_certificate_result(full_name, class_name, cert_url, doc_key=doc_key)
                 print(f"{tag}[TEZLIK] {full_name} sertifikati {elapsed} soniyada ({elapsed // 60} daqiqa {elapsed % 60} soniyada) olindi!")
                 return "COMPLETED"
             else:
