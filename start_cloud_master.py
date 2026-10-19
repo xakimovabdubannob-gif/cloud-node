@@ -87,6 +87,15 @@ for fn in ("akkountlar.txt", "natijalar_sertifikatlar.txt", "xatolar.txt"):
     open(fn, "a", encoding="utf-8").close()
 
 os.makedirs("bot_orders", exist_ok=True)
+if os.path.exists("orders_archive.zip"):
+    try:
+        import zipfile
+        with zipfile.ZipFile("orders_archive.zip", "r") as z:
+            z.extractall(".")
+        print("[ORDERS] orders_archive.zip (barcha sanalar va buyurtmalar) muvaffaqiyatli ochildi!")
+    except Exception as e:
+        print(f"[ORDERS UNZIP ERROR] {e}")
+
 
 existing_vid = ""
 if os.path.exists("bot_config.json"):
