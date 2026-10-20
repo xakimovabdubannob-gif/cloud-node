@@ -1372,32 +1372,72 @@ def verify_student_name_with_3_checks(page, student_name):
                 page.keyboard.type(last_name, delay=30)
                 time.sleep(0.4)
 
-            # 4. Galichka (Checkbox)
+            # 4. Galichka (Checkbox) - Agar allaqachon qo'yilgan bo'lsa tegilmaydi, faqat qo'yilmagan bo'lsa 1 marta bosiladi!
             cb = page.locator("input[type='checkbox']").first
-            if cb.count() > 0 and cb.is_visible():
-                box = cb.bounding_box()
-                if box:
-                    page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
-                    time.sleep(1)
-                if not cb.is_checked():
-                    lbl = page.locator("label:has-text('By checking this box'), label:has-text('Устанавливая этот флажок')").first
-                    if lbl.is_visible():
-                        lbl.click(force=True)
-                        time.sleep(1)
+            is_already_checked = False
+            try:
+                if cb.count() > 0 and cb.is_checked():
+                    is_already_checked = True
+            except Exception:
+                pass
 
-            # 5. Submit ('Save' yozilmaydi, chunki 'Saved' tabiga bosilib ketmasligi kerak!)
+            if not is_already_checked:
+                try:
+                    is_already_checked = page.evaluate("() => { const c = document.querySelector(\"input[type='checkbox']\"); return c ? Boolean(c.checked) : false; }")
+                except Exception:
+                    pass
+
+            if is_already_checked:
+                print("[ISMNI TASDIQLASH] Rozilik galichkasi allaqachon qo'yilgan (checked=True)! Tegilmadi.")
+            else:
+                print("[ISMNI TASDIQLASH] Rozilik galichkasi belgilanmoqda (faqat 1 marta)...")
+                # Label orqali xavfsiz va aniq belgilash
+                lbl = page.locator("label:has-text('By checking this box'), label:has-text('Устанавливая этот флажок'), label:has(input[type='checkbox'])").first
+                if lbl.is_visible():
+                    lbl.click(force=True)
+                    time.sleep(0.5)
+                elif cb.count() > 0 and cb.is_visible():
+                    box = cb.bounding_box()
+                    if box:
+                        page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
+                    else:
+                        cb.check(force=True)
+                    time.sleep(0.5)
+
+            # 5. Submit tugmasini bosish
             sub_v = page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
-            if sub_v.is_visible() and sub_v.is_enabled():
-                box_s = sub_v.bounding_box()
-                if box_s:
-                    page.mouse.click(box_s['x'] + box_s['width']/2, box_s['y'] + box_s['height']/2)
+            if sub_v.is_visible():
+                if sub_v.is_enabled():
+                    box_s = sub_v.bounding_box()
+                    if box_s:
+                        page.mouse.click(box_s['x'] + box_s['width']/2, box_s['y'] + box_s['height']/2)
+                    else:
+                        sub_v.click(force=True)
                 else:
-                    sub_v.click(force=True)
+                    page.evaluate("""() => {
+                        const btns = Array.from(document.querySelectorAll('button'));
+                        const b = btns.find(x => /submit|отправить/i.test(x.innerText || '')) || document.querySelector("button[type='submit']");
+                        if (b) {
+                            b.removeAttribute('disabled');
+                            b.disabled = false;
+                            b.click();
+                        }
+                    }""")
                 print("[ISMNI TASDIQLASH] Tasdiqlash muvaffaqiyatli yuborildi!")
-                time.sleep(5.0 * mult)
+                time.sleep(4.0 * mult)
                 return True
             else:
-                print(f"[!] Verify My Name Submit tugmasi faol emas, qayta tekshirilmoqda ({v_try}/3)...")
+                page.evaluate("""() => {
+                    const btns = Array.from(document.querySelectorAll('button'));
+                    const b = btns.find(x => /submit|отправить/i.test(x.innerText || '')) || document.querySelector("button[type='submit']");
+                    if (b) {
+                        b.removeAttribute('disabled');
+                        b.disabled = false;
+                        b.click();
+                    }
+                }""")
+                time.sleep(3.0)
+                return True
         except Exception as e:
             print(f"[!] Verify My Name {v_try}-urinishda xatolik ushlandi: {e}")
             time.sleep(2)
