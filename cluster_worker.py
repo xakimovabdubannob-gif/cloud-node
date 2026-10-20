@@ -257,6 +257,12 @@ class ClusterWorkerNode:
             status = "INCOMPLETE"
             t_work_start = time.time()
             try:
+                try:
+                    import importlib, master_certified_pipeline
+                    importlib.reload(master_certified_pipeline)
+                    from master_certified_pipeline import process_student
+                except Exception:
+                    pass
                 is_headless = os.environ.get("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
                 status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=local_wid)
             except Exception as e:
