@@ -1694,21 +1694,17 @@ class TelegramBotServer:
                 "⏳ Navbatga qo'shildi, har bir qadamni jonli xabar qilib turaman...",
             )
 
-            # Adminni ogohlantiramiz (agar admin bekor qilmoqchi bo'lsa 'Rad etish' tugmasi bilan)
+            # Adminni faqat xabardor qilib qo'yamiz (Admindan ruxsat so'ramaydi, to'g'ridan-to'g'ri avtomat ishlaydi)
             if self.admin_id and chat_id != self.admin_id:
                 adm_test_msg = (
-                    f"🎁 <b>YANGI MIJOZ 1 TA BEPUL SINOV ISHLATMOQDA:</b>\n"
+                    f"🎁 <b>YANGI MIJOZ 1 TA BEPUL SINOVNI BOSHLADI:</b>\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n"
                     f"👤 Mijoz: <b>{user_name}</b> {('@' + username) if username else ''} [ID: <code>{chat_id}</code>]\n"
                     f"🎓 O'quvchi: <b>{students[0]['name']}</b>\n"
-                    f"💡 <i>Bu foydalanuvchining ID si bo'yicha 1 martalik bepul sinovi. Keyingi safar to'lov talab qilinadi.</i>"
+                    f"⚡ <i>Admindan ruxsat so'ralmasdan, to'g'ridan-to'g'ri avtomat ish boshlandi!</i>\n"
+                    f"💡 <i>Keyingi safar bu mijozdan to'lov cheki talab qilinadi.</i>"
                 )
-                test_markup = {
-                    "inline_keyboard": [
-                        [{"text": "❌ Sinovni to'xtatish / Rad etish", "callback_data": f"reject_{chat_id}"}],
-                    ]
-                }
-                self.send_message(self.admin_id, adm_test_msg, reply_markup=test_markup)
+                self.send_message(self.admin_id, adm_test_msg)
 
             self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0}, orig_fname=orig_fname)
             return
