@@ -1609,6 +1609,17 @@ class TelegramBotServer:
             with self.stats_lock:
                 self.hourly_stats["orders_approved"] += 1
                 self.hourly_stats["students_ordered"] += 1
+            # 1 ta bepul test sinovi — Admindan so'ramasdan to'g'ridan-to'g'ri ishga tushadi:
+            if os.path.exists(ORDERS_DIR):
+                for fn in os.listdir(ORDERS_DIR):
+                    if fn.startswith(f"pending_{chat_id}_") and fn.endswith(".xlsx"):
+                        clean_b = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
+                        in_p = os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}_{clean_b}.xlsx")
+                        try:
+                            os.rename(os.path.join(ORDERS_DIR, fn), in_p)
+                            break
+                        except Exception:
+                            pass
             self.send_message(
                 chat_id,
                 "🎁 <b>BEPUL SINOV FAOL!</b>\n\n"
@@ -2578,6 +2589,17 @@ class TelegramBotServer:
                 f"🤖 AI Agentimiz hoziroq sertifikatlarni tayyorlashni boshlamoqda!"
             )
 
+        # Admin to'lov chekini tasdiqladi — endi faylni rasmiy in_ ga o'tkazamiz va ish boshlanadi:
+        if os.path.exists(ORDERS_DIR):
+            for fn in os.listdir(ORDERS_DIR):
+                if fn.startswith(f"pending_{target_uid}_") and fn.endswith(".xlsx"):
+                    clean_b = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(order_info.get("orig_fname", "Buyurtma"))[0]).strip() or "Buyurtma"
+                    in_p = os.path.join(ORDERS_DIR, f"in_{target_uid}_{int(time.time())}_{clean_b}.xlsx")
+                    try:
+                        os.rename(os.path.join(ORDERS_DIR, fn), in_p)
+                        break
+                    except Exception:
+                        pass
         self.send_message(target_uid, client_msg)
         self.enqueue_order(
             target_uid,
@@ -2864,6 +2886,13 @@ class TelegramBotServer:
             if data.startswith("reject_"):
                 target_uid = int(data.split("_")[1])
                 pending_orders.pop(target_uid, None)
+                if os.path.exists(ORDERS_DIR):
+                    for fn in os.listdir(ORDERS_DIR):
+                        if (fn.startswith(f"in_{target_uid}_") or fn.startswith(f"pending_{target_uid}_")) and fn.endswith(".xlsx"):
+                            try:
+                                os.rename(os.path.join(ORDERS_DIR, fn), os.path.join(ORDERS_DIR, f"rejected_{target_uid}_{fn}"))
+                            except Exception:
+                                pass
                 self.send_message(from_id, f"❌ Foydalanuvchi ({target_uid}) buyurtmasi rad etildi.")
                 self.send_message(target_uid, f"❌ <b>To'lov tasdiqlanmadi.</b> Iltimos, qayta tekshirib yuboring yoki Admin bilan bog'laning: {ADMIN_USERNAME}")
                 return
@@ -3520,13 +3549,14 @@ class TelegramBotServer:
             orig_fname = (doc.get("file_name") or "").strip()
             clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
             fname = orig_fname.lower()
+            pref = f"in_{chat_id}_" if (self.admin_id and chat_id == self.admin_id) else f"pending_{chat_id}_"
             if fname.endswith(".xlsx"):
-                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}_{clean_base}.xlsx"))
+                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}.xlsx"))
                 students = parse_students_from_excel(local_p)
                 self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
                 return
             elif fname.endswith(".txt") or fname.endswith(".csv"):
-                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}_{clean_base}.txt"))
+                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}.txt"))
                 with open(local_p, "r", encoding="utf-8", errors="replace") as f:
                     students = parse_students_from_text(f.read())
                 self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
@@ -3535,6 +3565,8 @@ class TelegramBotServer:
         if text:
             students = parse_students_from_text(text)
             if students:
+                pref = "in_" if (len(students) == 1 and chat_id not in load_users_db().get("free_trial_used", [])) else "pending_"
+                save_students_to_excel(students, os.path.join(ORDERS_DIR, f"{pref}{chat_id}_{int(time.time())}_Matn_Buyurtma.xlsx"))
                 self.handle_students_submission(chat_id, user_name, username, students, orig_fname="Matn_Buyurtma")
             else:
                 self.handle_smart_question(chat_id, user_name, text)
