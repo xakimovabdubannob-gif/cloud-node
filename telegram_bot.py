@@ -1660,6 +1660,59 @@ class TelegramBotServer:
             self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0}, orig_fname=orig_fname)
             return
 
+        # Har bir mijoz ID si bo'yicha 1 MARTA BEPUL SINOV (Faqat 1 ta o'quvchi yuborilganda):
+        if not free_used and count == 1:
+            mark_free_trial_used(chat_id)
+            with self.stats_lock:
+                self.hourly_stats["orders_approved"] += 1
+                self.hourly_stats["students_ordered"] += 1
+
+            # Fayl nomini pending_ dan in_ ga o'tkazamiz (chunki bu 1 martalik bepul sinov)
+            clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
+            in_path = os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}_{clean_base}.xlsx")
+            found_pending = False
+            if os.path.exists(ORDERS_DIR):
+                for fn in os.listdir(ORDERS_DIR):
+                    if fn.startswith(f"pending_{chat_id}_") and fn.endswith(".xlsx"):
+                        try:
+                            os.rename(os.path.join(ORDERS_DIR, fn), in_path)
+                            found_pending = True
+                            break
+                        except Exception:
+                            pass
+            if not found_pending:
+                try:
+                    save_students_to_excel(students, in_path)
+                except Exception:
+                    pass
+
+            self.send_message(
+                chat_id,
+                "🎁 <b>1 TA BEPUL SINOV FAOL!</b>\n\n"
+                "Biz halol ishlaymiz — dasturimiz 100% to'g'ri ishlashini tekshirib ko'rishingiz uchun "
+                f"<b>{students[0]['name']}</b> sertifikatini <b>BEPUL</b> tayyorlab beramiz!\n\n"
+                "⏳ Navbatga qo'shildi, har bir qadamni jonli xabar qilib turaman...",
+            )
+
+            # Adminni ogohlantiramiz (agar admin bekor qilmoqchi bo'lsa 'Rad etish' tugmasi bilan)
+            if self.admin_id and chat_id != self.admin_id:
+                adm_test_msg = (
+                    f"🎁 <b>YANGI MIJOZ 1 TA BEPUL SINOV ISHLATMOQDA:</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"👤 Mijoz: <b>{user_name}</b> {('@' + username) if username else ''} [ID: <code>{chat_id}</code>]\n"
+                    f"🎓 O'quvchi: <b>{students[0]['name']}</b>\n"
+                    f"💡 <i>Bu foydalanuvchining ID si bo'yicha 1 martalik bepul sinovi. Keyingi safar to'lov talab qilinadi.</i>"
+                )
+                test_markup = {
+                    "inline_keyboard": [
+                        [{"text": "❌ Sinovni to'xtatish / Rad etish", "callback_data": f"reject_{chat_id}"}],
+                    ]
+                }
+                self.send_message(self.admin_id, adm_test_msg, reply_markup=test_markup)
+
+            self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0}, orig_fname=orig_fname)
+            return
+
         per_st, total_price = calculate_price(count)
         half_price = total_price // 2
         free_note = ""
