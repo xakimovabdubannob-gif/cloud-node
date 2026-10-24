@@ -73,6 +73,44 @@ MAX_PARALLEL_WORKERS = int(os.environ.get("MAX_WORKERS", "1"))
 db_lock = threading.Lock()
 order_queue = queue.Queue()
 pending_orders = {}  # user_id -> {"students": [...], "price": int, "user_name": str, "username": str}
+PENDING_ORDERS_FILE = "pending_orders.json"
+
+def save_pending_orders():
+    try:
+        with open(PENDING_ORDERS_FILE, "w", encoding="utf-8") as f:
+            json.dump({str(k): v for k, v in pending_orders.items()}, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def load_pending_orders():
+    global pending_orders
+    if os.path.exists(PENDING_ORDERS_FILE):
+        try:
+            with open(PENDING_ORDERS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                for k, v in data.items():
+                    pending_orders[int(k)] = v
+        except Exception:
+            pass
+
+load_pending_orders()
+
+def find_user_latest_excel(chat_id: int):
+    """Foydalanuvchining bot_orders papkasidagi oxirgi yuborgan Excel faylini topadi"""
+    candidates = []
+    for d in [ORDERS_DIR, os.path.join(ORDERS_DIR, "archived")]:
+        if os.path.exists(d):
+            for fn in os.listdir(d):
+                if (fn.startswith(f"in_{chat_id}_") or fn.startswith(f"pending_{chat_id}_")) and fn.endswith(".xlsx"):
+                    p = os.path.join(d, fn)
+                    try:
+                        candidates.append((os.path.getmtime(p), p))
+                    except Exception:
+                        pass
+    if candidates:
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return candidates[0][1]
+    return None
 admin_input_state = {}  # admin_id -> {"action": "partial_order" | "pay_debt", "target_uid": int}
 
 
@@ -727,6 +765,24 @@ def trigger_cluster_dispatch(students_count: int = 28, nodes_count: int = None):
                     print(f"[DIRECT CLUSTER DISPATCH XATO] {e}")
             time.sleep(2.0)
 
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def cancel_all_cluster_workflows():
+    """Barcha faol GitHub Actions klaster (Virtual Kompyuter) jarayonlarini darhol to'xtatadi."""
+    def _run():
+        try:
+            GH_TOKEN = os.environ.get("GH_TOKEN", "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1])
+            GH_OWNER = "xakimovabdubannob-gif"
+            GH_REPO = "cloud-node"
+            hdr = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"}
+            r_act = requests.get(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs?status=in_progress", headers=hdr, timeout=8)
+            if r_act.status_code == 200:
+                for r in r_act.json().get("workflow_runs", []):
+                    if "Cluster" in r.get("name", ""):
+                        requests.post(f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/actions/runs/{r['id']}/cancel", headers=hdr, timeout=5)
+        except Exception as e:
+            print(f"[CANCEL CLUSTER RUNS ERROR] {e}")
     threading.Thread(target=_run, daemon=True).start()
 
 
@@ -1604,21 +1660,6 @@ class TelegramBotServer:
             self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0}, orig_fname=orig_fname)
             return
 
-        if not free_used and count == 1:
-            mark_free_trial_used(chat_id)
-            with self.stats_lock:
-                self.hourly_stats["orders_approved"] += 1
-                self.hourly_stats["students_ordered"] += 1
-            self.send_message(
-                chat_id,
-                "🎁 <b>BEPUL SINOV FAOL!</b>\n\n"
-                "Biz halol ishlaymiz — dasturimiz 100% ishlashini tekshirib ko'rishingiz uchun "
-                f"<b>{students[0]['name']}</b> sertifikatini <b>BEPUL</b> tayyorlab beramiz!\n\n"
-                "⏳ Navbatga qo'shildi, har bir qadamni jonli yozib turaman...",
-            )
-            self.enqueue_order(chat_id, user_name, students, paid_info={"total": 0, "paid": 0, "debt": 0}, orig_fname=orig_fname)
-            return
-
         per_st, total_price = calculate_price(count)
         half_price = total_price // 2
         free_note = ""
@@ -1639,6 +1680,22 @@ class TelegramBotServer:
             "username": username or "",
             "orig_fname": orig_fname,
         }
+        save_pending_orders()
+
+        # Adminni darhol ogohlantiramiz (Kutish holatida - chek kutilmoqda)
+        if self.admin_id and chat_id != self.admin_id:
+            adm_msg = (
+                f"📥 <b>YANGI BUYURTMA KELDI (Kutish holatida):</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"👤 Mijoz: <b>{user_name}</b> {('@' + username) if username else ''} [ID: <code>{chat_id}</code>]\n"
+                f"👥 O'quvchilar soni: <b>{count} ta</b>\n"
+                f"💰 Jami summa: <b>{total_price:,} so'm</b>\n"
+                f"🌗 50% Avans: <b>{half_price:,} so'm</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"⏳ <b>Holat:</b> Mijozdan to'lov cheki kutilmoqda.\n"
+                f"⚠️ <i>Siz tasdiqlamaguningizcha yoki mijoz to'lov chekini yubormaguncha AI Agentlar ish boshlamaydi!</i>"
+            )
+            self.send_message(self.admin_id, adm_msg, reply_markup=self.build_admin_approval_markup(chat_id, total_price))
 
         self.card_info = load_config().get("card_info", self.card_info)
         est_mins = max(3, (order_queue.qsize() * 15) + int(count * 1.5))
@@ -1673,6 +1730,12 @@ class TelegramBotServer:
         self.send_message(chat_id, msg, reply_markup=client_markup)
 
     def enqueue_order(self, chat_id, user_name, students, paid_info=None, silent=False, orig_fname: str = "Buyurtma"):
+        if os.path.exists("cluster_pause_state.txt"):
+            try:
+                os.remove("cluster_pause_state.txt")
+            except Exception:
+                pass
+        self.is_paused = False
         q_pos = order_queue.qsize() + 1
         est_mins = max(3, ((q_pos - 1) * 15) + int(len(students) * 1.2))
         if not silent:
@@ -2047,6 +2110,17 @@ class TelegramBotServer:
         """Eski buyurtmalarni va xatolarni tozalaydi/arxivlaydi.
         FAQAT akkountlar.txt (Login/Parollar) va natijalar_sertifikatlar.txt (Tayyor sertifikatlar) saqlanadi!"""
         import shutil
+        self.is_paused = True
+        try:
+            with open("cluster_pause_state.txt", "w", encoding="utf-8") as f:
+                f.write("PAUSED")
+        except Exception:
+            pass
+        cancel_all_cluster_workflows()
+        try:
+            requests.get("http://127.0.0.1:8766/cluster/stop_all", timeout=3)
+        except Exception:
+            pass
         if os.path.exists(ORDERS_DIR):
             arch_dir = os.path.join(ORDERS_DIR, "archived")
             os.makedirs(arch_dir, exist_ok=True)
@@ -2077,7 +2151,7 @@ class TelegramBotServer:
                 order_queue.task_done()
             except Exception:
                 break
-        for f in ("cluster_tried_students.json", "cluster_nodes_state.json", "cluster_pause_state.txt"):
+        for f in ("cluster_tried_students.json", "cluster_nodes_state.json"):
             if os.path.exists(f):
                 try:
                     os.remove(f)
@@ -2087,13 +2161,17 @@ class TelegramBotServer:
             requests.get("http://127.0.0.1:8766/cluster/clear_cache", timeout=3)
         except Exception:
             pass
-        self.is_paused = False
 
     def pause_all_tasks(self, chat_id: int):
         self.is_paused = True
         try:
             with open("cluster_pause_state.txt", "w", encoding="utf-8") as f:
                 f.write("PAUSED")
+        except Exception:
+            pass
+        cancel_all_cluster_workflows()
+        try:
+            requests.get("http://127.0.0.1:8766/cluster/stop_all", timeout=3)
         except Exception:
             pass
         with self.shared_lock:
@@ -2106,13 +2184,13 @@ class TelegramBotServer:
                 break
         self.send_message(
             chat_id,
-            "⏸ <b>JARAYON TO'XTATILDI (PAUZA)!</b>\n"
+            "⏸ <b>JARAYON TO'LIQ TO'XTATILDI (PAUZA)!</b>\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
-            "🛑 Yangi o'quvchilar navbati vaqtinchalik to'xtatildi.\n\n"
+            "🛑 Barcha AI Agentlar va Virtual kompyuterlar to'xtatildi.\n\n"
             "👉 <b>Quyidagilardan birini tanlang:</b>\n"
             "1️⃣ <b>▶️ Qolgan joyidan davom ettirish</b> — to'xtatilgan ro'yxat qolgan joyidan davom etadi.\n"
-            "2️⃣ <b>📁 Yangi Excel yoki matn tashlang</b> — eski ro'yxat to'liq bekor qilinadi va <b>FAQAT YANGI BUYURTMA</b> bajariladi!\n"
-            "3️⃣ <b>🗑 Yangi buyurtma (Eskisini o'chirish)</b> — eski navbatlarni butunlay tozalaydi.",
+            "2️⃣ <b>📁 Yangi Excel yoki matn tashlang</b> — faqat yangi ro'yxat bajariladi!\n"
+            "3️⃣ <b>🧹 Keshni tozalash</b> — navbatlarni butunlay tozalaydi.",
             reply_markup=self.get_reply_keyboard(chat_id),
         )
 
@@ -2485,8 +2563,6 @@ class TelegramBotServer:
                         self.enqueue_order(st_data.get("chat_id", self.admin_id), st_data.get("user_name", "Mijoz"), st_data["students"], silent=st_data.get("silent", True))
                     elif isinstance(st_data, list) and st_data:
                         self.enqueue_order(self.admin_id, "Admin", st_data, silent=True)
-                else:
-                    self.resume_latest_unfinished_order(notify_chat_id=self.admin_id, manual=False)
             except Exception as e:
                 print(f"[STARTUP WARN] {e}")
 
@@ -2528,11 +2604,52 @@ class TelegramBotServer:
 
     def approve_and_start_order(self, admin_chat_id, target_uid: int, paid_now: int, mode_label: str):
         order_info = pending_orders.pop(target_uid, None)
+        save_pending_orders()
+        if not order_info:
+            rec_path = find_user_latest_excel(target_uid)
+            if rec_path:
+                try:
+                    rec_sts = parse_students_from_excel(rec_path)
+                    if rec_sts:
+                        _, p_tot = calculate_price(len(rec_sts))
+                        order_info = {
+                            "students": rec_sts,
+                            "price": p_tot,
+                            "user_name": "Mijoz",
+                            "username": "",
+                            "orig_fname": os.path.basename(rec_path),
+                        }
+                except Exception:
+                    pass
+
         if not order_info:
             self.send_message(admin_chat_id, "⚠️ Bu buyurtma allaqachon tasdiqlangan yoki topilmadi.")
             return
 
         total_price = order_info["price"]
+        user_name = order_info["user_name"]
+        username = order_info.get("username", "")
+        debt_added = max(0, total_price - paid_now)
+
+        # Pending fayllarni rasmiy in_ holatiga o'tkazish (Klaster va Bot ko'rishi uchun)
+        clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(order_info.get("orig_fname", "Buyurtma"))[0]).strip() or "Buyurtma"
+        in_path = os.path.join(ORDERS_DIR, f"in_{target_uid}_{int(time.time())}_{clean_base}.xlsx")
+        found_pending = False
+        if os.path.exists(ORDERS_DIR):
+            for fn in os.listdir(ORDERS_DIR):
+                if fn.startswith(f"pending_{target_uid}_") and fn.endswith(".xlsx"):
+                    old_p = os.path.join(ORDERS_DIR, fn)
+                    try:
+                        os.rename(old_p, in_path)
+                        found_pending = True
+                        break
+                    except Exception:
+                        pass
+        if not found_pending and not any(fn.startswith(f"in_{target_uid}_") for fn in os.listdir(ORDERS_DIR) if os.path.exists(ORDERS_DIR)):
+            try:
+                save_students_to_excel(order_info["students"], in_path)
+            except Exception as e:
+                print(f"[SAVE IN ERROR] {e}")
         user_name = order_info["user_name"]
         username = order_info.get("username", "")
         debt_added = max(0, total_price - paid_now)
@@ -2822,6 +2939,21 @@ class TelegramBotServer:
             if data.startswith("approve_full_"):
                 target_uid = int(data.split("_")[2])
                 order_info = pending_orders.get(target_uid)
+                if not order_info:
+                    lat_p = find_user_latest_excel(target_uid)
+                    if lat_p:
+                        sts = parse_students_from_excel(lat_p)
+                        if sts:
+                            per_st, tot_p = calculate_price(len(sts))
+                            order_info = {
+                                "students": sts,
+                                "price": tot_p,
+                                "user_name": str(target_uid),
+                                "username": "",
+                                "orig_fname": os.path.basename(lat_p),
+                            }
+                            pending_orders[target_uid] = order_info
+                            save_pending_orders()
                 if order_info:
                     self.approve_and_start_order(from_id, target_uid, paid_now=order_info["price"], mode_label="100% To'liq to'lov")
                 else:
@@ -2831,6 +2963,21 @@ class TelegramBotServer:
             if data.startswith("approve_half_"):
                 target_uid = int(data.split("_")[2])
                 order_info = pending_orders.get(target_uid)
+                if not order_info:
+                    lat_p = find_user_latest_excel(target_uid)
+                    if lat_p:
+                        sts = parse_students_from_excel(lat_p)
+                        if sts:
+                            per_st, tot_p = calculate_price(len(sts))
+                            order_info = {
+                                "students": sts,
+                                "price": tot_p,
+                                "user_name": str(target_uid),
+                                "username": "",
+                                "orig_fname": os.path.basename(lat_p),
+                            }
+                            pending_orders[target_uid] = order_info
+                            save_pending_orders()
                 if order_info:
                     half_p = order_info["price"] // 2
                     self.approve_and_start_order(from_id, target_uid, paid_now=half_p, mode_label="50% Yarim to'lov (Avans)")
@@ -2864,16 +3011,55 @@ class TelegramBotServer:
             if data.startswith("reject_"):
                 target_uid = int(data.split("_")[1])
                 pending_orders.pop(target_uid, None)
-                self.send_message(from_id, f"❌ Foydalanuvchi ({target_uid}) buyurtmasi rad etildi.")
-                self.send_message(target_uid, f"❌ <b>To'lov tasdiqlanmadi.</b> Iltimos, qayta tekshirib yuboring yoki Admin bilan bog'laning: {ADMIN_USERNAME}")
+                save_pending_orders()
+
+                # 1. bot_orders/ dagi barcha tegishli fayllarni (pending_ va in_) rejected_ ga o'zgartirish
+                cancelled_files = 0
+                if os.path.exists(ORDERS_DIR):
+                    for fn in os.listdir(ORDERS_DIR):
+                        if (fn.startswith(f"in_{target_uid}_") or fn.startswith(f"pending_{target_uid}_")) and fn.endswith(".xlsx"):
+                            old_f = os.path.join(ORDERS_DIR, fn)
+                            rej_f = os.path.join(ORDERS_DIR, f"rejected_{target_uid}_{int(time.time())}_{fn}")
+                            try:
+                                os.rename(old_f, rej_f)
+                                cancelled_files += 1
+                            except Exception:
+                                try:
+                                    os.remove(old_f)
+                                    cancelled_files += 1
+                                except Exception:
+                                    pass
+
+                # 2. Faol shared_orders dan o'chirish (darhol to'xtatish)
+                with self.shared_lock:
+                    self.shared_orders = [ctx for ctx in self.shared_orders if ctx.get("chat_id") != target_uid]
+
+                # 3. Navbat (order_queue) dan o'chirish
+                tmp_items = []
+                while not order_queue.empty():
+                    try:
+                        it = order_queue.get_nowait()
+                        if it.get("chat_id") != target_uid:
+                            tmp_items.append(it)
+                        order_queue.task_done()
+                    except Exception:
+                        break
+                for it in tmp_items:
+                    order_queue.put(it)
+
+                self.send_message(from_id, f"❌ Foydalanuvchi ({target_uid}) buyurtmasi rad etildi va barcha jarayonlar to'xtatildi.")
+                self.send_message(target_uid, f"❌ <b>To'lov tasdiqlanmadi (Chek rad etildi).</b>\n\nIltimos, to'lov chekini qayta tekshirib yuboring yoki Admin bilan bog'laning: {ADMIN_USERNAME}")
                 return
 
             if data.startswith("debt_clear_"):
                 target_uid = int(data.split("_")[2])
                 entry = record_debt_payment(target_uid, pay_amount=0)
                 if entry:
-                    self.send_message(from_id, f"✅ <b>{entry.get('name')}</b> ning qolgan to'lovi to'liq qabul qilindi! (Qoldiq: 0 so'm)")
+                    self.send_message(from_id, f"✅ <b>{entry.get('name')}</b> ning to'lovi to'liq qabul qilindi! (Qoldiq: 0 so'm)")
                     self.send_message(target_uid, "✅ <b>Qolgan to'lovingiz to'liq qabul qilindi!</b> Hamkorligingiz uchun rahmat! 🤝")
+                else:
+                    self.send_message(from_id, f"✅ Foydalanuvchi ({target_uid}) to'lov cheki tasdiqlandi!")
+                    self.send_message(target_uid, "✅ <b>To'lov chekingiz muvaffaqiyatli qabul qilindi!</b> Rahmat! 🤝")
                 return
 
             if data.startswith("debt_part_"):
@@ -3435,6 +3621,25 @@ class TelegramBotServer:
                 )
                 return
 
+            # 1. Agar pending_orders da bo'lmasa, uning diskdagi eng oxirgi Excel faylidan tiklaymiz:
+            if chat_id not in pending_orders:
+                lat_p = find_user_latest_excel(chat_id)
+                if lat_p:
+                    try:
+                        sts = parse_students_from_excel(lat_p)
+                        if sts:
+                            per_st, tot_p = calculate_price(len(sts))
+                            pending_orders[chat_id] = {
+                                "students": sts,
+                                "price": tot_p,
+                                "user_name": user_name,
+                                "username": username or "",
+                                "orig_fname": os.path.basename(lat_p),
+                            }
+                            save_pending_orders()
+                    except Exception:
+                        pass
+
             if chat_id in pending_orders:
                 order_info = pending_orders[chat_id]
                 caption = (
@@ -3461,12 +3666,35 @@ class TelegramBotServer:
                 caption = (
                     f"📸 <b>MIJOZDAN TO'LOV CHEKI KELDI!</b>\n"
                     f"👤 Mijoz: <b>{user_name}</b> ({uname_str} | ID: <code>{chat_id}</code>)\n"
-                    f"📒 Qolgan avans qoldig'i: <b>{rem_d:,} so'm</b>"
                 )
-                markup = {"inline_keyboard": [[{"text": f"✅ Qolgan to'lovni yopish ({rem_d:,} so'm)", "callback_data": f"debt_clear_{chat_id}"}]]} if rem_d > 0 else {}
-                data_payload = {"chat_id": self.admin_id, "photo": photo_id, "caption": caption, "parse_mode": "HTML"}
-                if markup:
-                    data_payload["reply_markup"] = json.dumps(markup)
+                if rem_d > 0:
+                    caption += f"📒 Qolgan avans qoldig'i: <b>{rem_d:,} so'm</b>\n\nTo'lovni tasdiqlaysizmi?"
+                    markup = {
+                        "inline_keyboard": [
+                            [{"text": f"✅ Qolgan to'lovni yopish ({rem_d:,} so'm)", "callback_data": f"debt_clear_{chat_id}"}],
+                            [{"text": "❌ Chekni rad etish", "callback_data": f"reject_{chat_id}"}],
+                        ]
+                    }
+                else:
+                    caption += (
+                        f"📒 Qolgan avans qoldig'i: <b>0 so'm</b>\n"
+                        f"💡 <i>Mijoz to'lov chekini yubordi.</i>\n\n"
+                        f"Chekni tasdiqlab qabul qilasizmi?"
+                    )
+                    markup = {
+                        "inline_keyboard": [
+                            [{"text": "✅ To'lovni tasdiqlash", "callback_data": f"debt_clear_{chat_id}"}],
+                            [{"text": "❌ Chekni rad etish", "callback_data": f"reject_{chat_id}"}],
+                        ]
+                    }
+
+                data_payload = {
+                    "chat_id": self.admin_id,
+                    "photo": photo_id,
+                    "caption": caption,
+                    "parse_mode": "HTML",
+                    "reply_markup": json.dumps(markup),
+                }
                 requests.post(f"{self.api_url}/sendPhoto", data=data_payload, timeout=15)
                 self.send_message(chat_id, f"✅ <b>To'lov chekingiz Adminga ({ADMIN_USERNAME}) yuborildi!</b>")
             return
@@ -3477,13 +3705,14 @@ class TelegramBotServer:
             orig_fname = (doc.get("file_name") or "").strip()
             clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
             fname = orig_fname.lower()
+            clean_prefix = f"in_{chat_id}_" if (self.admin_id and chat_id == self.admin_id) else f"pending_{chat_id}_"
             if fname.endswith(".xlsx"):
-                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}_{clean_base}.xlsx"))
+                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"{clean_prefix}{int(time.time())}_{clean_base}.xlsx"))
                 students = parse_students_from_excel(local_p)
                 self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
                 return
             elif fname.endswith(".txt") or fname.endswith(".csv"):
-                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"in_{chat_id}_{int(time.time())}_{clean_base}.txt"))
+                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"{clean_prefix}{int(time.time())}_{clean_base}.txt"))
                 with open(local_p, "r", encoding="utf-8", errors="replace") as f:
                     students = parse_students_from_text(f.read())
                 self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
@@ -3492,6 +3721,8 @@ class TelegramBotServer:
         if text:
             students = parse_students_from_text(text)
             if students:
+                clean_prefix = f"in_{chat_id}_" if (self.admin_id and chat_id == self.admin_id) else f"pending_{chat_id}_"
+                save_students_to_excel(students, os.path.join(ORDERS_DIR, f"{clean_prefix}{int(time.time())}_Matn_Buyurtma.xlsx"))
                 self.handle_students_submission(chat_id, user_name, username, students, orig_fname="Matn_Buyurtma")
             else:
                 self.handle_smart_question(chat_id, user_name, text)
