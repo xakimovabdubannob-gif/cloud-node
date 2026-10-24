@@ -264,9 +264,9 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
 
     with nodes_lock:
         if node_id and node_id != "MASTER_PC":
-            allowed_worker_nodes = [k for k, v in cluster_nodes.items() if k != "MASTER_PC" and v.get("approved", True)][:10]
+            allowed_worker_nodes = [k for k, v in cluster_nodes.items() if k != "MASTER_PC" and v.get("approved", True)]
             if node_id not in allowed_worker_nodes:
-                return {"has_task": False, "reason": "node_not_in_top_10"}
+                return {"has_task": False, "reason": "node_not_approved"}
             try:
                 if int(worker_id or 1) > 6:
                     return {"has_task": False, "reason": "max_6_agents_per_node"}
@@ -1357,7 +1357,8 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     cluster_nodes["MASTER_PC"]["workers"] = 1
 
-                worker_node_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC" and (now_t - float(cluster_nodes[k].get("last_seen", 0)) < 75)][:10]
+                worker_node_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC" and (now_t - float(cluster_nodes[k].get("last_seen", 0)) < 90)]
+                worker_node_keys.sort(key=lambda k: float(cluster_nodes[k].get("last_seen", 0)), reverse=True)
                 all_node_keys = ["MASTER_PC"] + worker_node_keys
 
                 global_agent_num = 1
@@ -1851,16 +1852,10 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             force_prompt = bool(data.get("force_prompt", False))
             with nodes_lock:
                 now_ts = time.time()
-                active_worker_count = len([k for k, v in cluster_nodes.items() if k != "MASTER_PC" and (now_ts - float(v.get("last_seen", 0)) < 90)])
                 if node_id not in cluster_nodes:
-                    if active_worker_count >= 10:
-                        def_workers = 0
-                        node_approved = False
-                        node_status = "Kutish rejimida (Klaster to'lgan: max 10 ta PC)"
-                    else:
-                        def_workers = 6
-                        node_approved = True
-                        node_status = "Faol ishlamoqda..."
+                    def_workers = 4
+                    node_approved = True
+                    node_status = "🟢 Faol ishlamoqda..."
                     cluster_nodes[node_id] = {
                         "pc_name": pc_name,
                         "ram_gb": ram_gb,
@@ -1876,8 +1871,10 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     cluster_nodes[node_id]["last_seen"] = now_ts
                     cluster_nodes[node_id]["ram_gb"] = ram_gb
-                    if cluster_nodes[node_id].get("approved", True):
-                        cluster_nodes[node_id]["workers"] = 6
+                    if not cluster_nodes[node_id].get("approved", True) or cluster_nodes[node_id].get("workers", 0) == 0:
+                        cluster_nodes[node_id]["approved"] = True
+                        cluster_nodes[node_id]["workers"] = 4
+                        cluster_nodes[node_id]["status"] = "🟢 Faol ishlamoqda..."
                     save_nodes_state()
                 pc_idx_reg = (list(cluster_nodes.keys()).index(node_id) + 2) if node_id in cluster_nodes else 2
                 approved = cluster_nodes[node_id].get("approved", True)

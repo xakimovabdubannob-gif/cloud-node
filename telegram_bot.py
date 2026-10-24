@@ -1785,6 +1785,10 @@ class TelegramBotServer:
             except Exception:
                 pass
         self.is_paused = False
+        try:
+            requests.get("http://127.0.0.1:8766/cluster/start_all", timeout=2)
+        except Exception:
+            pass
         q_pos = order_queue.qsize() + 1
         est_mins = max(3, ((q_pos - 1) * 15) + int(len(students) * 1.2))
         if not silent:
