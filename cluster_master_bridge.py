@@ -54,6 +54,7 @@ ORDERS_DIR = "bot_orders"
 NODES_STATE_FILE = "cluster_nodes_state.json"
 file_lock = threading.RLock()
 nodes_lock = threading.RLock()
+task_lock = threading.RLock()
 _excel_cache = {}
 
 cluster_nodes = {}
