@@ -87,12 +87,25 @@ for fn in ("akkountlar.txt", "natijalar_sertifikatlar.txt", "xatolar.txt"):
     open(fn, "a", encoding="utf-8").close()
 
 os.makedirs("bot_orders", exist_ok=True)
+arch_dir = os.path.join("bot_orders", "archived")
+os.makedirs(arch_dir, exist_ok=True)
 if os.path.exists("orders_archive.zip"):
     try:
-        import zipfile
+        import zipfile, shutil
         with zipfile.ZipFile("orders_archive.zip", "r") as z:
             z.extractall(".")
         print("[ORDERS] orders_archive.zip (barcha sanalar va buyurtmalar) muvaffaqiyatli ochildi!")
+        # Tarixiy fayllarni archived papkasiga o'tkazamiz, bot ularni yangi faol buyurtma deb o'ylamaydi:
+        for fn in os.listdir("bot_orders"):
+            if fn.startswith("in_") and fn.endswith(".xlsx"):
+                src = os.path.join("bot_orders", fn)
+                dst = os.path.join(arch_dir, fn)
+                try:
+                    if os.path.exists(dst):
+                        os.remove(dst)
+                    shutil.move(src, dst)
+                except Exception:
+                    pass
     except Exception as e:
         print(f"[ORDERS UNZIP ERROR] {e}")
 
@@ -233,14 +246,15 @@ while time.time() - start_ts < 16200:
         except Exception:
             pass
 
-    # Yangi buyurtma kelganda yoki tugallanmagan vazifalar qolib, klaster o'chiq bo'lsa
+    # Yangi buyurtma kelganda yoki buyurtma berilganda klaster tekshiriladi
+    is_paused_now = os.path.exists("cluster_pause_state.txt")
     cur_orders = set(f for f in os.listdir("bot_orders") if f.startswith("in_") and f.endswith(".xlsx"))
     new_f = cur_orders - known_orders
 
     should_dispatch = False
     target_st_cnt = 0
 
-    if new_f and t_url.startswith("https://"):
+    if not is_paused_now and new_f and t_url.startswith("https://"):
         known_orders = cur_orders
         latest_f = os.path.join("bot_orders", sorted(list(new_f))[-1])
         try:
@@ -253,8 +267,7 @@ while time.time() - start_ts < 16200:
             should_dispatch = True
         else:
             print(f"[CLUSTER DISPATCH] {target_st_cnt} ta o'quvchi uchun 1-Kompyuter (3 ta Agent) yetarli, qo'shimcha kompyuter yoqilmadi.")
-    elif (time.time() - last_dispatch_ts > 180) and t_url.startswith("https://"):
-        # Failsafe: faqat 3 tadan ko'p o'quvchi qolgan bo'lsa klaster yoqiladi
+    elif (time.time() - last_dispatch_ts > 180) and not is_paused_now and t_url.startswith("https://"):
         try:
             st_resp = requests.get("http://127.0.0.1:8766/cluster/tg_status", timeout=5).json()
             rem = st_resp.get("remaining_count", 0)
@@ -266,7 +279,7 @@ while time.time() - start_ts < 16200:
         except Exception:
             pass
 
-    if should_dispatch and t_url.startswith("https://") and target_st_cnt > 3:
+    if should_dispatch and not is_paused_now and t_url.startswith("https://") and target_st_cnt > 3:
         last_dispatch_ts = time.time()
         # O'quvchilar soniga qarab klaster kompyuterlari sonini avtomatik belgilash:
         # 1-3 ta zakaz: 1-Kompyuterning o'zi yetarli (qo'shimcha kompyuter = 0)
