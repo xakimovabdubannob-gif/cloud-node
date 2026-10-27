@@ -1358,8 +1358,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     cluster_nodes["MASTER_PC"]["workers"] = 1
 
-                worker_node_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC" and (now_t - float(cluster_nodes[k].get("last_seen", 0)) < 90)]
-                worker_node_keys.sort(key=lambda k: float(cluster_nodes[k].get("last_seen", 0)), reverse=True)
+                worker_node_keys = sorted([k for k in cluster_nodes.keys() if k != "MASTER_PC" and (now_t - float(cluster_nodes[k].get("last_seen", 0)) < 90)])
                 all_node_keys = ["MASTER_PC"] + worker_node_keys
 
                 global_agent_num = 1
@@ -2094,8 +2093,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         cluster_nodes[node_id]["worker_statuses"][str(worker_id)] = "🟡 Bo'sh (Kutmoqda)"
                     if status == "COMPLETED":
                         cluster_nodes[node_id]["completed_count"] = cluster_nodes[node_id].get("completed_count", 0) + 1
-                all_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC"]
-                all_keys.insert(0, "MASTER_PC")
+                all_keys = ["MASTER_PC"] + sorted([k for k in cluster_nodes.keys() if k != "MASTER_PC"])
                 pc_idx_fin = (all_keys.index(node_id) + 1) if node_id in all_keys else 2
                 pc_clean_name = f"{pc_idx_fin}-Kompyuter"
                 preceding_w = sum(int(cluster_nodes[k].get("workers", 4)) for k in all_keys[:all_keys.index(node_id)]) if node_id in all_keys else 0
