@@ -310,11 +310,13 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         for _ok, _ost in _worker_assigned.items():
             if _ok != w_key:
                 _ok_nid = _ok[0]
-                if _ok_nid == "MASTER_PC" or (now - cluster_nodes.get(_ok_nid, {}).get("last_seen", 0) <= 180):
+                # Tirik kompyuterlar (oxirgi 90 soniyada ko'ringan) biriktirgan o'quvchisi 100% daxlsiz!
+                if _ok_nid == "MASTER_PC" or (now - float(cluster_nodes.get(_ok_nid, {}).get("last_seen", 0)) < 90):
                     busy_by_others_norm.add(normalize_student_key(_ost))
 
+        # in_progress_students dagi har bir o'quvchi 15 daqiqa davomida qat'iy band!
         for _st_k, _st_t in in_progress_students.items():
-            if now - _st_t <= 180 and normalize_student_key(_st_k) in active_assigned_norm:
+            if now - _st_t < 900:
                 if not (w_key and normalize_student_key(_worker_assigned.get(w_key, "")) == normalize_student_key(_st_k)):
                     busy_by_others_norm.add(normalize_student_key(_st_k))
 
@@ -383,6 +385,9 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 if s_norm == normalize_student_key("MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"):
                     continue
                 if s_norm in busy_by_others_norm:
+                    continue
+                # Qo'shimcha qat'iy tekshiruv: agar bu o'quvchi birorta ham tirik agentda bo'lsa, qat'iyan o'tkazib yuboriladi!
+                if any(normalize_student_key(v) == s_norm for (k_n, k_w), v in _worker_assigned.items() if (k_n, k_w) != w_key and (k_n == "MASTER_PC" or (now - float(cluster_nodes.get(k_n, {}).get("last_seen", 0)) < 90))):
                     continue
                 best_cand = (chat_id, idx, total, st, s_name)
                 break
