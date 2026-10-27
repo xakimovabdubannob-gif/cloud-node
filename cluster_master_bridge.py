@@ -115,7 +115,7 @@ if "MASTER_PC" not in cluster_nodes:
 
 public_tunnel_url = ""
 TRIED_CLUSTER_FILE = "cluster_tried_students.json"
-tried_cluster_set = {"MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"}
+tried_cluster_set = {"MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI", "ISM VA FAMILYA"}
 agent_cert_counts = {}
 agent_task_start_times = {}
 agent_last_durations = {}
@@ -215,7 +215,8 @@ def parse_excel_students(xlsx_path: str):
         mtime = 0
 
     try:
-        students = parse_students_from_excel(xlsx_path)
+        raw_students = parse_students_from_excel(xlsx_path)
+        students = [s for s in (raw_students or []) if s.get('name') and not any(k in s['name'].upper() for k in ['ISM VA FAMIL', 'F.I.SH', 'ALIYEV VALI', 'NAMUNA'])]
         if students:
             _excel_cache[xlsx_path] = (mtime, students)
         return students
