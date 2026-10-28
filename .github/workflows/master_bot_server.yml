@@ -1,0 +1,41 @@
+name: 24-7 Cloud Master Bot
+on:
+  workflow_dispatch:
+concurrency:
+  group: master-bot-24-7-group
+  cancel-in-progress: true
+permissions:
+  contents: write
+  actions: write
+jobs:
+  cloud-bot:
+    runs-on: windows-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - name: Kutubxonalar va Cloudflared ornatish
+        shell: cmd
+        run: |
+          python -m pip install --quiet --disable-pip-version-check requests openpyxl playwright selenium undetected-chromedriver pillow setuptools cryptography
+          python -m playwright install chromium
+          curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -o cloudflared.exe
+      - name: AnyDesk ornatish va sozlash
+        shell: cmd
+        continue-on-error: true
+        run: |
+          curl -sL https://download.anydesk.com/AnyDesk.exe -o anydesk.exe
+          start "" anydesk.exe --install "C:\Program Files (x86)\AnyDesk" --start-with-win --silent
+          timeout /t 5 /nobreak >nul
+          net start AnyDesk >nul 2>&1
+          echo UzbekCoders2026! | "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
+      - name: Bulut serverni ishga tushirish
+        shell: cmd
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          SHIELD_KEY: ${{ secrets.SHIELD_KEY }}
+          CARD_INFO: ${{ secrets.CARD_INFO }}
+          HEADLESS: "1"
+          GUI_MODE: "0"
+        run: python -u start_cloud_master.py

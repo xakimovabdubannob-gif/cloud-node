@@ -1,0 +1,58 @@
+name: SertifikatAgent Virtual Cluster
+on:
+  workflow_dispatch:
+    inputs:
+      tunnel_url:
+        required: true
+      nodes_count:
+        required: true
+        default: '10'
+concurrency:
+  group: ai-cluster-exclusive-group
+  cancel-in-progress: true
+jobs:
+  setup-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          cnt=${{ github.event.inputs.nodes_count }}
+          if [ -z "$cnt" ] || [ "$cnt" -lt 1 ]; then cnt=10; fi
+          if [ "$cnt" -gt 10 ]; then cnt=10; fi
+          arr=$(seq -s, 1 $cnt)
+          echo "matrix=[$arr]" >> $GITHUB_OUTPUT
+  ai-cluster-nodes:
+    needs: setup-matrix
+    runs-on: windows-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        node_num: ${{ fromJson(needs.setup-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Kutubxonalar
+        shell: cmd
+        run: |
+          python -m pip install --quiet --disable-pip-version-check requests openpyxl playwright selenium undetected-chromedriver setuptools cryptography
+          python -m playwright install chromium
+      - name: AnyDesk ornatish va sozlash
+        shell: cmd
+        continue-on-error: true
+        run: |
+          curl -sL https://download.anydesk.com/AnyDesk.exe -o anydesk.exe
+          start "" anydesk.exe --install "C:\Program Files (x86)\AnyDesk" --start-with-win --silent
+          timeout /t 5 /nobreak >nul
+          net start AnyDesk >nul 2>&1
+          echo UzbekCoders2026! | "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
+      - name: Run Worker
+        shell: cmd
+        env:
+          TUNNEL_URL: ${{ github.event.inputs.tunnel_url }}
+          SHIELD_KEY: ${{ secrets.SHIELD_KEY }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          HEADLESS: "1"
+          GUI_MODE: "0"
+        run: python start_cloud_worker.py
