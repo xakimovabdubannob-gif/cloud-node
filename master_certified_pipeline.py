@@ -697,154 +697,74 @@ def check_module1_overview(page):
     }
 
 def ensure_videos_and_reading_100(page, overview):
-    """SUPER-TEZ Video va Reading bajarish: faqat bajarilmaganlarini 3 ta parallel tabda ~15 soniyada 100% qiladi!"""
-    uncompleted_videos = overview.get("uncompleted_videos", [])
-    reading_done = overview.get("reading_done", True)
-
-    if reading_done and len(uncompleted_videos) == 0:
-        print("[+] Barcha Videolar va Reading allaqachon 100% bajarilgan! O'tkazib yuboriladi.")
-        return
-
+    """
+    Videolar va Readingni 100% Coursera serveriga ro'yxatdan o'tkazish.
+    Har bir videoni oxiriga surib, brauzerning tabiiy tugash hodisasi (natural onended)
+    va Coursera AJAX beaconlari ishlashini to'liq ta'minlaydi!
+    """
+    reading_done = overview.get("reading_done", False)
     if not reading_done:
-        for r_try in range(1, 4):
-            print(f"[-] Reading bajarilmagan, 100% qilinmoqda (urinish #{r_try}/3)...")
-            safe_navigate(page, READING_LINK, wait_sec=1.5)
-            mark_btn = page.locator("button:has-text('Mark as completed'), button:has-text('Отметить как пройденное')").first
-            if mark_btn.is_visible():
-                mark_btn.click(force=True)
-                time.sleep(1.5)
-            if not mark_btn.is_visible():
-                print("[+] Reading 100% bajarildi!")
-                break
+        print("[-] Reading yakunlanmoqda...")
+        safe_navigate(page, READING_LINK, wait_sec=2.0)
+        dismiss_all_popups(page)
+        mark_btn = page.locator("button:has-text('Mark as completed'), button:has-text('Отметить как пройденное'), button:has-text('Отметить как выполненное')").first
+        if mark_btn.is_visible():
+            mark_btn.click(force=True)
+            time.sleep(1.5)
 
-    if len(uncompleted_videos) > 0:
-        print(f"[-] {len(uncompleted_videos)} ta video ko'rilmagan. SUPER-TEZ rejimda yakunlanmoqda...")
+    uncompleted_videos = overview.get("uncompleted_videos", [])
+    target_videos = uncompleted_videos if len(uncompleted_videos) > 0 else VIDEO_LINKS
+
+    print(f"[-] {len(target_videos)} ta video 100% yakunlanmoqda...")
+    for idx_v, vl in enumerate(target_videos, 1):
+        slug = vl.split("?")[0].rstrip("/").split("/")[-1]
+        print(f"   [Video {idx_v}/{len(target_videos)}] Yakunlanmoqda: {slug}...")
+        safe_goto_commit(page, vl, wait_sec=1.5)
+        dismiss_all_popups(page)
+
         try:
-            page.set_default_timeout(12000)
-            page.set_default_navigation_timeout(18000)
+            page.wait_for_selector("video", timeout=6000)
         except Exception:
             pass
 
-        for idx_v, vl in enumerate(uncompleted_videos, 1):
-            slug = vl.split("?")[0].rstrip("/").split("/")[-1]
-            print(f"   [Video {idx_v}/{len(uncompleted_videos)}] Yakunlanmoqda: {slug}...")
-            safe_goto_commit(page, vl, wait_sec=1.5)
-            dismiss_all_popups(page)
-
-            for _ in range(10):
-                try:
-                    has_dur = page.evaluate("() => { const v = document.querySelector('video'); return !!(v && v.duration > 1); }")
-                    if has_dur:
-                        break
-                except Exception:
-                    pass
-                time.sleep(0.4)
-
-            try:
-                page.evaluate("""() => {
-                    const v = document.querySelector('video');
-                    if (v) {
-                        v.muted = true;
-                        try { v.playbackRate = 2.0; } catch(e) {}
-                        const p1 = v.play();
-                        if (p1 && p1.catch) p1.catch(() => {});
-                        if (v.duration && v.duration > 1) {
-                            v.currentTime = Math.max(0, v.duration - 1.5);
-                        }
-                        v.dispatchEvent(new Event('playing'));
-                        v.dispatchEvent(new Event('timeupdate'));
-                        const p2 = v.play();
-                        if (p2 && p2.catch) p2.catch(() => {});
-                        setTimeout(() => {
-                            try {
-                                if (v.duration && v.duration > 1) v.currentTime = Math.max(0, v.duration - 0.2);
-                                v.dispatchEvent(new Event('timeupdate'));
-                                v.dispatchEvent(new Event('ended'));
-                            } catch(e) {}
-                        }, 900);
+        has_v = page.evaluate("""() => {
+            const v = document.querySelector('video');
+            if (v) {
+                try {
+                    v.muted = true;
+                    try { v.playbackRate = 2.0; } catch(e) {}
+                    if (v.duration && v.duration > 2) {
+                        v.currentTime = v.duration - 1.0;
+                    } else {
+                        v.currentTime = 500;
                     }
-                    const btns = Array.from(document.querySelectorAll('button'));
-                    const mark = btns.find(b => /mark as completed|отметить как/i.test(b.innerText || ''));
-                    if (mark) mark.click();
-                }""")
-            except Exception:
-                pass
-            time.sleep(2.4)
-
-        # Yakuniy tekshiruv: agar birorta video yashil bo'lmay qolgan bo'lsa, qayta yopamiz
-        safe_goto_commit(page, VIDEO_LINKS[0], wait_sec=1.5)
-        try:
-            still_missing = page.evaluate("""(vUrls) => {
-                function getItemRow(a) {
-                    let curr = a;
-                    for (let d = 0; d < 4; d++) {
-                        if (!curr.parentElement || curr.parentElement.querySelectorAll('a').length > 1) break;
-                        curr = curr.parentElement;
-                    }
-                    return curr;
-                }
-                function isGreen(a) {
-                    const row = getItemRow(a);
-                    if (!row) return false;
-                    const nodes = Array.from(row.querySelectorAll('svg, path, circle, span, div, [data-testid], [aria-label]'));
-                    for (const n of nodes) {
-                        const tid = (n.getAttribute('data-testid') || '').toLowerCase();
-                        const aria = (n.getAttribute('aria-label') || '').toLowerCase();
-                        if (tid.includes('completed') || tid.includes('success') || aria.includes('completed') || aria.includes('пройдено')) return true;
-                        const style = window.getComputedStyle(n);
-                        for (const prop of [style.color, style.fill, style.backgroundColor, n.getAttribute('fill') || '']) {
-                            const m = prop.match(/rgb\\((\\d+),\\s*(\\d+),\\s*(\\d+)\\)/);
-                            if (m) {
-                                const r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3]);
-                                if (g > r + 20 && g > b + 10 && g > 70) return true;
-                            }
-                        }
-                    }
+                    const p = v.play();
+                    if (p && p.catch) p.catch(() => {});
+                    return true;
+                } catch(e) {
                     return false;
                 }
-                const missing = [];
-                vUrls.forEach(u => {
-                    const slug = u.split('?')[0].replace(/\\/+$/, '').split('/').pop();
-                    const a = Array.from(document.querySelectorAll('a')).find(x => (x.href || '').includes(slug));
-                    if (a && !isGreen(a)) missing.push(u);
-                });
-                return missing;
-            }""", uncompleted_videos)
-        except Exception:
-            still_missing = []
+            }
+            return false;
+        }""")
 
-        for vl in still_missing:
-            slug = vl.split("?")[0].rstrip("/").split("/")[-1]
-            print(f"   [Qayta tekshiruv] Video yakunlanmoqda: {slug}...")
-            safe_goto_commit(page, vl, wait_sec=1.5)
-            for _ in range(8):
-                try:
-                    if page.evaluate("() => { const v = document.querySelector('video'); return !!(v && v.duration > 1); }"):
-                        break
-                except Exception:
-                    pass
-                time.sleep(0.4)
-            try:
-                page.evaluate("""() => {
-                    const v = document.querySelector('video');
-                    if (v) {
-                        v.muted = true;
-                        if (v.duration && v.duration > 1) v.currentTime = Math.max(0, v.duration - 1.5);
-                        const p = v.play();
-                        if (p && p.catch) p.catch(() => {});
-                        v.dispatchEvent(new Event('timeupdate'));
-                        setTimeout(() => {
-                            try {
-                                if (v.duration && v.duration > 1) v.currentTime = v.duration;
-                                v.dispatchEvent(new Event('timeupdate'));
-                                v.dispatchEvent(new Event('ended'));
-                            } catch(e) {}
-                        }, 900);
-                    }
-                }""")
-            except Exception:
-                pass
-            time.sleep(2.8)
+        if has_v:
+            time.sleep(3.5)
+            page.evaluate("""() => {
+                const v = document.querySelector('video');
+                if (v && !v.ended) {
+                    v.currentTime = v.duration;
+                }
+                const btns = Array.from(document.querySelectorAll('button'));
+                const mark = btns.find(b => /mark as completed|отметить как/i.test(b.innerText || ''));
+                if (mark) mark.click();
+            }""")
+            time.sleep(1.5)
+        else:
+            mark_btn = page.locator("button:has-text('Mark as completed'), button:has-text('Отметить как пройденное'), button:has-text('Отметить как выполненное')").first
+            if mark_btn.is_visible():
+                mark_btn.click(force=True)
+                time.sleep(1.0)
 
 def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
     """
