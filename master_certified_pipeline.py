@@ -299,6 +299,38 @@ def safe_navigate(page, url, max_retries=3, wait_sec=1.5):
 
 def login_via_magic_link(page, email):
     """Pochtaga 'Email me a login link' orqali kirish havolasi yuborib, 100% kirish kafolati!"""
+    if "gmail.com" in email.lower():
+        print(f"   [GMAIL MAGIC LINK] {email} uchun login link so'ralmoqda...")
+        try:
+            page.goto("https://www.coursera.org/?authMode=login", wait_until="domcontentloaded", timeout=22000)
+            time.sleep(3.0)
+            em_inp = page.locator(".cds-Modal-container input[type='email'], input[type='email']").first
+            if em_inp.count() > 0 and em_inp.is_visible():
+                em_inp.fill(email)
+                time.sleep(0.5)
+                cont_btn = page.locator(".cds-Modal-container button[type='submit'], button:has-text('Continue')").first
+                if cont_btn.count() > 0 and cont_btn.is_visible():
+                    cont_btn.click(force=True)
+                time.sleep(3.0)
+
+            link_btn = page.locator(".cds-Modal-container button:has-text('Login with link'), .cds-Modal-container button:has-text('Email me a login link'), button:has-text('Login with link')").first
+            if link_btn.count() > 0 and link_btn.is_visible():
+                link_btn.click(force=True)
+                time.sleep(2.0)
+
+            from gmail_automation import fetch_coursera_magic_link
+            mlink = fetch_coursera_magic_link(email, timeout_sec=40)
+            if mlink:
+                print(f"   [GMAIL MAGIC LINK] Havola olindi, tizimga kirilmoqda...")
+                page.goto(mlink, wait_until="domcontentloaded", timeout=35000)
+                time.sleep(6.0)
+                cookies = [c.get("name", "") for c in page.context.cookies()]
+                if any("CAUTH" in c for c in cookies):
+                    print(f"[LOGIN] Gmail Magic Link orqali muvaffaqiyatli kirildi! ({email})")
+                    return True
+        except Exception as e:
+            print(f"   [!] Gmail Magic link xatosi: {e}")
+        return False
     mail_tok = None
     for p_candidate in [MAILTM_PASS, COMMON_PASSWORD, "Password123!"]:
         try:
@@ -1219,304 +1251,204 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
     return False
 
 def verify_student_name_with_3_checks(page, student_name):
-    """
-    Verify My Name (Ismni tasdiqlash) - 100% ishonchli:
-    1. Avval joriy sahifada (Welcome / Module 1) tekshiradi.
-    2. Topilmasa Welcome sahifasiga, keyin Accomplishments sahifasiga o'tadi.
-    3. Tugmani bosib, modalda ism-familiyani to'ldiradi, galichka qo'yadi va Submit bosadi.
-    """
+    """Verify My Name sahifasida ismni kiritib, galichka qo'yib, Submit bosadi (1x, 2x, 3x kutish bilan)."""
     print(f"\n[ISMNI TASDIQLASH] {student_name}...")
-    clean_name = student_name.replace("`", "'").strip()
-    parts = [p.strip() for p in clean_name.split() if p.strip()]
-    first_name = parts[0] if len(parts) > 0 else clean_name
-    middle_name = parts[1] if len(parts) > 2 else ""
-    last_name = " ".join(parts[2:]) if len(parts) > 2 else (parts[1] if len(parts) == 2 else "")
-
     for v_try in range(1, 4):
         try:
             mult = v_try
-            # 1. Joriy sahifada yoki Welcome / Accomplishments sahifalarida Verify My Name tugmasini qidiramiz
-            target_urls = [
-                None,  # Joriy sahifaning o'zi
-                "https://www.coursera.org/learn/introduction-to-generative-ai/home/welcome",
-                "https://www.coursera.org/account/accomplishments"
-            ]
+            safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=CERTIFICATES")
+            time.sleep(3.5 * mult)
+            dismiss_all_popups(page)
+            time.sleep(1.0)
 
-            v_btn_found = False
-            for u in target_urls:
-                if u:
-                    safe_navigate(page, u, wait_sec=2.0 * mult)
-                    time.sleep(1.0)
+            v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
+            if not v_btn.is_visible():
+                safe_navigate(page, "https://www.coursera.org/organizations/dedc")
+                time.sleep(3.5 * mult)
+                dismiss_all_popups(page)
+                time.sleep(1.0)
+                v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
 
-                # Modal oyna allaqachon ochiq bo'lsa
-                if page.locator("div[role='dialog'], [data-testid='modal'], .cds-Modal-container").count() > 0:
-                    v_btn_found = True
-                    break
-
-                # JavaScript orqali barcha tugma va havolalarni qidiramiz
-                has_v = page.evaluate("""() => {
-                    const els = Array.from(document.querySelectorAll('button, a'));
-                    const target = els.find(el => {
-                        const t = (el.innerText || el.textContent || '').trim().toLowerCase();
-                        return /verify my name|verify name|подтвердить имя|подтвердите имя|подтвердить/i.test(t);
-                    });
-                    if (target) {
-                        target.scrollIntoView({block: 'center'});
-                        target.click();
-                        return true;
-                    }
-                    return false;
-                }""")
-                if has_v:
-                    print(f"[ISMNI TASDIQLASH] 'Verify My Name' tugmasi JS orqali bosildi ({page.url})!")
-                    v_btn_found = True
-                    time.sleep(2.0 * mult)
-                    break
-
-                v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Подтвердить имя'), a:has-text('Подтвердить имя'), button:has-text('Подтвердите имя'), a:has-text('Подтвердите имя')").first
-                if v_btn.count() > 0 and v_btn.is_visible():
-                    print(f"[ISMNI TASDIQLASH] 'Verify My Name' tugmasi topildi va bosilmoqda ({page.url})...")
-                    try:
-                        v_btn.click(force=True)
-                    except Exception:
-                        box_v = v_btn.bounding_box()
-                        if box_v:
-                            page.mouse.click(box_v['x'] + box_v['width']/2, box_v['y'] + box_v['height']/2)
-                    v_btn_found = True
-                    time.sleep(2.0 * mult)
-                    break
-
-            if not v_btn_found and v_try > 1:
-                print("[ISMNI TASDIQLASH] 'Verify My Name' tugmasi sahifada ko'rinmadi (ism allaqachon tasdiqlangan).")
+            if not v_btn.is_visible():
+                print("[ISMNI TASDIQLASH] 'Verify My Name' tugmasi yo'q (ism allaqachon tasdiqlangan!).")
                 return True
 
-            # Modal oynadagi ism maydonlarini to'ldirish
-            try:
-                page.wait_for_selector("div[role='dialog'], [data-testid='modal'], .cds-Modal-container, input[type='text']", timeout=5000)
-            except Exception:
-                pass
+            print(f"[ISMNI TASDIQLASH] 'Verify My Name' bosilmoqda (urinish #{v_try}/3 | {mult}x)...")
+            box_v = v_btn.bounding_box()
+            if box_v:
+                page.mouse.click(box_v['x'] + box_v['width']/2, box_v['y'] + box_v['height']/2)
+            else:
+                v_btn.click(force=True)
+            time.sleep(3.5 * mult)
+            dismiss_all_popups(page)
 
-            all_inps = page.locator("div[role='dialog'] input[type='text'], div[role='dialog'] input:not([type]), .cds-Modal-container input[type='text'], input[type='text']:visible").all()
-            content_inps = []
-            for inp in all_inps:
-                pl = (inp.get_attribute("placeholder") or "").lower()
-                aria = (inp.get_attribute("aria-label") or "").lower()
-                if any(k in pl or k in aria for k in ["search", "поиск", "искать"]):
-                    continue
-                content_inps.append(inp)
+            # Ism yozish maydonlari (First/Middle/Last name) ochilganini tekshiramiz
+            inp_count = page.evaluate("""() => {
+                return Array.from(document.querySelectorAll('input')).filter(i => i.type === 'text' && !i.className.includes('autosuggest') && !(i.placeholder || '').toLowerCase().includes('search')).length;
+            }""")
+            if inp_count < 2 and v_btn.is_visible():
+                v_btn.click(force=True)
+                time.sleep(3.0 * mult)
 
-            print(f"[ISMNI TASDIQLASH] Topilgan ism maydonlari soni: {len(content_inps)}")
-            if len(content_inps) >= 3:
-                content_inps[0].fill(first_name)
-                content_inps[1].fill(middle_name)
-                content_inps[2].fill(last_name)
-            elif len(content_inps) == 2:
-                content_inps[0].fill(first_name)
-                content_inps[1].fill(last_name or middle_name)
-            elif len(content_inps) == 1:
-                content_inps[0].fill(student_name)
+            parts = student_name.split()
+            first_name = parts[0] if len(parts) > 0 else student_name
+            middle_name = parts[1] if len(parts) > 2 else ""
+            last_name = " ".join(parts[2:]) if len(parts) > 2 else (parts[1] if len(parts) == 2 else "")
 
-            # React hodisalarini chaqirish
+            # 1. FIRST NAME
             page.evaluate("""() => {
-                const inps = Array.from(document.querySelectorAll('div[role="dialog"] input, .cds-Modal-container input, input'));
-                inps.forEach(i => {
-                    i.dispatchEvent(new Event('input', {bubbles: true}));
-                    i.dispatchEvent(new Event('change', {bubbles: true}));
-                });
+                const inps = Array.from(document.querySelectorAll('input')).filter(i => i.type === 'text' && !i.className.includes('autosuggest') && !(i.placeholder || '').toLowerCase().includes('search'));
+                if (inps.length >= 1) { inps[0].value = ''; inps[0].focus(); }
             }""")
-            time.sleep(0.5)
+            time.sleep(0.3)
+            page.keyboard.type(first_name, delay=30)
+            time.sleep(0.4)
 
-            # Rozilik galichkasini (checkbox) belgilash
-            page.evaluate("""() => {
-                const cbs = Array.from(document.querySelectorAll('div[role="dialog"] input[type="checkbox"], .cds-Modal-container input[type="checkbox"], input[type="checkbox"]'));
-                cbs.forEach(c => {
-                    if (!c.checked) {
-                        c.checked = true;
-                        c.dispatchEvent(new Event('change', {bubbles: true}));
-                    }
-                });
-            }""")
-            time.sleep(0.5)
+            # 2. MIDDLE NAME
+            if middle_name:
+                page.evaluate("""() => {
+                    const inps = Array.from(document.querySelectorAll('input')).filter(i => i.type === 'text' && !i.className.includes('autosuggest') && !(i.placeholder || '').toLowerCase().includes('search'));
+                    if (inps.length >= 2) { inps[1].value = ''; inps[1].focus(); }
+                }""")
+                time.sleep(0.3)
+                page.keyboard.type(middle_name, delay=30)
+                time.sleep(0.4)
 
-            # Submit tugmasini bosish
-            clicked_sub = page.evaluate("""() => {
-                const btns = Array.from(document.querySelectorAll('div[role="dialog"] button, .cds-Modal-container button, button'));
-                const target = btns.find(b => {
-                    const t = (b.innerText || b.textContent || '').trim().toLowerCase();
-                    return /submit|отправить|сохранить|подтвердить/i.test(t);
-                });
-                if (target) {
-                    target.disabled = false;
-                    target.click();
-                    return true;
-                }
-                return false;
-            }""")
+            # 3. LAST NAME
+            if last_name:
+                page.evaluate("""() => {
+                    const inps = Array.from(document.querySelectorAll('input')).filter(i => i.type === 'text' && !i.className.includes('autosuggest') && !(i.placeholder || '').toLowerCase().includes('search'));
+                    if (inps.length >= 3) { inps[2].value = ''; inps[2].focus(); }
+                }""")
+                time.sleep(0.3)
+                page.keyboard.type(last_name, delay=30)
+                time.sleep(0.4)
 
-            if not clicked_sub:
-                sub_btn = page.locator("div[role='dialog'] button:has-text('Submit'), div[role='dialog'] button:has-text('Отправить'), div[role='dialog'] button:has-text('Подтвердить'), .cds-Modal-container button:has-text('Submit'), button[type='submit']:visible").first
-                if sub_btn.count() > 0 and sub_btn.is_visible():
-                    sub_btn.click(force=True)
-                    clicked_sub = True
+            # 4. Galichka (Checkbox)
+            cb = page.locator("input[type='checkbox']").first
+            if cb.count() > 0 and cb.is_visible():
+                box = cb.bounding_box()
+                if box:
+                    page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
+                    time.sleep(1)
+                if not cb.is_checked():
+                    lbl = page.locator("label:has-text('By checking this box'), label:has-text('Устанавливая этот флажок')").first
+                    if lbl.is_visible():
+                        lbl.click(force=True)
+                        time.sleep(1)
 
-            print(f"[ISMNI TASDIQLASH] Submit bosildi: {clicked_sub}")
-            time.sleep(3.0 * mult)
-            return True
+            # 5. Submit ('Save' yozilmaydi, chunki 'Saved' tabiga bosilib ketmasligi kerak!)
+            sub_v = page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
+            if sub_v.is_visible() and sub_v.is_enabled():
+                box_s = sub_v.bounding_box()
+                if box_s:
+                    page.mouse.click(box_s['x'] + box_s['width']/2, box_s['y'] + box_s['height']/2)
+                else:
+                    sub_v.click(force=True)
+                print("[ISMNI TASDIQLASH] Tasdiqlash muvaffaqiyatli yuborildi!")
+                time.sleep(5.0 * mult)
+                return True
+            else:
+                print(f"[!] Verify My Name Submit tugmasi faol emas, qayta tekshirilmoqda ({v_try}/3)...")
         except Exception as e:
-            print(f"[!] Verify My Name {v_try}-urinishda xatolik: {e}")
-            time.sleep(1.5)
+            print(f"[!] Verify My Name {v_try}-urinishda xatolik ushlandi: {e}")
+            time.sleep(2)
 
     return False
 
 def extract_certificate_with_3_checks(page, student_name=""):
-    """
-    Sertifikat havolasini 100% aniqlik bilan oladi:
-    1. BIRINCHI O'RINDA: Coursera ichki REST API orqali (0.5 soniyada chiqadi!).
-    2. Global Accomplishments sahifasi (/account/accomplishments) havolalari.
-    3. Welcome sahifasi (/home/welcome) "View certificate" / DOM havolalari.
-    4. DEDC Portali (/organizations/dedc/my-learning?myLearningTab=CERTIFICATES).
-    """
+    """Sertifikat havolasini 3 martagacha (1x, 2x, 3x kutish bilan) tekshirib oladi. Agar kurs hali IN_PROGRESS bo'lsa, o'sha yerdagi kamchilikni (Quiz yoki Video) darhol topib bajaradi!"""
     for c_try in range(1, 4):
         try:
             mult = c_try
             print(f"[SERTIFIKAT QIDIRUV #{c_try}/3 | Kutish: {mult}x] Tekshirilmoqda...")
+            # 1. Certificates tab
+            safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=CERTIFICATES")
+            time.sleep(4.5 * mult)
+            dismiss_all_popups(page)
+            links = page.evaluate("""() => Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h && h.includes('/account/accomplishments/verify/'))""")
+            if links:
+                return links[0]
 
-            # 1. BIRINCHI O'RINDA REST API (eng tez va eng ishonchli usul!):
-            for _ in range(3):
-                api_cert = page.evaluate("""async () => {
-                    try {
-                        const r2 = await fetch('/api/openCourseMemberships.v1?q=none&includes=certificates');
-                        if (r2.ok) {
-                            const d2 = await r2.json();
-                            const certs = (d2.linked && d2.linked['certificates.v1']) || [];
-                            for (const c of certs) {
-                                const cid = c.id || c.certificateCode;
-                                if (cid) return 'https://www.coursera.org/account/accomplishments/verify/' + cid;
-                            }
-                        }
-                    } catch(e) {}
-                    try {
-                        const r = await fetch('/api/certificates.v1?q=my');
-                        if (r.ok) {
-                            const d = await r.json();
-                            for (const el of (d.elements || [])) {
-                                const cid = el.id || el.certificateCode || el.certificateId;
-                                if (cid) return 'https://www.coursera.org/account/accomplishments/verify/' + cid;
-                            }
-                        }
-                    } catch(e) {}
-                    return null;
-                }""")
-                if api_cert:
-                    print(f"[SERTIFIKAT TOPILDI - REST API] {api_cert}")
-                    return api_cert
-                time.sleep(1.0)
+            vc = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Посмотреть сертификат'), button:has-text('Посмотреть сертификат')").first
+            if vc.is_visible():
+                vc.click(force=True)
+                time.sleep(4.5 * mult)
+                if "/account/accomplishments/verify/" in page.url:
+                    return page.url
 
-            # 2. Global Accomplishments sahifasi (/account/accomplishments)
-            safe_navigate(page, "https://www.coursera.org/account/accomplishments", wait_sec=2.5 * mult)
-            time.sleep(2.0)
+            # Agar CERTIFICATES bo'sh bo'lsa, IN_PROGRESS tabini tekshiramiz: qaysi Quiz yoki Video qolib ketganini ko'ramiz!
+            safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=IN_PROGRESS")
+            time.sleep(4)
+            dismiss_all_popups(page)
+            in_prog_text = page.evaluate("() => (document.body ? document.body.innerText : '')")
+            if "Introduction to Generative AI" in in_prog_text and "% complete" in in_prog_text:
+                print("[!] DIQQAT: Kurs hali 'In Progress' da turibdi! IN_PROGRESS ichida qolib ketgan Quiz/Video tekshirilmoqda...")
+                handled_in_prog = False
+                # Birinchi o'rinda IN_PROGRESS kartochkasida qaysi Quiz yozilganini tekshiramiz
+                for q_name, default_url, q_num in QUIZZES_INFO:
+                    if q_name in in_prog_text and student_name:
+                        print(f"[IN_PROGRESS] '{q_name}' qolib ketgani aniqlandi! Darhol yechilmoqda...")
+                        solve_single_quiz_with_3_checks(page, q_name, default_url, q_num, student_name)
+                        handled_in_prog = True
+                        break
 
-            # Agar Verify My Name hali ham turgan bo'lsa, tezda tasdiqlaymiz:
-            v_check = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Подтвердить имя'), a:has-text('Подтвердить имя'), button:has-text('Подтвердите имя'), a:has-text('Подтвердите имя')").first
-            if v_check.count() > 0 and v_check.is_visible():
-                print("[SERTIFIKAT QIDIRUV - ACCOMPLISHMENTS] 'Verify My Name' tugmasi topildi, tasdiqlanmoqda...")
-                verify_student_name_with_3_checks(page, student_name)
-                safe_navigate(page, "https://www.coursera.org/account/accomplishments", wait_sec=2.0)
-                time.sleep(2.0)
+                # Agar aniq Quiz nomi ko'rinmasa yoki Video/Reading qolib ketgan bo'lsa, 'Resume' tugmasini bosib kiramiz
+                if not handled_in_prog:
+                    resume_btn = page.locator("a:has-text('Resume'), button:has-text('Resume'), a:has-text('Продолжить'), button:has-text('Продолжить')").first
+                    if resume_btn.is_visible():
+                        print("[IN_PROGRESS] 'Resume' tugmasi bosilib qolib ketgan dars/testga kirilmoqda...")
+                        resume_btn.click(force=True)
+                        time.sleep(5)
+                        dismiss_all_popups(page)
+                        curr_u = page.url
+                        if "/assignment-submission/" in curr_u or "quiz-" in curr_u:
+                            for q_name, default_url, q_num in QUIZZES_INFO:
+                                if f"quiz-{q_num}" in curr_u.lower() or q_name.lower() in (page.evaluate("() => (document.body ? document.body.innerText : '')")).lower():
+                                    if student_name:
+                                        solve_single_quiz_with_3_checks(page, q_name, curr_u.split("/attempt")[0], q_num, student_name)
+                                    break
+                        elif "/lecture/" in curr_u:
+                            print(f"[IN_PROGRESS] Qolib ketgan video ko'rilmoqda: {curr_u}")
+                            for _ in range(8):
+                                dismiss_all_popups(page)
+                                if page.evaluate("() => { const v = document.querySelector('video'); return !!(v && v.duration > 1); }"):
+                                    break
+                                time.sleep(1)
+                            page.evaluate("""() => {
+                                const v = document.querySelector('video');
+                                if (v) { v.muted = true; if (v.duration > 1) v.currentTime = Math.max(0, v.duration - 2.0); const p = v.play(); if (p && p.catch) p.catch(() => {}); }
+                            }""")
+                            time.sleep(5)
+                        elif "/supplement/" in curr_u:
+                            mark_btn = page.locator("button:has-text('Mark as completed'), button:has-text('Отметить как пройденное')").first
+                            if mark_btn.is_visible():
+                                mark_btn.click(force=True)
+                                time.sleep(2.5)
+                        handled_in_prog = True
 
-            # Sahifadagi barcha havolalarni tekshiramiz
-            dom_cert = page.evaluate("""() => {
-                const as = Array.from(document.querySelectorAll('a'));
-                for (const a of as) {
-                    const h = a.href || '';
-                    if (h.includes('/account/accomplishments/verify/') || h.includes('/account/accomplishments/certificate/') || h.includes('/account/accomplishments/records/')) {
-                        return h;
-                    }
-                }
-                return null;
-            }""")
-            if dom_cert:
-                print(f"[SERTIFIKAT TOPILDI - ACCOMPLISHMENTS] {dom_cert}")
-                return dom_cert
+                if handled_in_prog and student_name:
+                    verify_student_name_with_3_checks(page, student_name)
+                    continue
+                return None
 
-            # View Certificate tugmalari bosiladi
-            vc = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Просмотреть сертификат'), button:has-text('Просмотреть сертификат'), a:has-text('Поделиться'), button:has-text('Поделиться'), a[data-e2e*='certificate']").first
-            if vc.count() > 0 and vc.is_visible():
-                try:
-                    vc.click(force=True)
-                    time.sleep(3.0)
-                    for p_ctx in page.context.pages:
-                        if "/account/accomplishments/verify/" in p_ctx.url or "/account/accomplishments/certificate/" in p_ctx.url:
-                            print(f"[SERTIFIKAT TOPILDI - TAB] {p_ctx.url}")
-                            return p_ctx.url
-                    if "/account/accomplishments/verify/" in page.url or "/account/accomplishments/certificate/" in page.url:
-                        print(f"[SERTIFIKAT TOPILDI - CURR] {page.url}")
-                        return page.url
-                except Exception:
-                    pass
+            # 2. Accomplishments sahifasi
+            safe_navigate(page, "https://www.coursera.org/account/accomplishments")
+            time.sleep(5)
+            dismiss_all_popups(page)
+            links = page.evaluate("""() => Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h && h.includes('/account/accomplishments/verify/'))""")
+            if links:
+                return links[0]
 
-            # 3. Kurs Welcome sahifasi (/home/welcome)
-            safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/welcome", wait_sec=2.5 * mult)
-            time.sleep(2.0)
-
-            v_check_w = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Подтвердить имя'), a:has-text('Подтвердить имя'), button:has-text('Подтвердите имя'), a:has-text('Подтвердите имя')").first
-            if v_check_w.count() > 0 and v_check_w.is_visible():
-                print("[SERTIFIKAT QIDIRUV - WELCOME] 'Verify My Name' tugmasi topildi, tasdiqlanmoqda...")
-                verify_student_name_with_3_checks(page, student_name)
-                safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/welcome", wait_sec=2.0)
-                time.sleep(2.0)
-
-            dom_cert_w = page.evaluate("""() => {
-                const as = Array.from(document.querySelectorAll('a'));
-                for (const a of as) {
-                    const h = a.href || '';
-                    if (h.includes('/account/accomplishments/verify/') || h.includes('/account/accomplishments/certificate/') || h.includes('/account/accomplishments/records/')) {
-                        return h;
-                    }
-                }
-                return null;
-            }""")
-            if dom_cert_w:
-                print(f"[SERTIFIKAT TOPILDI - WELCOME] {dom_cert_w}")
-                return dom_cert_w
-
-            vc_w = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Просмотреть сертификат'), button:has-text('Просмотреть сертификат'), a:has-text('Поделиться'), button:has-text('Поделиться')").first
-            if vc_w.count() > 0 and vc_w.is_visible():
-                try:
-                    vc_w.click(force=True)
-                    time.sleep(3.0)
-                    for p_ctx in page.context.pages:
-                        if "/account/accomplishments/verify/" in p_ctx.url or "/account/accomplishments/certificate/" in p_ctx.url:
-                            print(f"[SERTIFIKAT TOPILDI - WELCOME TAB] {p_ctx.url}")
-                            return p_ctx.url
-                    if "/account/accomplishments/verify/" in page.url or "/account/accomplishments/certificate/" in page.url:
-                        print(f"[SERTIFIKAT TOPILDI - WELCOME CURR] {page.url}")
-                        return page.url
-                except Exception:
-                    pass
-
-            # 4. Qayta REST API tekshiruvi:
-            api_cert2 = page.evaluate("""async () => {
-                try {
-                    const r2 = await fetch('/api/openCourseMemberships.v1?q=none&includes=certificates');
-                    if (r2.ok) {
-                        const d2 = await r2.json();
-                        const certs = (d2.linked && d2.linked['certificates.v1']) || [];
-                        for (const c of certs) {
-                            const cid = c.id || c.certificateCode;
-                            if (cid) return 'https://www.coursera.org/account/accomplishments/verify/' + cid;
-                        }
-                    }
-                } catch(e) {}
-                return null;
-            }""")
-            if api_cert2:
-                print(f"[SERTIFIKAT TOPILDI - REST API 2] {api_cert2}")
-                return api_cert2
-
+            vc2 = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Посмотреть сертификат')").first
+            if vc2.is_visible():
+                vc2.click(force=True)
+                time.sleep(5)
+                if "/account/accomplishments/verify/" in page.url:
+                    return page.url
         except Exception as e:
-            print(f"[!] extract_certificate #{c_try} da ogohlantirish: {e}")
-            time.sleep(1.0)
+            print(f"[!] Sertifikat qidiruv {c_try}-urinishda xatolik: {e}")
+            time.sleep(2)
 
     return None
 
@@ -1758,11 +1690,10 @@ def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, stu
         safe_goto_commit(page, "https://aileaders.uz/auth/login", wait_sec=2.0)
         l_em = page.locator("input[type='email'], input[name='email']").first
         if l_em.count() > 0 and l_em.is_visible():
-            fill_react_input(l_em, student_email)
+            l_em.fill(student_email)
         l_pwd = page.locator("input[type='password'], input[name='password']").first
         if l_pwd.count() > 0 and l_pwd.is_visible():
-            fill_react_input(l_pwd, student_password)
-        page.wait_for_timeout(400)
+            l_pwd.fill(student_password)
         l_sub = page.locator("button[type='submit'], button:has-text('Kirish')").first
         if l_sub.count() > 0 and l_sub.is_visible():
             l_sub.click(force=True)
@@ -1770,40 +1701,30 @@ def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, stu
 
         # Coursera kursini tanlash va "TEKSHIRISH" bosish
         print("   Coursera 'Generativ AI' kursi biriktirilmoqda...")
-        safe_goto_commit(page, "https://aileaders.uz/courses", wait_sec=2.8)
-        time.sleep(1.0)
-        # 1. Telegram yoki boshqa modalni yopish
-        page.evaluate("""() => {
-            const btns = Array.from(document.querySelectorAll('button'));
-            const b = btns.find(x => x.getAttribute('aria-label') === 'Yopish' || (x.innerText || '').trim().toLowerCase() === 'close');
-            if (b) b.click();
-        }""")
-        page.keyboard.press("Escape")
-        time.sleep(0.5)
+        safe_goto_commit(page, "https://aileaders.uz/courses?platform=coursera", wait_sec=2.8)
+        for _ in range(2):
+            try:
+                page.keyboard.press("Escape")
+                page.evaluate("""() => {
+                    const b = document.querySelector('button[aria-label="Yopish"], button[aria-label="Close"]');
+                    if (b) b.click();
+                }""")
+            except Exception:
+                pass
+            time.sleep(0.25)
 
-        # 2. 'Kurslar' va 'Coursera' filterini tanlash
-        kurslar_tab = page.locator("button:has-text('Kurslar')").first
-        if kurslar_tab.count() > 0 and kurslar_tab.is_visible():
-            kurslar_tab.click(force=True)
-            time.sleep(0.5)
-
-        c_tab = page.locator("button").filter(has_text=re.compile(r"Coursera", re.I)).first
+        c_tab = page.locator("button:has-text('Coursera')").first
         if c_tab.count() > 0 and c_tab.is_visible():
             c_tab.click(force=True)
             time.sleep(1.5)
 
-        # 3. 'Generativ Sun’iy Intellektga Kirish' kartochkasini tanlash / ochish
-        h3 = page.locator("h3").filter(has_text=re.compile(r"Generativ", re.I)).first
-        if h3.count() > 0 and h3.is_visible():
-            card_box = h3.locator("xpath=ancestor::div[contains(@class, 'flex-col')]").first
-            open_btn = card_box.locator("button[aria-label='Kursni ochish']").first if card_box.count() > 0 else None
-            if open_btn and open_btn.count() > 0 and open_btn.is_visible():
-                open_btn.click(force=True)
-            else:
-                h3.click(force=True)
+        card = page.locator("div, a, h3, p").filter(has_text=re.compile(r"Generativ Sun.iy Intellekt|Introduction to Generative AI", re.I)).first
+        if card.count() > 0 and card.is_visible():
+            card.scroll_into_view_if_needed()
+            card.click(force=True)
             time.sleep(2.5)
 
-        tekshir_b = page.locator("button:has-text('TEKSHIRISH'), button:has-text('Tekshirish'), button:has-text('Boshlash'), button:has-text('Kursga')").first
+        tekshir_b = page.locator("button:has-text('TEKSHIRISH'), button:has-text('Tekshirish')").first
         if tekshir_b.count() > 0 and tekshir_b.is_visible():
             print("   'TEKSHIRISH' bosildi!")
             tekshir_b.click(force=True)
@@ -1854,17 +1775,6 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
                 c_pwd = page.locator("input[placeholder='Create password'], input[type='password'], input[name='password']").first
                 if c_pwd.count() > 0 and c_pwd.is_visible():
                     time.sleep(0.8)
-                    fn_in = page.locator("input[name='fullName'], input[placeholder*='full name' i], input[placeholder*='имя' i]").first
-                    if fn_in.count() > 0 and fn_in.is_visible():
-                        try:
-                            cur_fn = fn_in.input_value().strip()
-                        except Exception:
-                            cur_fn = ""
-                        if not cur_fn and full_name:
-                            fn_in.click(force=True)
-                            time.sleep(0.15)
-                            fn_in.fill(full_name.replace("`", "'"))
-                            time.sleep(0.25)
                     c_pwd.click(force=True)
                     time.sleep(0.25)
                     page.keyboard.press("Control+A")
@@ -1951,6 +1861,178 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
     print(f"[REGISTRATSIYA] {full_name} bazada yo'q. Aileaders.uz orqali yangi profil ochilmoqda...")
     try:
         mail_svc = TempMailAPI()
+        student_email = mail_svc.email
+        student_password = COMMON_PASSWORD
+        print(f"   Yangi pochta: {student_email}")
+    except Exception as e:
+        print(f"[!] TempMail xatosi: {e}")
+        return "RETRY", None
+
+    # Hujjat seriyasini har xil variantlarda (Guvohnoma: T, I-TV, TV, I-FR va Passport) tekshirib ko'rish ro'yxati
+    ds_up = doc_series.upper().strip()
+    num_pad7 = doc_number.zfill(7) if len(doc_number) < 7 else doc_number
+    doc_candidates = []
+    if "-" in ds_up:
+        doc_candidates.append(("guvohnoma", ds_up, num_pad7))
+        if ds_up != "I-TV":
+            doc_candidates.append(("guvohnoma", "I-TV", num_pad7))
+        if ds_up != "I-FR":
+            doc_candidates.append(("guvohnoma", "I-FR", num_pad7))
+        doc_candidates.append(("guvohnoma", "T", doc_number))
+    elif ds_up in ("T", "TV", "FR", "TN", "AN", "SM", "QA", "SU", "NA", "BU", "XO", "JZ", "SI", "QR", "TS"):
+        doc_candidates.append(("guvohnoma", ds_up, doc_number if ds_up == "T" else num_pad7))
+        if ds_up == "T":
+            doc_candidates.append(("guvohnoma", "I-TV", num_pad7))
+            doc_candidates.append(("guvohnoma", "TV", num_pad7))
+            doc_candidates.append(("guvohnoma", "I-FR", num_pad7))
+            if len(doc_number) == 8:
+                doc_candidates.append(("guvohnoma", "I-TV", doc_number[1:]))
+                doc_candidates.append(("guvohnoma", "I-FR", doc_number[1:]))
+        else:
+            doc_candidates.append(("guvohnoma", f"I-{ds_up}", num_pad7))
+            doc_candidates.append(("guvohnoma", "T", doc_number))
+            doc_candidates.append(("guvohnoma", "I-FR", num_pad7))
+        doc_candidates.append(("passport", ds_up, doc_number))
+    else:
+        doc_candidates.append(("passport", ds_up, doc_number))
+        doc_candidates.append(("guvohnoma", ds_up, num_pad7))
+        doc_candidates.append(("guvohnoma", f"I-{ds_up}", num_pad7))
+        doc_candidates.append(("guvohnoma", "T", doc_number))
+
+    try:
+        reg_step2_ok = False
+        for cand_idx, (doc_mode, s_val, n_val) in enumerate(doc_candidates):
+            if cand_idx > 0:
+                print(f"   [HUJJAT VARIANTI #{cand_idx + 1}] {doc_mode.upper()} sifatida '{s_val} {n_val}' tekshirilmoqda...")
+            safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.5)
+
+            if doc_mode == "guvohnoma":
+                guv_b = page.locator("button:has-text('Guvohnoma')").first
+                try:
+                    guv_b.wait_for(state="visible", timeout=12000)
+                except Exception:
+                    pass
+                if guv_b.is_visible():
+                    guv_b.click(force=True)
+                    page.wait_for_timeout(600)
+                page.locator("input[placeholder*='Seriya'], input[name='metrika_series']").first.fill(s_val)
+                page.locator("input[placeholder*='Raqam'], input[name='metrika_number']").first.fill(n_val)
+            else:
+                pass_b = page.locator("button").filter(has_text="Passport").first
+                if pass_b.is_visible():
+                    pass_b.click(force=True)
+                    page.wait_for_timeout(400)
+                page.locator("input[name='passport_number'], input[placeholder*='Seriya']").first.fill(f"{s_val}{n_val}")
+
+            pick_date_aileaders(page, birth_date)
+
+            cb = page.locator("button[role='combobox'], button[data-slot='select-trigger']").first
+            if cb.is_visible():
+                cb.click(force=True)
+                page.wait_for_timeout(400)
+                opt = page.locator("[role='option']").first
+                if opt.is_visible():
+                    opt.click(force=True)
+                page.wait_for_timeout(400)
+
+            sub1 = page.locator("button[type='submit']").filter(has_text=re.compile(r"Ro.yxatdan o.tish", re.I)).first
+            if sub1.is_visible():
+                sub1.click(force=True)
+                page.wait_for_timeout(3500)
+
+            keyingi = page.locator("button:has-text('Keyingi')").first
+            if not keyingi.is_visible():
+                b_txt1 = page.evaluate("() => (document.body ? document.body.innerText : '')")
+                if "registratsiya qilingan" in b_txt1.lower():
+                    print(f"   [!] Aileaders.uz javobi: '{s_val} {n_val}' ushbu ma'lumotlar bilan oldin registratsiya qilingan!")
+                    save_unrecoverable_student(full_name, class_name, f"Aileaders.uz: Ushbu ma'lumotlar bilan oldin registratsiya qilingan ({s_val} {n_val})")
+                    return "UNRECOVERABLE", None
+                continue
+
+            print(f"   1-bosqich muvaffaqiyatli ({s_val} {n_val})! 'Keyingi' bosilmoqda...")
+            keyingi.click(force=True)
+            page.wait_for_timeout(2000)
+
+            em_in = page.locator("input[type='email'], input[name='email']").first
+            if not em_in.is_visible():
+                continue
+            fill_react_input(em_in, student_email)
+
+            ph_in = page.locator("input[name='number'], input[type='tel']").first
+            if ph_in.is_visible():
+                ph_in.click(force=True)
+                ph_in.evaluate("""(el, val) => {
+                    el.focus();
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                    setter.call(el, val);
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                }""", PHONE_FORMATTED)
+
+            p1 = page.locator("input[name='password1'], input[type='password']").first
+            p2 = page.locator("input[name='password2']").first
+            if p1.is_visible():
+                fill_react_input(p1, student_password)
+            if p2.is_visible():
+                fill_react_input(p2, student_password)
+
+            page.wait_for_timeout(800)
+            sub2 = page.locator("div[role='dialog'] button, form button").filter(has_text=re.compile(r"Keyingi|Ro.yxatdan|Yuborish", re.I)).last
+            sub2.click(force=True)
+            page.wait_for_timeout(3500)
+
+            body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+            if "Serverda ichki xatolik" in body_txt or ("/auth/register" in page.url and em_in.is_visible() and "xatolik" in body_txt.lower()):
+                print(f"   [!] '{s_val} {n_val}' da Aileaders server xatosi berdi, keyingi variant sinab ko'riladi...")
+                continue
+
+            reg_step2_ok = True
+            break
+
+        if not reg_step2_ok:
+            save_unrecoverable_student(full_name, class_name, f"Barcha hujjat variantlari ({doc_series} {doc_number}: T/TV/I-TV/I-FR) tekshirildi, Aileaders ma'lumotni topmadi!")
+            return "UNRECOVERABLE", None
+
+        with FILE_LOCK:
+            with open(ACCOUNTS_FILE, "a", encoding="utf-8") as f:
+                f.write(f"{full_name} | {class_name} | {student_email} | {student_password} | {PHONE_RAW}\n")
+        print(f"   [OK] Yangi akkount bazaga (akkountlar.txt) saqlandi: {student_email}")
+        if status_callback:
+            status_callback(f"📧 Aileaders.uz profil ochildi ({student_email})! 1-xabar aktivatsiya qilinmoqda...")
+
+        # 1-XABAR: Aileaders Tasdiqlash + TEKSHIRISH
+        ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, student_password)
+        if status_callback:
+            status_callback(f"🔗 1-xabar tasdiqlandi! Coursera 2-xabar (Join now) ulanmoqda...")
+
+        # 2-XABAR: Coursera Join now + Set Password
+        joined_ok = complete_coursera_join_and_enroll(page, mail_svc, student_password, full_name=full_name, wait_timeout=45)
+        if joined_ok:
+            if status_callback:
+                status_callback(f"✅ Coursera DEDC dasturiga ulandi va kursga yozildi!")
+            return "OK", {"email": student_email, "password": student_password}
+        return "RETRY", {"email": student_email, "password": student_password}
+    except Exception as e:
+        print(f"   [!] Ro'yxatdan o'tishda xatolik ushlandi (to'xtab qolmaydi!): {e}")
+        return "RETRY", ({"email": student_email, "password": student_password} if reg_step2_ok else None)
+
+
+def register_new_student_and_enroll(context, page, student, status_callback=None):
+    """Bazada (akkountlar.txt) yo'q o'quvchini Aileaders.uz + Coursera da ro'yxatdan o'tkazadi."""
+    full_name = student["name"]
+    class_name = student.get("class", "")
+    birth_date = student.get("birth_date", "").strip()
+    doc_series = student.get("doc_series", "").strip()
+    doc_number = student.get("doc_number", "").strip()
+
+    if not birth_date or not doc_series or not doc_number:
+        save_unrecoverable_student(full_name, class_name, "akkountlar.txt da yo'q va ro'yxatdan o'tish uchun tug'ilgan sana/hujjat ma'lumotlari berilmagan")
+        return "UNRECOVERABLE", None
+
+    print(f"[REGISTRATSIYA] {full_name} bazada yo'q. Aileaders.uz orqali yangi profil ochilmoqda...")
+    try:
+        from gmail_automation import GmailMailboxService
+        mail_svc = GmailMailboxService()
         student_email = mail_svc.email
         student_password = generate_student_password(full_name)
         print(f"   Yangi pochta: {student_email} | Yangi parol: {student_password}")
@@ -2227,11 +2309,21 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                         pass
                     return "FAILED"
                 acc = new_acc
-                # Yangi ochilgan profil Coursera DEDC dasturiga register_new_student_and_enroll ichida 100% ulandi.
-                # To'g'ridan-to'g'ri kurs darslariga o'tamiz (qayta login qilib sessiyani buzmaymiz!):
+                # Yangi ochilgan profil Coursera sessiyasiga kirganligini tekshiramiz:
+                cookies = [c.get("name", "") for c in context.cookies()]
+                has_cauth = any("CAUTH" in c for c in cookies)
+                if not has_cauth:
+                    print(f"{tag}[AUTH] Yangi profil ({acc['email']}) uchun Coursera sessiyasi tekshirilmoqda...")
+                    logged_ok, was_signup = login_coursera(page, acc["email"], acc["password"], full_name=full_name)
+                    cookies = [c.get("name", "") for c in context.cookies()]
+                    has_cauth = any("CAUTH" in c for c in cookies)
+                    if not has_cauth:
+                        login_via_magic_link(page, acc["email"])
+
+                # To'g'ridan-to'g'ri kurs darslariga o'tamiz:
                 safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/module/1", wait_sec=3.0)
                 dismiss_all_popups(page)
-                if page.locator("button[data-e2e='enroll-button'], button:has-text('Enroll'), button:has-text('Зарегистрироваться')").count() > 0:
+                if page.locator("button[data-e2e='enroll-button'], button:has-text('Enroll')").count() > 0:
                     ensure_enrolled_on_coursera(page)
             else:
                 email = acc["email"]
@@ -2251,7 +2343,11 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                     if status_callback:
                         status_callback(f"🔗 1-xabar tasdiqlandi! Coursera 2-xabar (Join now) ulanmoqda...")
                     try:
-                        existing_mail = TempMailAPI(existing_email=email)
+                        if "gmail.com" in email.lower():
+                            from gmail_automation import GmailMailboxService
+                            existing_mail = GmailMailboxService(existing_email=email)
+                        else:
+                            existing_mail = TempMailAPI(existing_email=email)
                         if existing_mail.token:
                             joined_ok = complete_coursera_join_and_enroll(page, existing_mail, password, full_name=full_name, wait_timeout=15)
                             if joined_ok:
@@ -2267,13 +2363,9 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                         cookies = [c.get("name", "") for c in context.cookies()]
                         has_cauth = any("CAUTH" in c for c in cookies)
 
-                # Kurs ichiga kirishni tekshiramiz: agar sahifada /home/ yoki /learn/ bo'lsa, sessiya faol!
-                safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/module/1", wait_sec=2.5)
-                dismiss_all_popups(page)
-                if ("/learn/" in page.url or "/home/" in page.url or "/programs/" in page.url) and "authMode=login" not in page.url:
-                    has_cauth = True
-                elif page.locator("a[href*='quiz-1'], a:has-text('Quiz 1'), a:has-text('Тест 1'), a:has-text('Quiz')").count() > 0:
-                    has_cauth = True
+                # Kurs ichiga kirishni tekshiramiz: faqat haqiqiy CAUTH sessiya cookie bo'lsa kirilgan deb hisoblaymiz!
+                cookies = [c.get("name", "") for c in context.cookies()]
+                has_cauth = any("CAUTH" in c for c in cookies)
 
                 if not has_cauth:
                     print(f"{tag}[!] Eski akkount ({email}) orqali kirib bo'lmadi! Yangi profil bilan noldan ro'yxatdan o'tkazilmoqda...")

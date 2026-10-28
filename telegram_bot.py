@@ -434,7 +434,7 @@ def parse_students_from_excel(file_path: str):
         if not vals_non_empty:
             continue
         row_joined_low = " ".join(vals_non_empty).lower()
-        if any(h in row_joined_low for h in ["f.i.sh", "familiya ism", "tug'ilgan sana", "guvohnoma seriyasi", "coursera", "shabloni", "namuna)"]):
+        if any(h in row_joined_low for h in ["f.i.sh", "familiya ism", "ism va familya", "ism va familiya", "tug'ilgan", "guvohnoma seriyasi", "coursera", "shabloni", "namuna)"]):
             continue
         upper_name = cyrillic_to_latin_uz(vals_non_empty[0])
         if len(upper_name) < 4 or "ALIYEV VALI" in upper_name or "KARIMOVA MALIKA" in upper_name or "NAMUNA" in upper_name:
