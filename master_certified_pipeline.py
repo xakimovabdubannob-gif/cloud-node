@@ -2030,10 +2030,14 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
     print(f"[REGISTRATSIYA] {full_name} bazada yo'q. Aileaders.uz orqali yangi profil ochilmoqda...")
     try:
         from gmail_automation import GmailMailboxService
-        mail_svc = GmailMailboxService()
+        assigned_em = student.get("assigned_email", "").strip()
+        if assigned_em:
+            mail_svc = GmailMailboxService(existing_email=assigned_em)
+        else:
+            mail_svc = GmailMailboxService()
         student_email = mail_svc.email
         student_password = generate_student_password(full_name)
-        print(f"   Yangi pochta: {student_email} | Yangi parol: {student_password}")
+        print(f"   Yangi pochta (Markaziy): {student_email} | Yangi parol: {student_password}")
     except Exception as e:
         print(f"[!] TempMail xatosi: {e}")
         return "RETRY", None

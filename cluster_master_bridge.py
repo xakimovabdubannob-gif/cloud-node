@@ -343,11 +343,20 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                     in_progress_students[sn_sticky] = now
                     _worker_assigned[w_key] = sn_sticky
                     acc_line = ""
+                    assigned_email = sticky.get("assigned_email", "")
                     if sn_sticky in accs:
                         ac = accs[sn_sticky]
+                        assigned_email = ac.get("email", "") or assigned_email
                         acc_line = f"{sn_sticky} | {st_sticky.get('class_name', '')} | {ac.get('email', '')} | {ac.get('password', '')}"
                     elif sticky.get("account_line"):
                         acc_line = sticky["account_line"]
+                    if not assigned_email and not acc_line:
+                        try:
+                            from gmail_automation import get_next_available_alias
+                            assigned_email = get_next_available_alias()
+                            sticky["assigned_email"] = assigned_email
+                        except Exception:
+                            pass
                     return {
                         "has_task": True,
                         "task_id": f"task_{sticky['idx']}_{int(now)}",
@@ -356,6 +365,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                         "total": sticky["total"],
                         "student": st_sticky,
                         "account_line": acc_line,
+                        "assigned_email": assigned_email,
                     }
                 else:
                     _sticky_workers.pop(w_key, None)
@@ -399,9 +409,20 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
             chat_id, idx, total, st, s_name = best_cand
             in_progress_students[s_name] = now
             acc_line = ""
+            assigned_email = ""
             if s_name in accs:
                 ac = accs[s_name]
+                assigned_email = ac.get("email", "")
                 acc_line = f"{s_name} | {st.get('class_name', '')} | {ac.get('email', '')} | {ac.get('password', '')}"
+            else:
+                try:
+                    from gmail_automation import get_next_available_alias
+                    assigned_email = get_next_available_alias()
+                    print(f"[CENTRAL EMAIL ALLOCATOR] {s_name} -> {assigned_email}")
+                except Exception as alias_err:
+                    print(f"[CENTRAL EMAIL ERROR] {alias_err}")
+                    assigned_email = ""
+
             if w_key:
                 _worker_assigned[w_key] = s_name
                 _sticky_workers[w_key] = {
@@ -411,6 +432,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                     "student": st,
                     "tries": 1,
                     "account_line": acc_line,
+                    "assigned_email": assigned_email,
                 }
             return {
                 "has_task": True,
@@ -420,6 +442,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 "total": total,
                 "student": st,
                 "account_line": acc_line,
+                "assigned_email": assigned_email,
             }
 
         # Agar barcha qolgan o'quvchilar hozir faol agentlar tomonidan ishlanayotgan bo'lsa (all_done=False!),
@@ -1852,7 +1875,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             node_id = data.get("node_id", "PC2")
             pc_name = data.get("pc_name", node_id)
             ram_gb = int(data.get("ram_gb", 16))
-            def_workers = 6 if ram_gb >= 14 else 4
+            def_workers = 1
 
             notify_now = False
             force_prompt = bool(data.get("force_prompt", False))
@@ -1860,7 +1883,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 now_ts = time.time()
                 active_worker_count = len([k for k, v in cluster_nodes.items() if k != "MASTER_PC" and (now_ts - float(v.get("last_seen", 0)) < 90)])
                 if node_id not in cluster_nodes:
-                    def_workers = 6 if ram_gb >= 14 else 4
+                    def_workers = 1
                     node_approved = True
                     node_status = "?? Faol ishlamoqda..."
                     cluster_nodes[node_id] = {

@@ -234,6 +234,9 @@ class ClusterWorkerNode:
             st = data["student"]
             s_name = st["name"]
             acc_line_from_master = data.get("account_line", "")
+            assigned_email = data.get("assigned_email", "").strip()
+            if assigned_email:
+                st["assigned_email"] = assigned_email
 
             if acc_line_from_master and s_name not in get_existing_accounts():
                 with self.lock:
