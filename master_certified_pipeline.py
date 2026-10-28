@@ -784,9 +784,7 @@ def ensure_videos_and_reading_100(page, overview):
             time.sleep(3.5)
             page.evaluate("""() => {
                 const v = document.querySelector('video');
-                if (v && !v.ended) {
-                    v.currentTime = v.duration;
-                }
+                try { if (v && !v.ended && v.duration && Number.isFinite(v.duration)) { v.currentTime = v.duration; } } catch(e) {}
                 const btns = Array.from(document.querySelectorAll('button'));
                 const mark = btns.find(b => /mark as completed|отметить как/i.test(b.innerText || ''));
                 if (mark) mark.click();
