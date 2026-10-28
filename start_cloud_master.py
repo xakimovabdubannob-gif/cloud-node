@@ -95,17 +95,42 @@ if os.path.exists("orders_archive.zip"):
         with zipfile.ZipFile("orders_archive.zip", "r") as z:
             z.extractall(".")
         print("[ORDERS] orders_archive.zip (barcha sanalar va buyurtmalar) muvaffaqiyatli ochildi!")
-        # Tarixiy fayllarni archived papkasiga o'tkazamiz, bot ularni yangi faol buyurtma deb o'ylamaydi:
-        for fn in os.listdir("bot_orders"):
-            if fn.startswith("in_") and fn.endswith(".xlsx"):
-                src = os.path.join("bot_orders", fn)
-                dst = os.path.join(arch_dir, fn)
-                try:
-                    if os.path.exists(dst):
-                        os.remove(dst)
-                    shutil.move(src, dst)
-                except Exception:
-                    pass
+        # Faqat 100% tugallangan tarixlarni arxivga o'tkazamiz, chala qolgan faol buyurtmalar bot_orders da qoladi!
+        try:
+            from master_certified_pipeline import get_completed_students, get_unrecoverable_students
+            from telegram_bot import parse_students_from_excel
+            done_set = get_completed_students()
+            unrec_set = get_unrecoverable_students()
+            for fn in os.listdir("bot_orders"):
+                if fn.startswith("in_") and fn.endswith(".xlsx"):
+                    src = os.path.join("bot_orders", fn)
+                    try:
+                        sts = parse_students_from_excel(src)
+                        rem = [s for s in sts if s["name"] not in done_set and s["name"] not in unrec_set]
+                        if len(rem) == 0:
+                            dst = os.path.join(arch_dir, fn)
+                            if os.path.exists(dst):
+                                os.remove(dst)
+                            shutil.move(src, dst)
+                        else:
+                            print(f"[ACTIVE ORDER SAQLANDI] {fn} -> Qolgan o'quvchilar: {len(rem)} ta!")
+                    except Exception:
+                        pass
+            # Shuningdek, archived dagi chala qolgan bugungi buyurtmalarni bot_orders ga qaytaramiz:
+            for fn in os.listdir(arch_dir):
+                if fn.startswith("in_") and fn.endswith(".xlsx"):
+                    src = os.path.join(arch_dir, fn)
+                    try:
+                        sts = parse_students_from_excel(src)
+                        rem = [s for s in sts if s["name"] not in done_set and s["name"] not in unrec_set]
+                        if len(rem) > 0:
+                            dst = os.path.join("bot_orders", fn)
+                            shutil.copy2(src, dst)
+                            print(f"[ACTIVE ORDER TIKLANDI] {fn} -> bot_orders ga qaytarildi ({len(rem)} ta o'quvchi)!")
+                    except Exception:
+                        pass
+        except Exception as filter_err:
+            print(f"[ORDERS SMART FILTER ERROR] {filter_err}")
     except Exception as e:
         print(f"[ORDERS UNZIP ERROR] {e}")
 
