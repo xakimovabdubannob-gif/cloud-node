@@ -2174,6 +2174,13 @@ class TelegramBotServer:
                 key=os.path.getmtime,
                 reverse=True,
             )
+            if not files and os.path.exists(os.path.join(ORDERS_DIR, "archived")):
+                arch_d = os.path.join(ORDERS_DIR, "archived")
+                files = sorted(
+                    [os.path.join(arch_d, f) for f in os.listdir(arch_d) if f.startswith("in_") and f.endswith(".xlsx")],
+                    key=os.path.getmtime,
+                    reverse=True,
+                )
             done_set = get_completed_students()
             unrec_set = get_unrecoverable_students()
             for fpath in files:
@@ -2183,6 +2190,12 @@ class TelegramBotServer:
                 rem = [s for s in sts if s["name"] not in done_set and s["name"] not in unrec_set]
                 if rem:
                     bn = os.path.basename(fpath)
+                    if "archived" in fpath:
+                        import shutil
+                        try:
+                            shutil.copy2(fpath, os.path.join(ORDERS_DIR, bn))
+                        except Exception:
+                            pass
                     parts = bn.split("_", 3)
                     ord_cid = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else (self.admin_id or notify_chat_id)
                     res_orig_fname = parts[3].rsplit(".", 1)[0] if len(parts) >= 4 else "Buyurtma"
