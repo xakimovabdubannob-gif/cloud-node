@@ -1219,49 +1219,82 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
     return False
 
 def verify_student_name_with_3_checks(page, student_name):
-    """Verify My Name sahifasida ismni kiritib, galichka qo'yib, Submit bosadi."""
+    """
+    Verify My Name (Ismni tasdiqlash) - 100% ishonchli:
+    1. Avval joriy sahifada (Welcome / Module 1) tekshiradi.
+    2. Topilmasa Welcome sahifasiga, keyin Accomplishments sahifasiga o'tadi.
+    3. Tugmani bosib, modalda ism-familiyani to'ldiradi, galichka qo'yadi va Submit bosadi.
+    """
     print(f"\n[ISMNI TASDIQLASH] {student_name}...")
+    clean_name = student_name.replace("`", "'").strip()
+    parts = [p.strip() for p in clean_name.split() if p.strip()]
+    first_name = parts[0] if len(parts) > 0 else clean_name
+    middle_name = parts[1] if len(parts) > 2 else ""
+    last_name = " ".join(parts[2:]) if len(parts) > 2 else (parts[1] if len(parts) == 2 else "")
+
     for v_try in range(1, 4):
         try:
             mult = v_try
-            safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=CERTIFICATES", wait_sec=2.5 * mult)
-            time.sleep(1.5)
+            # 1. Joriy sahifada yoki Welcome / Accomplishments sahifalarida Verify My Name tugmasini qidiramiz
+            target_urls = [
+                None,  # Joriy sahifaning o'zi
+                "https://www.coursera.org/learn/introduction-to-generative-ai/home/welcome",
+                "https://www.coursera.org/account/accomplishments"
+            ]
 
-            v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
-            if not v_btn.is_visible():
-                safe_navigate(page, "https://www.coursera.org/organizations/dedc", wait_sec=2.5 * mult)
-                time.sleep(1.5)
-                v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
+            v_btn_found = False
+            for u in target_urls:
+                if u:
+                    safe_navigate(page, u, wait_sec=2.0 * mult)
+                    time.sleep(1.0)
 
-            if not v_btn.is_visible():
-                safe_navigate(page, "https://www.coursera.org/account/accomplishments", wait_sec=2.5 * mult)
-                time.sleep(1.5)
-                v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
+                # Modal oyna allaqachon ochiq bo'lsa
+                if page.locator("div[role='dialog'], [data-testid='modal'], .cds-Modal-container").count() > 0:
+                    v_btn_found = True
+                    break
 
-            if not v_btn.is_visible():
+                # JavaScript orqali barcha tugma va havolalarni qidiramiz
+                has_v = page.evaluate("""() => {
+                    const els = Array.from(document.querySelectorAll('button, a'));
+                    const target = els.find(el => {
+                        const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                        return /verify my name|verify name|подтвердить имя|подтвердите имя|подтвердить/i.test(t);
+                    });
+                    if (target) {
+                        target.scrollIntoView({block: 'center'});
+                        target.click();
+                        return true;
+                    }
+                    return false;
+                }""")
+                if has_v:
+                    print(f"[ISMNI TASDIQLASH] 'Verify My Name' tugmasi JS orqali bosildi ({page.url})!")
+                    v_btn_found = True
+                    time.sleep(2.0 * mult)
+                    break
+
+                v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Подтвердить имя'), a:has-text('Подтвердить имя'), button:has-text('Подтвердите имя'), a:has-text('Подтвердите имя')").first
+                if v_btn.count() > 0 and v_btn.is_visible():
+                    print(f"[ISMNI TASDIQLASH] 'Verify My Name' tugmasi topildi va bosilmoqda ({page.url})...")
+                    try:
+                        v_btn.click(force=True)
+                    except Exception:
+                        box_v = v_btn.bounding_box()
+                        if box_v:
+                            page.mouse.click(box_v['x'] + box_v['width']/2, box_v['y'] + box_v['height']/2)
+                    v_btn_found = True
+                    time.sleep(2.0 * mult)
+                    break
+
+            if not v_btn_found and v_try > 1:
                 print("[ISMNI TASDIQLASH] 'Verify My Name' tugmasi sahifada ko'rinmadi (ism allaqachon tasdiqlangan).")
                 return True
 
-            print(f"[ISMNI TASDIQLASH] 'Verify My Name' bosilmoqda (urinish #{v_try}/3)...")
+            # Modal oynadagi ism maydonlarini to'ldirish
             try:
-                v_btn.click(force=True)
-            except Exception:
-                box_v = v_btn.bounding_box()
-                if box_v:
-                    page.mouse.click(box_v['x'] + box_v['width']/2, box_v['y'] + box_v['height']/2)
-
-            # DIQQAT: dismiss_all_popups() chaqirilmaydi (chunki modal oynani o'chirib yuboradi)!
-            time.sleep(2.5 * mult)
-
-            try:
-                page.wait_for_selector("div[role='dialog'], [data-testid='modal'], .cds-Modal-container, input[type='text']", timeout=6000)
+                page.wait_for_selector("div[role='dialog'], [data-testid='modal'], .cds-Modal-container, input[type='text']", timeout=5000)
             except Exception:
                 pass
-
-            parts = [p.strip() for p in student_name.split() if p.strip()]
-            first_name = parts[0] if len(parts) > 0 else student_name
-            middle_name = parts[1] if len(parts) > 2 else ""
-            last_name = " ".join(parts[2:]) if len(parts) > 2 else (parts[1] if len(parts) == 2 else "")
 
             all_inps = page.locator("div[role='dialog'] input[type='text'], div[role='dialog'] input:not([type]), .cds-Modal-container input[type='text'], input[type='text']:visible").all()
             content_inps = []
@@ -1283,7 +1316,7 @@ def verify_student_name_with_3_checks(page, student_name):
             elif len(content_inps) == 1:
                 content_inps[0].fill(student_name)
 
-            # React onChange va input hodisalarini faollashtirish
+            # React hodisalarini chaqirish
             page.evaluate("""() => {
                 const inps = Array.from(document.querySelectorAll('div[role="dialog"] input, .cds-Modal-container input, input'));
                 inps.forEach(i => {
@@ -1293,14 +1326,7 @@ def verify_student_name_with_3_checks(page, student_name):
             }""")
             time.sleep(0.5)
 
-            # Rozilik galichkasini belgilash
-            all_cbs = page.locator("div[role='dialog'] input[type='checkbox'], .cds-Modal-container input[type='checkbox'], input[type='checkbox']:visible").all()
-            for cb in all_cbs:
-                try:
-                    if not cb.is_checked():
-                        cb.check(force=True)
-                except Exception:
-                    pass
+            # Rozilik galichkasini (checkbox) belgilash
             page.evaluate("""() => {
                 const cbs = Array.from(document.querySelectorAll('div[role="dialog"] input[type="checkbox"], .cds-Modal-container input[type="checkbox"], input[type="checkbox"]'));
                 cbs.forEach(c => {
@@ -1313,47 +1339,28 @@ def verify_student_name_with_3_checks(page, student_name):
             time.sleep(0.5)
 
             # Submit tugmasini bosish
-            sub_selectors = [
-                "div[role='dialog'] button:has-text('Submit')",
-                "div[role='dialog'] button:has-text('Отправить')",
-                "div[role='dialog'] button:has-text('Сохранить')",
-                "div[role='dialog'] button:has-text('Подтвердить')",
-                ".cds-Modal-container button:has-text('Submit')",
-                ".cds-Modal-container button:has-text('Отправить')",
-                ".cds-Modal-container button:has-text('Сохранить')",
-                "button[type='submit']:visible",
-                "button:has-text('Submit'):visible",
-                "button:has-text('Отправить'):visible",
-                "button:has-text('Сохранить'):visible",
-            ]
-            clicked_sub = False
-            for sel in sub_selectors:
-                btn = page.locator(sel).first
-                if btn.count() > 0 and btn.is_visible():
-                    try:
-                        btn.click(force=True, timeout=2000)
-                        clicked_sub = True
-                        break
-                    except Exception:
-                        pass
+            clicked_sub = page.evaluate("""() => {
+                const btns = Array.from(document.querySelectorAll('div[role="dialog"] button, .cds-Modal-container button, button'));
+                const target = btns.find(b => {
+                    const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+                    return /submit|отправить|сохранить|подтвердить/i.test(t);
+                });
+                if (target) {
+                    target.disabled = false;
+                    target.click();
+                    return true;
+                }
+                return false;
+            }""")
 
             if not clicked_sub:
-                clicked_sub = page.evaluate("""() => {
-                    const btns = Array.from(document.querySelectorAll('div[role="dialog"] button, .cds-Modal-container button, button'));
-                    const target = btns.find(b => {
-                        const t = (b.innerText || '').toLowerCase();
-                        return t.includes('submit') || t.includes('отправить') || t.includes('сохранить') || t.includes('подтвердить');
-                    });
-                    if (target) {
-                        target.disabled = false;
-                        target.click();
-                        return true;
-                    }
-                    return false;
-                }""")
+                sub_btn = page.locator("div[role='dialog'] button:has-text('Submit'), div[role='dialog'] button:has-text('Отправить'), div[role='dialog'] button:has-text('Подтвердить'), .cds-Modal-container button:has-text('Submit'), button[type='submit']:visible").first
+                if sub_btn.count() > 0 and sub_btn.is_visible():
+                    sub_btn.click(force=True)
+                    clicked_sub = True
 
             print(f"[ISMNI TASDIQLASH] Submit bosildi: {clicked_sub}")
-            time.sleep(4.0 * mult)
+            time.sleep(3.0 * mult)
             return True
         except Exception as e:
             print(f"[!] Verify My Name {v_try}-urinishda xatolik: {e}")
@@ -1362,64 +1369,62 @@ def verify_student_name_with_3_checks(page, student_name):
     return False
 
 def extract_certificate_with_3_checks(page, student_name=""):
-    """Sertifikat havolasini 100% aniqlik bilan barcha tegishli sahifalardan qidiradi."""
+    """
+    Sertifikat havolasini 100% aniqlik bilan oladi:
+    1. BIRINCHI O'RINDA: Coursera ichki REST API orqali (0.5 soniyada chiqadi!).
+    2. Global Accomplishments sahifasi (/account/accomplishments) havolalari.
+    3. Welcome sahifasi (/home/welcome) "View certificate" / DOM havolalari.
+    4. DEDC Portali (/organizations/dedc/my-learning?myLearningTab=CERTIFICATES).
+    """
     for c_try in range(1, 4):
         try:
             mult = c_try
             print(f"[SERTIFIKAT QIDIRUV #{c_try}/3 | Kutish: {mult}x] Tekshirilmoqda...")
 
-            # 1. Kurs bosh sahifasi (Home / Welcome) - Coursera kursni tugatgan zahoti shu yerda sertifikat chiqaradi!
-            safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/welcome", wait_sec=2.5 * mult)
-            time.sleep(2.0)
-
-            # Agar Verify My Name hali ham turgan bo'lsa, uni tezda tasdiqlaymiz!
-            v_check = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
-            if v_check.is_visible():
-                print("[SERTIFIKAT QIDIRUV - WELCOME] 'Verify My Name' tugmasi topildi, tasdiqlanmoqda...")
-                verify_student_name_with_3_checks(page, student_name)
-                safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/welcome", wait_sec=2.5)
-                time.sleep(2.0)
-
-            dom_cert = page.evaluate("""() => {
-                const as = Array.from(document.querySelectorAll('a'));
-                for (const a of as) {
-                    const h = a.href || '';
-                    if (h.includes('/account/accomplishments/verify/') || h.includes('/account/accomplishments/certificate/') || h.includes('/account/accomplishments/records/')) {
-                        return h;
-                    }
-                }
-                return null;
-            }""")
-            if dom_cert:
-                print(f"[SERTIFIKAT TOPILDI - WELCOME] {dom_cert}")
-                return dom_cert
-
-            vc = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Посмотреть сертификат'), button:has-text('Посмотреть сертификат'), a:has-text('Сертификат'), button:has-text('Сертификат')").first
-            if vc.is_visible():
-                try:
-                    vc.click(force=True)
-                    time.sleep(3.0)
-                    for p_ctx in page.context.pages:
-                        if "/account/accomplishments/verify/" in p_ctx.url or "/account/accomplishments/certificate/" in p_ctx.url:
-                            print(f"[SERTIFIKAT TOPILDI - TAB] {p_ctx.url}")
-                            return p_ctx.url
-                    if "/account/accomplishments/verify/" in page.url or "/account/accomplishments/certificate/" in page.url:
-                        print(f"[SERTIFIKAT TOPILDI - CURR] {page.url}")
-                        return page.url
-                except Exception:
-                    pass
+            # 1. BIRINCHI O'RINDA REST API (eng tez va eng ishonchli usul!):
+            for _ in range(3):
+                api_cert = page.evaluate("""async () => {
+                    try {
+                        const r2 = await fetch('/api/openCourseMemberships.v1?q=none&includes=certificates');
+                        if (r2.ok) {
+                            const d2 = await r2.json();
+                            const certs = (d2.linked && d2.linked['certificates.v1']) || [];
+                            for (const c of certs) {
+                                const cid = c.id || c.certificateCode;
+                                if (cid) return 'https://www.coursera.org/account/accomplishments/verify/' + cid;
+                            }
+                        }
+                    } catch(e) {}
+                    try {
+                        const r = await fetch('/api/certificates.v1?q=my');
+                        if (r.ok) {
+                            const d = await r.json();
+                            for (const el of (d.elements || [])) {
+                                const cid = el.id || el.certificateCode || el.certificateId;
+                                if (cid) return 'https://www.coursera.org/account/accomplishments/verify/' + cid;
+                            }
+                        }
+                    } catch(e) {}
+                    return null;
+                }""")
+                if api_cert:
+                    print(f"[SERTIFIKAT TOPILDI - REST API] {api_cert}")
+                    return api_cert
+                time.sleep(1.0)
 
             # 2. Global Accomplishments sahifasi (/account/accomplishments)
             safe_navigate(page, "https://www.coursera.org/account/accomplishments", wait_sec=2.5 * mult)
             time.sleep(2.0)
 
-            v_check2 = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
-            if v_check2.is_visible():
-                print("[SERTIFIKAT QIDIRUV - ACCOMPLISHMENTS] Ism tasdiqlanmagan ekan, qayta Verify My Name qilinmoqda...")
+            # Agar Verify My Name hali ham turgan bo'lsa, tezda tasdiqlaymiz:
+            v_check = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Подтвердить имя'), a:has-text('Подтвердить имя'), button:has-text('Подтвердите имя'), a:has-text('Подтвердите имя')").first
+            if v_check.count() > 0 and v_check.is_visible():
+                print("[SERTIFIKAT QIDIRUV - ACCOMPLISHMENTS] 'Verify My Name' tugmasi topildi, tasdiqlanmoqda...")
                 verify_student_name_with_3_checks(page, student_name)
-                safe_navigate(page, "https://www.coursera.org/account/accomplishments", wait_sec=2.5)
+                safe_navigate(page, "https://www.coursera.org/account/accomplishments", wait_sec=2.0)
                 time.sleep(2.0)
 
+            # Sahifadagi barcha havolalarni tekshiramiz
             dom_cert = page.evaluate("""() => {
                 const as = Array.from(document.querySelectorAll('a'));
                 for (const a of as) {
@@ -1434,10 +1439,11 @@ def extract_certificate_with_3_checks(page, student_name=""):
                 print(f"[SERTIFIKAT TOPILDI - ACCOMPLISHMENTS] {dom_cert}")
                 return dom_cert
 
-            vc2 = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Посмотреть сертификат'), button:has-text('Посмотреть сертификат'), a:has-text('Сертификат'), button:has-text('Сертификат')").first
-            if vc2.is_visible():
+            # View Certificate tugmalari bosiladi
+            vc = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Просмотреть сертификат'), button:has-text('Просмотреть сертификат'), a:has-text('Поделиться'), button:has-text('Поделиться'), a[data-e2e*='certificate']").first
+            if vc.count() > 0 and vc.is_visible():
                 try:
-                    vc2.click(force=True)
+                    vc.click(force=True)
                     time.sleep(3.0)
                     for p_ctx in page.context.pages:
                         if "/account/accomplishments/verify/" in p_ctx.url or "/account/accomplishments/certificate/" in p_ctx.url:
@@ -1449,49 +1455,48 @@ def extract_certificate_with_3_checks(page, student_name=""):
                 except Exception:
                     pass
 
-            # 3. DEDC Portali: CERTIFICATES va COMPLETED tablari
-            for tab_name in ["CERTIFICATES", "COMPLETED"]:
-                safe_navigate(page, f"https://www.coursera.org/organizations/dedc/my-learning?myLearningTab={tab_name}", wait_sec=2.5 * mult)
+            # 3. Kurs Welcome sahifasi (/home/welcome)
+            safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/welcome", wait_sec=2.5 * mult)
+            time.sleep(2.0)
+
+            v_check_w = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Подтвердить имя'), a:has-text('Подтвердить имя'), button:has-text('Подтвердите имя'), a:has-text('Подтвердите имя')").first
+            if v_check_w.count() > 0 and v_check_w.is_visible():
+                print("[SERTIFIKAT QIDIRUV - WELCOME] 'Verify My Name' tugmasi topildi, tasdiqlanmoqda...")
+                verify_student_name_with_3_checks(page, student_name)
+                safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/welcome", wait_sec=2.0)
                 time.sleep(2.0)
-                dom_cert = page.evaluate("""() => {
-                    const as = Array.from(document.querySelectorAll('a'));
-                    for (const a of as) {
-                        const h = a.href || '';
-                        if (h.includes('/account/accomplishments/verify/') || h.includes('/account/accomplishments/certificate/') || h.includes('/account/accomplishments/records/')) {
-                            return h;
-                        }
-                    }
-                    return null;
-                }""")
-                if dom_cert:
-                    print(f"[SERTIFIKAT TOPILDI - DEDC {tab_name}] {dom_cert}")
-                    return dom_cert
 
-                vc3 = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Посмотреть сертификат'), button:has-text('Посмотреть сертификат'), a:has-text('Сертификат'), button:has-text('Сертификат')").first
-                if vc3.is_visible():
-                    try:
-                        vc3.click(force=True)
-                        time.sleep(3.0)
-                        for p_ctx in page.context.pages:
-                            if "/account/accomplishments/verify/" in p_ctx.url:
-                                return p_ctx.url
-                        if "/account/accomplishments/verify/" in page.url:
-                            return page.url
-                    except Exception:
-                        pass
-
-            # 4. REST API tekshiruvi
-            api_cert = page.evaluate("""async () => {
-                try {
-                    const r = await fetch('/api/certificates.v1?q=my');
-                    if (r.ok) {
-                        const d = await r.json();
-                        for (const el of (d.elements || [])) {
-                            const cid = el.id || el.certificateCode || el.certificateId;
-                            if (cid) return 'https://www.coursera.org/account/accomplishments/verify/' + cid;
-                        }
+            dom_cert_w = page.evaluate("""() => {
+                const as = Array.from(document.querySelectorAll('a'));
+                for (const a of as) {
+                    const h = a.href || '';
+                    if (h.includes('/account/accomplishments/verify/') || h.includes('/account/accomplishments/certificate/') || h.includes('/account/accomplishments/records/')) {
+                        return h;
                     }
-                } catch(e) {}
+                }
+                return null;
+            }""")
+            if dom_cert_w:
+                print(f"[SERTIFIKAT TOPILDI - WELCOME] {dom_cert_w}")
+                return dom_cert_w
+
+            vc_w = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Просмотреть сертификат'), button:has-text('Просмотреть сертификат'), a:has-text('Поделиться'), button:has-text('Поделиться')").first
+            if vc_w.count() > 0 and vc_w.is_visible():
+                try:
+                    vc_w.click(force=True)
+                    time.sleep(3.0)
+                    for p_ctx in page.context.pages:
+                        if "/account/accomplishments/verify/" in p_ctx.url or "/account/accomplishments/certificate/" in p_ctx.url:
+                            print(f"[SERTIFIKAT TOPILDI - WELCOME TAB] {p_ctx.url}")
+                            return p_ctx.url
+                    if "/account/accomplishments/verify/" in page.url or "/account/accomplishments/certificate/" in page.url:
+                        print(f"[SERTIFIKAT TOPILDI - WELCOME CURR] {page.url}")
+                        return page.url
+                except Exception:
+                    pass
+
+            # 4. Qayta REST API tekshiruvi:
+            api_cert2 = page.evaluate("""async () => {
                 try {
                     const r2 = await fetch('/api/openCourseMemberships.v1?q=none&includes=certificates');
                     if (r2.ok) {
@@ -1505,16 +1510,15 @@ def extract_certificate_with_3_checks(page, student_name=""):
                 } catch(e) {}
                 return null;
             }""")
-            if api_cert:
-                print(f"[SERTIFIKAT TOPILDI - REST API] {api_cert}")
-                return api_cert
+            if api_cert2:
+                print(f"[SERTIFIKAT TOPILDI - REST API 2] {api_cert2}")
+                return api_cert2
 
         except Exception as e:
             print(f"[!] extract_certificate #{c_try} da ogohlantirish: {e}")
             time.sleep(1.0)
 
     return None
-
 
 class TempMailAPI:
     def __init__(self, existing_email=None):
