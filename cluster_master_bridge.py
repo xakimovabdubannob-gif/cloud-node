@@ -1,4 +1,5 @@
-_CACHE_CLEAR_TS = 0.0\n# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
+_CACHE_CLEAR_TS = 0.0
 """
 =============================================================================
 UZBEK CODERS - MUSTAQIL MULTI-PC CLUSTER KO'PRIGI (MASTER BRIDGE)
@@ -2373,7 +2374,7 @@ def _sync_tunnel_to_github(tunnel_url: str):
             _LAST_SYNCED_TUNNEL_URL = tunnel_url
             return
         content_b64 = base64.b64encode((tunnel_url + "\n").encode("utf-8")).decode("utf-8")
-        data = {"message": "sync: cluster tunnel updated [skip ci]", "content": content_b64}
+        data = {"message": "sync: cluster tunnel updated [skip ci]", "content": content_b64, "branch": "main"}
         if sha:
             data["sha"] = sha
         requests.put(api_u, headers=hdr, json=data, timeout=6)
