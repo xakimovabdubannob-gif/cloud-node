@@ -2687,8 +2687,14 @@ def cloudflared_loop():
 
     cf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloudflared.exe")
     if not os.path.exists(cf_path):
-        print("[CLUSTER] cloudflared.exe topilmadi!")
-        return
+        print("[CLUSTER] cloudflared.exe topilmadi! Avtomatik yuklab olinmoqda...")
+        try:
+            cf_dl_url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
+            urllib.request.urlretrieve(cf_dl_url, cf_path)
+            print("[CLUSTER] cloudflared.exe muvaffaqiyatli yuklab olindi!")
+        except Exception as dl_err:
+            print(f"[CLUSTER] cloudflared.exe yuklashda xato: {dl_err}")
+            return
 
     while True:
         try:
