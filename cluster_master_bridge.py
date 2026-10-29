@@ -1534,7 +1534,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             with _mail_hub_lock:
                 cache_dict = _MAIL_HUB.get(mail_type, {})
                 link = cache_dict.get(em, "")
-                if not link:
+                if not link and "gmail.com" not in em:
                     em_clean = em.replace(".", "")
                     for k, v in cache_dict.items():
                         if k.replace(".", "") == em_clean:
@@ -2626,9 +2626,16 @@ def master_mail_hub_loop():
                                 subj = (msg.get("Subject") or "").lower()
                                 body, links = gmail_automation.get_clean_body_and_links(msg)
 
+                                headers_text = " ".join([
+                                    msg.get("Delivered-To") or "",
+                                    msg.get("X-Forwarded-To") or "",
+                                    msg.get("To") or "",
+                                    msg.get("Envelope-To") or "",
+                                    msg.get("X-Original-To") or "",
+                                    msg.get("Cc") or ""
+                                ]).lower()
                                 target_emails = set()
-                                clean_to = to_addr.split("@")[0].replace(".", "") if "@" in to_addr else ""
-                                for m in re.findall(r"[a-z0-9\.]+@gmail\.com", to_addr + " " + body.lower()):
+                                for m in re.findall(r"[a-z0-9\.]+@gmail\.com", headers_text + " " + body.lower()):
                                     target_emails.add(m.strip().lower())
 
                                 # 1. Coursera Invite
@@ -2638,7 +2645,6 @@ def master_mail_hub_loop():
                                         with _mail_hub_lock:
                                             for tem in target_emails:
                                                 _MAIL_HUB["coursera"][tem] = c_link
-                                                _MAIL_HUB["coursera"][tem.replace(".", "")] = c_link
 
                                 # 2. Aileaders Activation
                                 if "faollashtirish" in subj or "tasdiqlash" in subj or "aktivatsiya" in subj or "aileaders" in subj:

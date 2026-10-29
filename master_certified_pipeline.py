@@ -1757,23 +1757,6 @@ def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, stu
 
 def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_name="", wait_timeout=45):
     """2-XABAR: Pochtadagi Coursera Enterprise 'Join now' taklifnomasini ochib, parolni (@Ak101095) o'rnatadi va DEDC dasturiga qo'shadi."""
-    # Tezkor Magic Link tekshiruvi: agar hub keshida kirish havolasi tayyor bo'lsa, behuda kutmay darhol kiriladi!
-    if getattr(mail_svc, "email", ""):
-        try:
-            from gmail_automation import fetch_coursera_magic_link
-            m_link = fetch_coursera_magic_link(mail_svc.email, timeout_sec=2)
-            if m_link:
-                print("   [COURSERA AUTO-LOGIN] Keshdagi Magic Link orqali tezkor kirilmoqda...")
-                safe_goto_commit(page, m_link, wait_sec=4.0)
-                time.sleep(3.0)
-                cookies = [c.get("name", "") for c in page.context.cookies()]
-                if any("CAUTH" in c for c in cookies):
-                    print("   [COURSERA AUTO-LOGIN] Magic Link orqali muvaffaqiyatli kirildi!")
-                    ensure_enrolled_on_coursera(page)
-                    return True
-        except Exception:
-            pass
-
     print("   [2-XABAR: Coursera Join now] Taklifnoma kutilmoqda...")
     coursera_link = mail_svc.wait_for_coursera_invite(timeout=wait_timeout)
     if not coursera_link:
