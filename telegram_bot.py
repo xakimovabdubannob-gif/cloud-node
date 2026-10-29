@@ -632,20 +632,27 @@ def _get_orders_by_date():
         return {}
 
     all_files = []
+    # 1. Hozirgi faol buyurtmalar (bot_orders ichida turgan fayllar har doim BUGUNGI kunga tegishli)
     for fn in os.listdir(ORDERS_DIR):
-        if fn.endswith(".xlsx") and not fn.startswith("Oquvchilar_Shablon") and not fn.startswith("Yigma_") and not fn.startswith("Barcha_Tayyor_"):
-            all_files.append((os.path.join(ORDERS_DIR, fn), fn))
+        if fn.startswith("in_") and fn.endswith(".xlsx"):
+            all_files.append((os.path.join(ORDERS_DIR, fn), fn, True))
 
+    # 2. Arxivlangan eski buyurtmalar (o'zining asl sanasiga tegishli)
     arch_dir = os.path.join(ORDERS_DIR, "archived")
     if os.path.exists(arch_dir):
         for fn in os.listdir(arch_dir):
-            if fn.endswith(".xlsx") and not fn.startswith("Oquvchilar_Shablon") and not fn.startswith("Yigma_") and not fn.startswith("Barcha_Tayyor_"):
-                all_files.append((os.path.join(arch_dir, fn), fn))
+            clean_fn = re.sub(r'^arch_\d+_', '', fn)
+            if clean_fn.startswith("in_") and clean_fn.endswith(".xlsx"):
+                all_files.append((os.path.join(arch_dir, fn), fn, False))
 
     date_groups = {}
-    for fpath, fn in all_files:
+    for fpath, fn, is_active in all_files:
         try:
-            dt_key, ts = get_order_file_date_and_ts(fpath, fn)
+            if is_active:
+                dt_key = datetime.now().strftime("%Y-%m-%d")
+                ts = int(time.time())
+            else:
+                dt_key, ts = get_order_file_date_and_ts(fpath, fn)
             if dt_key not in date_groups:
                 date_groups[dt_key] = []
             date_groups[dt_key].append((fpath, fn, ts))
