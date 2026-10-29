@@ -302,6 +302,19 @@ def safe_navigate(page, url, max_retries=3, wait_sec=1.5):
 def login_via_magic_link(page, email):
     """Pochtaga 'Email me a login link' orqali kirish havolasi yuborib, 100% kirish kafolati!"""
     if "gmail.com" in email.lower():
+        try:
+            from gmail_automation import fetch_coursera_magic_link
+            cached_mlink = fetch_coursera_magic_link(email, timeout_sec=2)
+            if cached_mlink:
+                print(f"   [GMAIL MAGIC LINK] Keshdagi havola topildi: {email} tizimga kirilmoqda...")
+                page.goto(cached_mlink, wait_until="domcontentloaded", timeout=30000)
+                time.sleep(5.0)
+                cookies = [c.get("name", "") for c in page.context.cookies()]
+                if any("CAUTH" in c for c in cookies):
+                    print(f"[LOGIN] Keshdagi Magic Link orqali muvaffaqiyatli kirildi! ({email})")
+                    return True
+        except Exception:
+            pass
         print(f"   [GMAIL MAGIC LINK] {email} uchun login link so'ralmoqda...")
         try:
             page.goto("https://www.coursera.org/?authMode=login", wait_until="domcontentloaded", timeout=22000)
