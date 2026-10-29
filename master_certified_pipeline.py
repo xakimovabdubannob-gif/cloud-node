@@ -23,6 +23,8 @@ import json
 import ssl
 import random
 import threading
+import socket
+socket.setdefaulttimeout(15)
 import urllib.request
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed

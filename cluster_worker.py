@@ -18,6 +18,7 @@ import uuid
 import threading
 import subprocess
 import requests
+socket.setdefaulttimeout(15)
 
 try:
     from master_certified_pipeline import (
@@ -269,7 +270,22 @@ class ClusterWorkerNode:
                 except Exception:
                     pass
                 is_headless = os.environ.get("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
-                status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=local_wid)
+                res_holder = ["INCOMPLETE"]
+                def _run_worker_job():
+                    try:
+                        res_holder[0] = process_student(st, status_callback=update_step, headless=is_headless, worker_id=local_wid)
+                    except Exception as _e:
+                        print(f"[WORKER #{local_wid} THREAD ERR] {_e}")
+                        res_holder[0] = "ERROR"
+
+                w_th = threading.Thread(target=_run_worker_job, daemon=True)
+                w_th.start()
+                w_th.join(timeout=360)
+                if w_th.is_alive():
+                    print(f"[WORKER #{local_wid} WATCHDOG TIMEOUT] {s_name} 360s ichida javob bermadi! Bekor qilindi.")
+                    status = "TIMEOUT"
+                else:
+                    status = res_holder[0]
             except Exception as e:
                 print(f"[CLUSTER WORKER #{local_wid} XATO] {e}")
 
