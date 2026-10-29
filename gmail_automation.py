@@ -286,7 +286,7 @@ def fetch_coursera_magic_link(target_email: str, timeout_sec=40) -> str:
     t_start = time.time()
     while time.time() - t_start < timeout_sec:
         hub_link = _query_master_mail_hub("magic", clean_target)
-        if hub_link:
+        if hub_link and "5tTM5sERtHreZReD_lDVWA" not in hub_link:
             print(f"[GMAIL HUB] Magic Link Master Hubdan olindi: {hub_link}")
             return hub_link
         if is_cluster_node() and (time.time() - t_start < 45):

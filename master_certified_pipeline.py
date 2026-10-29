@@ -1948,6 +1948,10 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
         doc_candidates.append(("guvohnoma", "T", doc_number))
 
     try:
+        try:
+            context.clear_cookies()
+        except Exception:
+            pass
         reg_step2_ok = False
         for cand_idx, (doc_mode, s_val, n_val) in enumerate(doc_candidates):
             if cand_idx > 0:
@@ -2142,6 +2146,10 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
         doc_candidates.append(("guvohnoma", "T", doc_number))
 
     try:
+        try:
+            context.clear_cookies()
+        except Exception:
+            pass
         reg_step2_ok = False
         for cand_idx, (doc_mode, s_val, n_val) in enumerate(doc_candidates):
             if cand_idx > 0:
