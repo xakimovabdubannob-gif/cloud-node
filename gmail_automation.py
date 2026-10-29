@@ -220,6 +220,10 @@ def wait_for_coursera_invite(target_email: str, timeout_sec=90) -> str:
         if hub_link:
             print(f"[GMAIL HUB] Coursera havolasi Master Hubdan olindi: {hub_link}")
             return hub_link
+        hub_magic = _query_master_mail_hub("magic", clean_target)
+        if hub_magic:
+            print(f"[GMAIL HUB] Coursera Magic Link Master Hubdan olindi: {hub_magic}")
+            return hub_magic
         if is_cluster_node() and (time.time() - t_start < 45):
             time.sleep(2.5)
             continue
