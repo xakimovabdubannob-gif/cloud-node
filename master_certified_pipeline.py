@@ -49,13 +49,8 @@ import random
 import string
 
 def generate_student_password(name=""):
-    """Har bir o'quvchi uchun har xil, kuchli va eslab qolish oson parol yaratadi."""
-    prefixes = ["Uzbek", "Coder", "Leader", "Smart", "Tech", "Edu", "Star", "Super", "Online", "Skill"]
-    pfx = random.choice(prefixes)
-    digits = "".join(random.choices(string.digits, k=4))
-    special = random.choice(["!", "#", "$", "@"])
-    letter = random.choice(["A", "B", "C", "D", "X", "Y", "Z"])
-    return f"{pfx}{digits}{special}{letter}"
+    """Barcha o'quvchilar uchun yagona, standart va ishonchli parol (@Ak101095)."""
+    return "@Ak101095"
 
 def normalize_name(name):
     if not name:
@@ -2038,6 +2033,21 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
             page.wait_for_timeout(3500)
 
             body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+            # Agar pochta allaqachon ro'yxatdan o'tgan bo'lsa, hujjat xato deb tashlamaymiz, darhol yangi alias olamiz!
+            if "/auth/register" in page.url and em_in.is_visible():
+                from gmail_automation import get_next_available_alias
+                for _al_try in range(5):
+                    if not em_in.is_visible() or "/auth/register" not in page.url:
+                        break
+                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud yoki server xatosi! Yangi fresh alias olinmoqda...")
+                    student_email = get_next_available_alias()
+                    mail_svc.email = student_email
+                    fill_react_input(em_in, student_email)
+                    page.wait_for_timeout(400)
+                    sub2.click(force=True)
+                    page.wait_for_timeout(3500)
+                    body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+
             if "Serverda ichki xatolik" in body_txt or ("/auth/register" in page.url and em_in.is_visible() and "xatolik" in body_txt.lower()):
                 print(f"   [!] '{s_val} {n_val}' da Aileaders server xatosi berdi, keyingi variant sinab ko'riladi...")
                 continue
@@ -2222,6 +2232,21 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
             page.wait_for_timeout(3500)
 
             body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+            # Agar pochta allaqachon ro'yxatdan o'tgan bo'lsa, hujjat xato deb tashlamaymiz, darhol yangi alias olamiz!
+            if "/auth/register" in page.url and em_in.is_visible():
+                from gmail_automation import get_next_available_alias
+                for _al_try in range(5):
+                    if not em_in.is_visible() or "/auth/register" not in page.url:
+                        break
+                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud yoki server xatosi! Yangi fresh alias olinmoqda...")
+                    student_email = get_next_available_alias()
+                    mail_svc.email = student_email
+                    fill_react_input(em_in, student_email)
+                    page.wait_for_timeout(400)
+                    sub2.click(force=True)
+                    page.wait_for_timeout(3500)
+                    body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+
             if "Serverda ichki xatolik" in body_txt or ("/auth/register" in page.url and em_in.is_visible() and "xatolik" in body_txt.lower()):
                 print(f"   [!] '{s_val} {n_val}' da Aileaders server xatosi berdi, keyingi variant sinab ko'riladi...")
                 continue

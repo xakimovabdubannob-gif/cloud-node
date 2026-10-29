@@ -2608,13 +2608,13 @@ def master_mail_hub_loop():
                 for m_id in reversed(mail_ids[-30:]):
                     try:
                         # Avval faqat sarlavhani (1 KB) o'qiymiz, butun xatni yuklamaymiz!
-                        h_status, h_data = mail.fetch(m_id, "(BODY.PEEK[HEADER.FIELDS (SUBJECT TO)])")
+                        h_status, h_data = mail.fetch(m_id, "(BODY.PEEK[HEADER.FIELDS (SUBJECT TO FROM)])")
                         if h_status != "OK" or not h_data or not isinstance(h_data[0], tuple):
                             continue
                         h_text = h_data[0][1].decode("utf-8", errors="replace").lower()
 
                         # Faqat tegishli mavzu bo'lsagina to'liq xatni o'qiymiz
-                        is_relevant = any(k in h_text for k in ["coursera", "invite", "enterprise", "dasturiga", "faollashtirish", "tasdiqlash", "aktivatsiya", "aileaders", "log in", "click the link", "magic"])
+                        is_relevant = any(k in h_text for k in ["coursera", "invite", "enterprise", "dasturiga", "faollashtirish", "tasdiqlash", "tasdiq", "faol", "pochta", "aktivatsiya", "aileaders", "log in", "click the link", "magic"])
                         if not is_relevant:
                             continue
 
@@ -2647,7 +2647,7 @@ def master_mail_hub_loop():
                                                 _MAIL_HUB["coursera"][tem] = c_link
 
                                 # 2. Aileaders Activation
-                                if "faollashtirish" in subj or "tasdiqlash" in subj or "aktivatsiya" in subj or "aileaders" in subj:
+                                if "faol" in subj or "tasdiq" in subj or "pochta" in subj or "aktivatsiya" in subj or "aileaders" in subj:
                                     for l in links:
                                         if "auth/activate" in l or "verify" in l:
                                             with _mail_hub_lock:
