@@ -264,6 +264,10 @@ class ClusterWorkerNode:
             t_work_start = time.time()
             try:
                 try:
+                    subprocess.run(["git", "pull", "--rebase", "origin", "main"], timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    pass
+                try:
                     import importlib, master_certified_pipeline
                     importlib.reload(master_certified_pipeline)
                     from master_certified_pipeline import process_student

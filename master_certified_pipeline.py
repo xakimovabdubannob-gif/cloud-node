@@ -1392,7 +1392,7 @@ def extract_certificate_with_3_checks(page, student_name=""):
             time.sleep(4)
             dismiss_all_popups(page)
             in_prog_text = page.evaluate("() => (document.body ? document.body.innerText : '')")
-            if "Introduction to Generative AI" in in_prog_text and "% complete" in in_prog_text:
+            if "Introduction to Generative AI" in in_prog_text and "% complete" in in_prog_text and not ("100% complete" in in_prog_text or "100 %" in in_prog_text):
                 print("[!] DIQQAT: Kurs hali 'In Progress' da turibdi! IN_PROGRESS ichida qolib ketgan Quiz/Video tekshirilmoqda...")
                 handled_in_prog = False
                 # Birinchi o'rinda IN_PROGRESS kartochkasida qaysi Quiz yozilganini tekshiramiz
@@ -1440,7 +1440,6 @@ def extract_certificate_with_3_checks(page, student_name=""):
                 if handled_in_prog and student_name:
                     verify_student_name_with_3_checks(page, student_name)
                     continue
-                return None
 
             # 2. Accomplishments sahifasi
             safe_navigate(page, "https://www.coursera.org/account/accomplishments")
