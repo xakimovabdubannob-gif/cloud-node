@@ -1527,6 +1527,22 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             self._send_text("OK")
             return
 
+        if path == "/cluster/mail_invite":
+            mail_type = qs.get("type", ["coursera"])[0]
+            em = qs.get("email", [""])[0].lower().strip()
+            link = ""
+            with _mail_hub_lock:
+                cache_dict = _MAIL_HUB.get(mail_type, {})
+                link = cache_dict.get(em, "")
+                if not link:
+                    em_clean = em.replace(".", "")
+                    for k, v in cache_dict.items():
+                        if k.replace(".", "") == em_clean:
+                            link = v
+                            break
+            self._send_json({"ok": bool(link), "link": link})
+            return
+
         if path == "/cluster/request_screenshot":
             node_id = qs.get("node", [""])[0]
             chat_id = int(qs.get("chat_id", [str(load_bot_config().get("admin_id", 6580113791))])[0])
@@ -2551,6 +2567,83 @@ def _watch_user_pin_loop():
         time.sleep(2.5)
 
 
+
+_MAIL_HUB = {
+    "activation": {},
+    "coursera": {},
+    "magic": {},
+}
+_mail_hub_lock = threading.Lock()
+
+def master_mail_hub_loop():
+    """Yagona markaziy Gmail IMAP mijozi: barcha 60 ta agent uchun pochta xabarlarini bitta ulanish bilan ushlab turadi."""
+    import gmail_automation
+    import email
+    print("[MASTER MAIL HUB] Markaziy pochta hubi ishga tushmoqda...")
+    mail = None
+    while True:
+        try:
+            if mail is None:
+                try:
+                    mail = gmail_automation.connect_gmail()
+                    print("[MASTER MAIL HUB] Gmail IMAP bilan yagona aloqa o'rnatildi!")
+                except Exception as ce:
+                    time.sleep(4)
+                    continue
+
+            status, messages = mail.search(None, "ALL")
+            if status == "OK" and messages and messages[0]:
+                mail_ids = messages[0].split()
+                for m_id in reversed(mail_ids[-30:]):
+                    try:
+                        status, msg_data = mail.fetch(m_id, "(RFC822)")
+                        for part in msg_data:
+                            if isinstance(part, tuple):
+                                msg = email.message_from_bytes(part[1])
+                                to_addr = (msg.get("To") or "").lower()
+                                subj = (msg.get("Subject") or "").lower()
+                                body, links = gmail_automation.get_clean_body_and_links(msg)
+
+                                target_emails = set()
+                                for m in re.findall(r"[a-z0-9\.]+@gmail\.com", to_addr + " " + body.lower()):
+                                    target_emails.add(m.strip().lower())
+
+                                # 1. Coursera Invite
+                                if "coursera" in subj or "invite" in subj or "enterprise" in subj or "dasturiga" in subj:
+                                    c_link = gmail_automation.extract_coursera_invite_link_from_msg(msg)
+                                    if c_link:
+                                        with _mail_hub_lock:
+                                            for tem in target_emails:
+                                                _MAIL_HUB["coursera"][tem] = c_link
+
+                                # 2. Aileaders Activation
+                                if "faollashtirish" in subj or "tasdiqlash" in subj or "aktivatsiya" in subj or "aileaders" in subj:
+                                    for l in links:
+                                        if "auth/activate" in l or "verify" in l:
+                                            with _mail_hub_lock:
+                                                for tem in target_emails:
+                                                    _MAIL_HUB["activation"][tem] = l
+
+                                # 3. Coursera Magic Login Link
+                                if "log in" in subj or "click the link" in subj or "magic" in subj:
+                                    for l in links:
+                                        if "link.coursera.org" in l or "coursera.org/magicLinks" in l:
+                                            with _mail_hub_lock:
+                                                for tem in target_emails:
+                                                    _MAIL_HUB["magic"][tem] = l.replace("&amp;", "&")
+                    except Exception:
+                        pass
+            time.sleep(3.5)
+        except Exception as e:
+            try:
+                if mail:
+                    mail.logout()
+            except Exception:
+                pass
+            mail = None
+            time.sleep(4)
+
+
 def cloudflared_loop():
     global public_tunnel_url
     time.sleep(1.5)
@@ -3002,6 +3095,7 @@ if __name__ == "__main__":
         pass
     threading.Thread(target=_prewarm_cache, daemon=True).start()
     threading.Thread(target=cloudflared_loop, daemon=True).start()
+    threading.Thread(target=master_mail_hub_loop, daemon=True).start()
     threading.Thread(target=_watch_user_pin_loop, daemon=True).start()
     threading.Thread(target=node_health_monitor_loop, daemon=True).start()
     print(f"🚀 Cluster Master Bridge port {CLUSTER_PORT} da faol ishga tushdi! (12 ta Kompyuter ulangan)")

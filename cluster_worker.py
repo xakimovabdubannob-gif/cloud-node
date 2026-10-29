@@ -211,6 +211,8 @@ class ClusterWorkerNode:
             if not self.approved or local_wid > self.target_workers or not self.master_url:
                 time.sleep(2)
                 continue
+            if self.master_url:
+                os.environ["CLUSTER_MASTER_URL"] = self.master_url
 
             try:
                 r = requests.post(
@@ -429,6 +431,8 @@ class ClusterWorkerNode:
                 if not self.master_url:
                     time.sleep(4)
                     continue
+            if self.master_url:
+                os.environ["CLUSTER_MASTER_URL"] = self.master_url
 
             try:
                 r = requests.post(

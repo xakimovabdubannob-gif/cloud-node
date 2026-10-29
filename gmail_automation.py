@@ -80,15 +80,44 @@ def get_clean_body_and_links(msg):
     return body, links
 
 
+
+def _query_master_mail_hub(mail_type: str, target_email: str) -> str:
+    """Master Server (port 8766 yoki Cloudflare tunnel) orqali keshdagi havolani 0ms da oladi (Gmailga ulanishsiz!)."""
+    master_url = os.environ.get("CLUSTER_MASTER_URL", "").strip()
+    if not master_url and os.path.exists("cluster_url.txt"):
+        try:
+            master_url = open("cluster_url.txt", "r", encoding="utf-8").read().strip().splitlines()[0].strip()
+        except Exception:
+            pass
+    if not master_url or not master_url.startswith("http"):
+        master_url = "http://127.0.0.1:8766"
+
+    try:
+        import requests
+        r = requests.get(f"{master_url}/cluster/mail_invite", params={"type": mail_type, "email": target_email}, timeout=3)
+        if r.status_code == 200:
+            d = r.json()
+            if d.get("ok") and d.get("link"):
+                return d["link"]
+    except Exception:
+        pass
+    return None
+
+
 def wait_for_aileaders_activation(target_email: str, timeout_sec=90) -> str:
     """
-    IMAP orqali target_email ga kelgan Aileaders faollashtirish havolasini avtomatik ushlaydi.
+    Master Hub yoki IMAP orqali target_email ga kelgan Aileaders faollashtirish havolasini avtomatik ushlaydi.
     """
     clean_target = target_email.lower().strip()
     t_start = time.time()
-    print(f"[GMAIL IMAP] Aileaders faollashtirish xabari kutilmoqda: {clean_target} (maksimum {timeout_sec}s)...")
+    print(f"[GMAIL] Aileaders faollashtirish xabari kutilmoqda: {clean_target} (maksimum {timeout_sec}s)...")
 
     while time.time() - t_start < timeout_sec:
+        hub_link = _query_master_mail_hub("activation", clean_target)
+        if hub_link:
+            print(f"[GMAIL HUB] Aileaders havolasi Master Hubdan olindi: {hub_link}")
+            return hub_link
+        time.sleep(2.5)
         try:
             mail = connect_gmail()
             status, messages = mail.search(None, "ALL")
@@ -149,13 +178,18 @@ def extract_coursera_invite_link_from_msg(msg):
 
 def wait_for_coursera_invite(target_email: str, timeout_sec=90) -> str:
     """
-    IMAP orqali Coursera Enterprise (DEDC) taklifnoma yoki kirish havolasini avtomatik ushlaydi.
+    Master Hub yoki IMAP orqali Coursera Enterprise (DEDC) taklifnoma havolasini avtomatik ushlaydi.
     """
     clean_target = target_email.lower().strip()
     t_start = time.time()
-    print(f"[GMAIL IMAP] Coursera taklifnoma xabari kutilmoqda: {clean_target} (maksimum {timeout_sec}s)...")
+    print(f"[GMAIL] Coursera taklifnoma xabari kutilmoqda: {clean_target} (maksimum {timeout_sec}s)...")
 
     while time.time() - t_start < timeout_sec:
+        hub_link = _query_master_mail_hub("coursera", clean_target)
+        if hub_link:
+            print(f"[GMAIL HUB] Coursera havolasi Master Hubdan olindi: {hub_link}")
+            return hub_link
+        time.sleep(2.5)
         try:
             mail = connect_gmail()
             status, messages = mail.search(None, "ALL")
@@ -213,11 +247,15 @@ class GmailMailboxService:
 
 
 def fetch_coursera_magic_link(target_email: str, timeout_sec=40) -> str:
-    """Gmail orqali Coursera Magic Link (login link) ni avtomatik ushlaydi."""
+    """Master Hub yoki Gmail orqali Coursera Magic Link (login link) ni avtomatik ushlaydi."""
     clean_target = target_email.lower().strip()
     t_start = time.time()
     while time.time() - t_start < timeout_sec:
-        time.sleep(3.0)
+        hub_link = _query_master_mail_hub("magic", clean_target)
+        if hub_link:
+            print(f"[GMAIL HUB] Magic Link Master Hubdan olindi: {hub_link}")
+            return hub_link
+        time.sleep(2.5)
         try:
             mail = connect_gmail()
             status, messages = mail.search(None, "ALL")
