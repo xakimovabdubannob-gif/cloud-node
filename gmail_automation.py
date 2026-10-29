@@ -81,6 +81,10 @@ def get_clean_body_and_links(msg):
 
 
 
+def is_cluster_node():
+    return bool(os.environ.get("TUNNEL_URL") or os.environ.get("CLUSTER_MASTER_URL") or os.path.exists("cluster_url.txt"))
+
+
 def _query_master_mail_hub(mail_type: str, target_email: str) -> str:
     """Master Server (port 8766 yoki Cloudflare tunnel) orqali keshdagi havolani 0ms da oladi (Gmailga ulanishsiz!)."""
     master_url = os.environ.get("CLUSTER_MASTER_URL", "").strip()
@@ -117,6 +121,9 @@ def wait_for_aileaders_activation(target_email: str, timeout_sec=90) -> str:
         if hub_link:
             print(f"[GMAIL HUB] Aileaders havolasi Master Hubdan olindi: {hub_link}")
             return hub_link
+        if is_cluster_node():
+            time.sleep(3.0)
+            continue
         time.sleep(2.5)
         try:
             mail = connect_gmail()
@@ -213,6 +220,9 @@ def wait_for_coursera_invite(target_email: str, timeout_sec=90) -> str:
         if hub_link:
             print(f"[GMAIL HUB] Coursera havolasi Master Hubdan olindi: {hub_link}")
             return hub_link
+        if is_cluster_node():
+            time.sleep(3.0)
+            continue
         time.sleep(2.5)
         try:
             mail = connect_gmail()
@@ -279,6 +289,9 @@ def fetch_coursera_magic_link(target_email: str, timeout_sec=40) -> str:
         if hub_link:
             print(f"[GMAIL HUB] Magic Link Master Hubdan olindi: {hub_link}")
             return hub_link
+        if is_cluster_node():
+            time.sleep(3.0)
+            continue
         time.sleep(2.5)
         try:
             mail = connect_gmail()

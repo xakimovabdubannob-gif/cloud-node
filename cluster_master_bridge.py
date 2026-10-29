@@ -2595,7 +2595,7 @@ def master_mail_hub_loop():
             if status == "OK" and messages and messages[0]:
                 mail_ids = messages[0].split()
                 # 30 ta emas, faqat eng oxirgi 3 ta xatni tekshiramiz (trafik 90% tejaladi!)
-                for m_id in reversed(mail_ids[-3:]):
+                for m_id in reversed(mail_ids[-30:]):
                     try:
                         # Avval faqat sarlavhani (1 KB) o'qiymiz, butun xatni yuklamaymiz!
                         h_status, h_data = mail.fetch(m_id, "(BODY.PEEK[HEADER.FIELDS (SUBJECT TO)])")
@@ -2617,6 +2617,7 @@ def master_mail_hub_loop():
                                 body, links = gmail_automation.get_clean_body_and_links(msg)
 
                                 target_emails = set()
+                                clean_to = to_addr.split("@")[0].replace(".", "") if "@" in to_addr else ""
                                 for m in re.findall(r"[a-z0-9\.]+@gmail\.com", to_addr + " " + body.lower()):
                                     target_emails.add(m.strip().lower())
 
