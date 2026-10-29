@@ -280,9 +280,9 @@ class ClusterWorkerNode:
 
                 w_th = threading.Thread(target=_run_worker_job, daemon=True)
                 w_th.start()
-                w_th.join(timeout=360)
+                w_th.join(timeout=720)
                 if w_th.is_alive():
-                    print(f"[WORKER #{local_wid} WATCHDOG TIMEOUT] {s_name} 360s ichida javob bermadi! Bekor qilindi.")
+                    print(f"[WORKER #{local_wid} WATCHDOG TIMEOUT] {s_name} 720s ichida javob bermadi! Bekor qilindi.")
                     status = "TIMEOUT"
                 else:
                     status = res_holder[0]
