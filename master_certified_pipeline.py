@@ -1937,15 +1937,15 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
 
             if doc_mode == "guvohnoma":
                 guv_b = page.locator("button:has-text('Guvohnoma')").first
-                try:
-                    guv_b.wait_for(state="visible", timeout=12000)
-                except Exception:
-                    pass
-                if guv_b.is_visible():
+                if guv_b.count() > 0 and guv_b.is_visible():
                     guv_b.click(force=True)
-                    page.wait_for_timeout(600)
-                page.locator("input[placeholder*='Seriya'], input[name='metrika_series']").first.fill(s_val)
-                page.locator("input[placeholder*='Raqam'], input[name='metrika_number']").first.fill(n_val)
+                    page.wait_for_timeout(400)
+                p_inp = page.locator("input[name='passport_number'], input[placeholder*='Seriya']").first
+                if p_inp.count() > 0 and p_inp.is_visible():
+                    p_inp.fill(f"{s_val}{n_val}")
+                else:
+                    page.locator("input[placeholder*='Seriya'], input[name='metrika_series']").first.fill(s_val)
+                    page.locator("input[placeholder*='Raqam'], input[name='metrika_number']").first.fill(n_val)
             else:
                 pass_b = page.locator("button").filter(has_text="Passport").first
                 if pass_b.is_visible():
