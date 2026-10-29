@@ -245,7 +245,10 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                     mt = os.path.getmtime(full_p)
                     if mt > 0:
                         candidates_files.append((mt, fn, full_p))
-        candidates_files.sort(key=lambda x: x[0])
+        # Qat'iy qoida: Eski buyurtmalar skaner qilinmasin! Faqat eng oxirgi faol buyurtma olinadi!
+        candidates_files.sort(key=lambda x: x[0], reverse=True)
+        if candidates_files:
+            candidates_files = [candidates_files[0]]
         parsed_orders = []
         for _, fn, full_p in candidates_files:
             parts = fn.split("_")
