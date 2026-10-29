@@ -2357,7 +2357,7 @@ class TelegramBotServer:
             markup = {
                 "inline_keyboard": [
                     [
-                        {"text": "🟢 Yoqish (4 Agent)", "callback_data": f"cl_toggle|{node_id}|on"},
+                        {"text": "🟢 Yoqish (6 Agent)", "callback_data": f"cl_toggle|{node_id}|on"},
                         {"text": "🔴 O'chirish", "callback_data": f"cl_toggle|{node_id}|off"},
                     ],
                     [
@@ -2707,8 +2707,8 @@ class TelegramBotServer:
                         requests.get(f"http://127.0.0.1:8766/cluster/approve?node={q_n}&w=0&act=no", timeout=5)
                         alert_t = f"🔴 {n_id} to'xtatildi! Chala qolgan vazifalari boshqa kompyuterlarga o'tkazildi."
                     else:
-                        requests.get(f"http://127.0.0.1:8766/cluster/approve?node={q_n}&w=4&act=yes", timeout=5)
-                        alert_t = f"🟢 {n_id} yoqildi! 4 ta AI Agent vazifalarni bo'lib olishga kirishdi."
+                        requests.get(f"http://127.0.0.1:8766/cluster/approve?node={q_n}&w=6&act=yes", timeout=5)
+                        alert_t = f"🟢 {n_id} yoqildi! 6 ta AI Agent vazifalarni bo'lib olishga kirishdi."
                     requests.post(
                         f"{self.api_url}/answerCallbackQuery",
                         data={"callback_query_id": cb["id"], "text": alert_t, "show_alert": True},

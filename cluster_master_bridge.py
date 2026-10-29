@@ -1636,7 +1636,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             with nodes_lock:
                 for nid in cluster_nodes:
                     cluster_nodes[nid]["approved"] = True
-                    cluster_nodes[nid]["workers"] = 4
+                    cluster_nodes[nid]["workers"] = 6
                     cluster_nodes[nid]["status"] = "🟢 Faol ishlamoqda..."
                 save_nodes_state(force=True)
             self._send_json({"ok": True, "action": "started_all"})
@@ -1875,7 +1875,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             node_id = data.get("node_id", "PC2")
             pc_name = data.get("pc_name", node_id)
             ram_gb = int(data.get("ram_gb", 16))
-            def_workers = 1
+            def_workers = int(os.environ.get("DEFAULT_WORKERS_PER_NODE", "6"))
 
             notify_now = False
             force_prompt = bool(data.get("force_prompt", False))
@@ -1883,9 +1883,9 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 now_ts = time.time()
                 active_worker_count = len([k for k, v in cluster_nodes.items() if k != "MASTER_PC" and (now_ts - float(v.get("last_seen", 0)) < 90)])
                 if node_id not in cluster_nodes:
-                    def_workers = 1
+                    # default to 6 workers
                     node_approved = True
-                    node_status = "?? Faol ishlamoqda..."
+                    node_status = "🟢 Faol ishlamoqda..."
                     cluster_nodes[node_id] = {
                         "pc_name": pc_name,
                         "ram_gb": ram_gb,
@@ -1903,8 +1903,8 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     cluster_nodes[node_id]["ram_gb"] = ram_gb
                     if not cluster_nodes[node_id].get("approved", True) or cluster_nodes[node_id].get("workers", 0) == 0:
                         cluster_nodes[node_id]["approved"] = True
-                        cluster_nodes[node_id]["workers"] = 6 if ram_gb >= 14 else 4
-                        cluster_nodes[node_id]["status"] = "?? Faol ishlamoqda..."
+                        cluster_nodes[node_id]["workers"] = def_workers
+                        cluster_nodes[node_id]["status"] = "🟢 Faol ishlamoqda..."
                     save_nodes_state()
                 pc_idx_reg = (list(cluster_nodes.keys()).index(node_id) + 2) if node_id in cluster_nodes else 2
                 approved = cluster_nodes[node_id].get("approved", True)

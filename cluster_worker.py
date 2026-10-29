@@ -103,7 +103,7 @@ class ClusterWorkerNode:
         self.pc_name = f"{socket.gethostname()}-{mac_tail}"
         self.node_id = self.pc_name.replace(" ", "_")[:28]
         self.ram_gb = get_ram_gb()
-        default_w = int(os.environ.get("WORKER_COUNT", "1"))
+        default_w = int(os.environ.get("WORKER_COUNT", "6"))
         self.target_workers = default_w
         self.approved = False
         self.master_url = ""
@@ -453,7 +453,7 @@ class ClusterWorkerNode:
                             started_workers.add(wid)
                             t = threading.Thread(target=self.worker_thread_fn, args=(wid,), daemon=True)
                             t.start()
-                            time.sleep(0.3)
+                            time.sleep(1.0)
             except Exception:
                 self.master_url = ""
             time.sleep(5)
