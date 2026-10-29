@@ -295,6 +295,8 @@ def get_certificate_map():
                     parts = [p.strip() for p in line.split("|")]
                     cert_u = parts[2] if len(parts) >= 3 else parts[1]
                     fn = parts[0].upper()
+                    if "Y0MWT5MYGV8I" in cert_u and "KOMILOVA" not in fn:
+                        continue
                     cert_map[fn] = cert_u
                     cert_map[fn.replace("`", "'")] = cert_u
                     cert_map[fn.replace("'", "`")] = cert_u

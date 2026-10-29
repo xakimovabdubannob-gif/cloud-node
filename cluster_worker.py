@@ -184,11 +184,16 @@ class ClusterWorkerNode:
             return {}
 
     def get_student_cert_line(self, s_name: str) -> str:
+        s_norm = s_name.replace("`", "'").strip().upper()
         if os.path.exists(RESULTS_FILE):
             with open(RESULTS_FILE, "r", encoding="utf-8", errors="replace") as f:
                 for ln in f.read().splitlines():
-                    if ln.strip().startswith(s_name + " |"):
-                        return ln.strip()
+                    ln_s = ln.strip()
+                    if "|" in ln_s:
+                        fn = ln_s.split("|")[0].replace("`", "'").strip().upper()
+                        if fn == s_norm:
+                            if "Y0MWT5MYGV8I" not in ln_s or "KOMILOVA" in fn:
+                                return ln_s
         return ""
 
     def get_student_acc_line(self, s_name: str) -> str:

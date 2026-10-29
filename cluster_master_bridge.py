@@ -2097,6 +2097,10 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             st = data.get("student", {})
             s_name = st.get("name", "?")
             cert_line = data.get("cert_line", "")
+            if "Y0MWT5MYGV8I" in cert_line and "KOMILOVA" not in s_name.upper():
+                print(f"[CLUSTER FINISH] {s_name} uchun Y0MWT5MYGV8I rad etildi (Komilova sertifikati)!")
+                cert_line = ""
+                status = "INCOMPLETE"
             acc_line = data.get("account_line", "")
             err_line = data.get("error_line", "")
             chat_id = data.get("chat_id") or load_bot_config().get("admin_id", 6580113791)
