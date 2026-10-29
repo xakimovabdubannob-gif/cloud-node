@@ -1651,8 +1651,23 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if path == "/cluster/clear_cache":
+            import shutil
             with nodes_lock:
-                _state_mem_cache["ts"] = 0.0
+                if os.path.exists(ORDERS_DIR):
+                    arch_dir = os.path.join(ORDERS_DIR, "archived")
+                    os.makedirs(arch_dir, exist_ok=True)
+                    for fn in os.listdir(ORDERS_DIR):
+                        if fn.startswith("in_") and fn.endswith(".xlsx"):
+                            src_p = os.path.join(ORDERS_DIR, fn)
+                            dst_p = os.path.join(arch_dir, f"arch_{int(time.time())}_{fn}")
+                            try:
+                                shutil.move(src_p, dst_p)
+                            except Exception:
+                                try:
+                                    os.remove(src_p)
+                                except Exception:
+                                    pass
+                _state_mem_cache["ts"] = time.time()
                 _state_mem_cache["unrec"] = set()
                 _state_mem_cache["orders"] = []
                 _excel_cache.clear()
@@ -1666,7 +1681,11 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                             ef.write("# Xatolar kesh tozalandi\n")
                     except Exception:
                         pass
-            self._send_json({"ok": True, "action": "cleared_all_cache"})
+                for nid in cluster_nodes:
+                    cluster_nodes[nid]["status"] = "🟡 Bo'sh (Barcha buyurtmalar tozalandi, yangi fayl kutilmoqda)"
+                    cluster_nodes[nid]["worker_statuses"] = {}
+                save_nodes_state(force=True)
+            self._send_json({"ok": True, "action": "cleared_all_cache", "remaining_orders": 0})
             return
 
         if path == "/cluster/rebalance":

@@ -2098,6 +2098,13 @@ class TelegramBotServer:
             requests.get("http://127.0.0.1:8766/cluster/clear_cache", timeout=3)
         except Exception:
             pass
+        if os.path.exists("cluster_url.txt"):
+            try:
+                t_u = open("cluster_url.txt", "r", encoding="utf-8").read().strip()
+                if t_u.startswith("http"):
+                    requests.get(f"{t_u}/cluster/clear_cache", timeout=5)
+            except Exception:
+                pass
         self.is_paused = False
 
     def pause_all_tasks(self, chat_id: int):
