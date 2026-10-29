@@ -121,8 +121,8 @@ def wait_for_aileaders_activation(target_email: str, timeout_sec=90) -> str:
         if hub_link:
             print(f"[GMAIL HUB] Aileaders havolasi Master Hubdan olindi: {hub_link}")
             return hub_link
-        if is_cluster_node():
-            time.sleep(3.0)
+        if is_cluster_node() and (time.time() - t_start < 45):
+            time.sleep(2.5)
             continue
         time.sleep(2.5)
         try:
@@ -220,8 +220,8 @@ def wait_for_coursera_invite(target_email: str, timeout_sec=90) -> str:
         if hub_link:
             print(f"[GMAIL HUB] Coursera havolasi Master Hubdan olindi: {hub_link}")
             return hub_link
-        if is_cluster_node():
-            time.sleep(3.0)
+        if is_cluster_node() and (time.time() - t_start < 45):
+            time.sleep(2.5)
             continue
         time.sleep(2.5)
         try:
@@ -289,8 +289,8 @@ def fetch_coursera_magic_link(target_email: str, timeout_sec=40) -> str:
         if hub_link:
             print(f"[GMAIL HUB] Magic Link Master Hubdan olindi: {hub_link}")
             return hub_link
-        if is_cluster_node():
-            time.sleep(3.0)
+        if is_cluster_node() and (time.time() - t_start < 45):
+            time.sleep(2.5)
             continue
         time.sleep(2.5)
         try:

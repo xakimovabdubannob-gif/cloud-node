@@ -2591,6 +2591,16 @@ def master_mail_hub_loop():
                     time.sleep(30)
                     continue
 
+            try:
+                mail.noop()
+            except Exception:
+                try:
+                    mail.logout()
+                except Exception:
+                    pass
+                mail = None
+                time.sleep(1)
+                continue
             status, messages = mail.search(None, "ALL")
             if status == "OK" and messages and messages[0]:
                 mail_ids = messages[0].split()
@@ -2628,6 +2638,7 @@ def master_mail_hub_loop():
                                         with _mail_hub_lock:
                                             for tem in target_emails:
                                                 _MAIL_HUB["coursera"][tem] = c_link
+                                                _MAIL_HUB["coursera"][tem.replace(".", "")] = c_link
 
                                 # 2. Aileaders Activation
                                 if "faollashtirish" in subj or "tasdiqlash" in subj or "aktivatsiya" in subj or "aileaders" in subj:
