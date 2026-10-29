@@ -418,66 +418,155 @@ def parse_students_from_text(text: str):
 
 
 
+def _parse_excel_fallback_xml(file_path: str):
+    """Buzilgan yoki noto'g'ri style'li Excel fayllarni to'g'ridan-to'g'ri XML orqali 100% xatosiz o'qish."""
+    import zipfile, xml.etree.ElementTree as ET, datetime
+    students = []
+    try:
+        with zipfile.ZipFile(file_path, "r") as z:
+            strings = []
+            if "xl/sharedStrings.xml" in z.namelist():
+                s_tree = ET.fromstring(z.read("xl/sharedStrings.xml"))
+                for si in s_tree.findall("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}si"):
+                    t_elem = si.find("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t")
+                    if t_elem is not None and t_elem.text:
+                        strings.append(t_elem.text)
+                    else:
+                        txt = "".join([t.text for t in si.iter("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t") if t.text])
+                        strings.append(txt)
+
+            sheet_name = "xl/worksheets/sheet1.xml"
+            for sn in z.namelist():
+                if sn.startswith("xl/worksheets/sheet") and sn.endswith(".xml"):
+                    sheet_name = sn
+                    break
+            sheet_tree = ET.fromstring(z.read(sheet_name))
+
+            for r in sheet_tree.iter("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row"):
+                vals = []
+                for c in r.iter("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}c"):
+                    t = c.get("t")
+                    v = c.find("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}v")
+                    val = ""
+                    if v is not None and v.text:
+                        if t == "s":
+                            idx = int(v.text)
+                            val = strings[idx] if idx < len(strings) else ""
+                        else:
+                            val = v.text
+                    vals.append(val.strip())
+                vals_non_empty = [v for v in vals if v]
+                if not vals_non_empty:
+                    continue
+                if (vals_non_empty[0].isdigit() or vals_non_empty[0] in ("№", "#", "N", "No", "T/r")) and len(vals_non_empty) >= 2:
+                    vals_non_empty = vals_non_empty[1:]
+                vals_clean = [v for v in vals_non_empty if not (v.isdigit() and len(v) == 14)]
+                if not vals_clean:
+                    continue
+                row_joined_low = " ".join(vals_clean).lower()
+                if any(h in row_joined_low for h in ["f.i.sh", "familiya ism", "ism va familya", "ism va familiya", "tug'ilgan", "guvohnoma", "coursera", "shabloni"]):
+                    continue
+                upper_name = cyrillic_to_latin_uz(vals_clean[0])
+                if len(upper_name) < 4 or "ALIYEV VALI" in upper_name or "NAMUNA" in upper_name:
+                    continue
+
+                b_date = ""
+                if len(vals_clean) > 1:
+                    raw_b = vals_clean[1]
+                    if raw_b.isdigit() and 30000 < int(raw_b) < 60000:
+                        try:
+                            b_date = (datetime.datetime(1899, 12, 30) + datetime.timedelta(days=int(raw_b))).strftime("%d.%m.%Y")
+                        except Exception:
+                            b_date = raw_b
+                    else:
+                        b_date = raw_b
+
+                doc_ser = cyrillic_to_latin_uz(vals_clean[2]) if len(vals_clean) > 2 else ""
+                doc_num = vals_clean[3] if len(vals_clean) > 3 else ""
+                doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
+                cls_name = cyrillic_to_latin_uz(vals_clean[4]) if len(vals_clean) > 4 else "6-sinf"
+
+                students.append({
+                    "name": upper_name,
+                    "birth_date": b_date,
+                    "doc_series": doc_ser,
+                    "doc_number": doc_num,
+                    "doc_key": doc_key,
+                    "class": cls_name,
+                })
+    except Exception as e:
+        print(f"[FALLBACK XML EXCEL ERROR] {e}")
+    return students
+
 def parse_students_from_excel(file_path: str):
     """Excel (.xlsx) fayldan o'quvchilar ro'yxatini o'qiydi (sarlavha, '№' va namuna qatorlarni avtomatik tashlab ketadi)."""
     students = []
-    wb = load_workbook(file_path, data_only=True)
-    ws = wb.active
-    for row in ws.iter_rows(values_only=True):
-        vals = [v.strftime("%d.%m.%Y") if hasattr(v, "strftime") else (str(v).strip() if v is not None else "") for v in row]
-        vals_non_empty = [v for v in vals if v]
-        if not vals_non_empty:
-            continue
-        if (vals_non_empty[0].isdigit() or vals_non_empty[0] in ("№", "#", "N", "No", "T/r")) and len(vals_non_empty) >= 2:
-            vals_non_empty = vals_non_empty[1:]
-        vals_non_empty = [v for v in vals_non_empty if not (v.isdigit() and len(v) == 14)]
-        if not vals_non_empty:
-            continue
-        row_joined_low = " ".join(vals_non_empty).lower()
-        if any(h in row_joined_low for h in ["f.i.sh", "familiya ism", "ism va familya", "ism va familiya", "tug'ilgan", "guvohnoma seriyasi", "coursera", "shabloni", "namuna)"]):
-            continue
-        upper_name = cyrillic_to_latin_uz(vals_non_empty[0])
-        if len(upper_name) < 4 or "ALIYEV VALI" in upper_name or "KARIMOVA MALIKA" in upper_name or "NAMUNA" in upper_name:
-            continue
-        if len(vals_non_empty) >= 5:
-            if vals_non_empty[3] in ("1234567", "7654321"):
+    try:
+        wb = load_workbook(file_path, data_only=True)
+        ws = wb.active
+        for row in ws.iter_rows(values_only=True):
+            vals = [v.strftime("%d.%m.%Y") if hasattr(v, "strftime") else (str(v).strip() if v is not None else "") for v in row]
+            vals_non_empty = [v for v in vals if v]
+            if not vals_non_empty:
                 continue
-            doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
-            doc_num = str(vals_non_empty[3]).strip()
-            doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
-            students.append({
-                "name": upper_name,
-                "birth_date": vals_non_empty[1],
-                "doc_series": doc_ser,
-                "doc_number": doc_num,
-                "doc_key": doc_key,
-                "class": cyrillic_to_latin_uz(vals_non_empty[4]),
-            })
-        elif len(vals_non_empty) == 4:
-            if vals_non_empty[3] in ("1234567", "7654321"):
+            if (vals_non_empty[0].isdigit() or vals_non_empty[0] in ("№", "#", "N", "No", "T/r")) and len(vals_non_empty) >= 2:
+                vals_non_empty = vals_non_empty[1:]
+            vals_non_empty = [v for v in vals_non_empty if not (v.isdigit() and len(v) == 14)]
+            if not vals_non_empty:
                 continue
-            doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
-            doc_num = str(vals_non_empty[3]).strip()
-            doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
-            students.append({
-                "name": upper_name,
-                "birth_date": vals_non_empty[1],
-                "doc_series": doc_ser,
-                "doc_number": doc_num,
-                "doc_key": doc_key,
-                "class": "",
-            })
-        elif len(vals_non_empty) >= 1 and len(vals_non_empty[0].split()) >= 2:
-            students.append({
-                "name": upper_name,
-                "birth_date": "",
-                "doc_series": "",
-                "doc_number": "",
-                "doc_key": "",
-                "class": cyrillic_to_latin_uz(vals_non_empty[1]) if len(vals_non_empty) > 1 else "",
-            })
-    return students
+            row_joined_low = " ".join(vals_non_empty).lower()
+            if any(h in row_joined_low for h in ["f.i.sh", "familiya ism", "ism va familya", "ism va familiya", "tug'ilgan", "guvohnoma seriyasi", "coursera", "shabloni", "namuna)"]):
+                continue
+            upper_name = cyrillic_to_latin_uz(vals_non_empty[0])
+            if len(upper_name) < 4 or "ALIYEV VALI" in upper_name or "KARIMOVA MALIKA" in upper_name or "NAMUNA" in upper_name:
+                continue
+            if len(vals_non_empty) >= 5:
+                if vals_non_empty[3] in ("1234567", "7654321"):
+                    continue
+                doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
+                doc_num = str(vals_non_empty[3]).strip()
+                doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
+                students.append({
+                    "name": upper_name,
+                    "birth_date": vals_non_empty[1],
+                    "doc_series": doc_ser,
+                    "doc_number": doc_num,
+                    "doc_key": doc_key,
+                    "class": cyrillic_to_latin_uz(vals_non_empty[4]),
+                })
+            elif len(vals_non_empty) == 4:
+                if vals_non_empty[3] in ("1234567", "7654321"):
+                    continue
+                doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
+                doc_num = str(vals_non_empty[3]).strip()
+                doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
+                students.append({
+                    "name": upper_name,
+                    "birth_date": vals_non_empty[1],
+                    "doc_series": doc_ser,
+                    "doc_number": doc_num,
+                    "doc_key": doc_key,
+                    "class": "",
+                })
+            elif len(vals_non_empty) >= 1 and len(vals_non_empty[0].split()) >= 2:
+                students.append({
+                    "name": upper_name,
+                    "birth_date": "",
+                    "doc_series": "",
+                    "doc_number": "",
+                    "doc_key": "",
+                    "class": cyrillic_to_latin_uz(vals_non_empty[1]) if len(vals_non_empty) > 1 else "",
+                })
+        if students:
+            return students
+    except Exception as e:
+        print(f"[OPENPYXL READ ERROR, FALLING BACK TO XML] {e}")
 
+    # Agar openpyxl xato bersa (masalan stylesheet TypeErrorda), XML orqali o'qiymiz:
+    fallback_sts = _parse_excel_fallback_xml(file_path)
+    if fallback_sts:
+        return fallback_sts
+    return students
 
 def save_students_to_excel(students: list, target_path: str):
     """O'quvchilar ro'yxatini Klaster va Master Bridge tushunadigan .xlsx faylga saqlaydi."""

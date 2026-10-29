@@ -2344,9 +2344,14 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
         self._send_text("Not Found", 404)
 
 
+_LAST_SYNCED_TUNNEL_URL = ""
+
 def _sync_tunnel_to_github(tunnel_url: str):
+    global _LAST_SYNCED_TUNNEL_URL
+    if not tunnel_url or tunnel_url == _LAST_SYNCED_TUNNEL_URL:
+        return
     gh_token = os.environ.get("GH_TOKEN", "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1])
-    if not gh_token or not tunnel_url:
+    if not gh_token:
         return
     try:
         import base64
@@ -2354,11 +2359,21 @@ def _sync_tunnel_to_github(tunnel_url: str):
         api_u = "https://api.github.com/repos/xakimovabdubannob-gif/cloud-node/contents/cluster_url.txt"
         r_get = requests.get(api_u, headers=hdr, timeout=5)
         sha = r_get.json().get("sha") if r_get.status_code == 200 else None
+        curr = ""
+        if r_get.status_code == 200:
+            try:
+                curr = base64.b64decode(r_get.json().get("content", "")).decode("utf-8").strip()
+            except Exception:
+                pass
+        if curr == tunnel_url:
+            _LAST_SYNCED_TUNNEL_URL = tunnel_url
+            return
         content_b64 = base64.b64encode((tunnel_url + "\n").encode("utf-8")).decode("utf-8")
-        data = {"message": f"sync: cluster tunnel updated [skip ci]", "content": content_b64}
+        data = {"message": "sync: cluster tunnel updated [skip ci]", "content": content_b64}
         if sha:
             data["sha"] = sha
         requests.put(api_u, headers=hdr, json=data, timeout=6)
+        _LAST_SYNCED_TUNNEL_URL = tunnel_url
         print(f"[GITHUB TUNNEL SYNC OK] cluster_url.txt -> {tunnel_url}")
     except Exception as e:
         print(f"[GITHUB TUNNEL SYNC ERROR] {e}")
