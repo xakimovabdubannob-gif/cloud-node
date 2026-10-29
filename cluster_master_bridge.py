@@ -2205,8 +2205,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
 
             # Faqat masofaviy klaster kompyuterlari uchun Telegram xabari yuboramiz.
             # 1-Kompyuter (MASTER_PC) uchun asosiy telegram_bot.py o'zi allaqachon to'g'ridan-to'g'ri xabar beradi!
-            task_st_t = agent_task_start_times.get(f"{node_id}_{worker_id}", 0)
-            is_cancelled_old_task = (_CACHE_CLEAR_TS > 0 and task_st_t < _CACHE_CLEAR_TS)
+            is_cancelled_old_task = bool(_CACHE_CLEAR_TS > 0 and start_time_val and start_time_val < _CACHE_CLEAR_TS)
             if node_id != "MASTER_PC" and not is_cancelled_old_task:
                 if status == "COMPLETED":
                     certs = get_certificate_map()
