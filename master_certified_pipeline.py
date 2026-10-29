@@ -1736,11 +1736,42 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
     print("   [2-XABAR: Coursera Join now] Taklifnoma kutilmoqda...")
     coursera_link = mail_svc.wait_for_coursera_invite(timeout=wait_timeout)
     if not coursera_link:
+        # Avval keshdagi yoki pochtadagi Magic Link tekshiriladi (agar o'quvchi oldin taklif qilingan bo'lsa)
+        if getattr(mail_svc, "email", ""):
+            try:
+                from gmail_automation import fetch_coursera_magic_link
+                m_link = fetch_coursera_magic_link(mail_svc.email, timeout_sec=3)
+                if m_link:
+                    print("   [COURSERA AUTO-LOGIN] Keshdagi Magic Link orqali tezkor kirilmoqda...")
+                    safe_goto_commit(page, m_link, wait_sec=4.0)
+                    time.sleep(3.0)
+                    cookies = [c.get("name", "") for c in page.context.cookies()]
+                    if any("CAUTH" in c for c in cookies):
+                        print("   [COURSERA AUTO-LOGIN] Magic Link orqali muvaffaqiyatli kirildi!")
+                        ensure_enrolled_on_coursera(page)
+                        return True
+            except Exception:
+                pass
         if getattr(mail_svc, "email", ""):
             ensure_aileaders_activated_and_tekshirish(page, mail_svc, mail_svc.email, student_password)
         coursera_link = mail_svc.wait_for_coursera_invite(timeout=40)
 
     if not coursera_link:
+        if getattr(mail_svc, "email", ""):
+            print("   [COURSERA AUTO-LOGIN] Join now xati kelmadi (o'quvchi oldin taklif qilingan). Pochtadagi Login Link tekshirilmoqda...")
+            try:
+                from gmail_automation import fetch_coursera_magic_link
+                m_link = fetch_coursera_magic_link(mail_svc.email, timeout_sec=25)
+                if m_link:
+                    safe_goto_commit(page, m_link, wait_sec=4.0)
+                    time.sleep(3.0)
+                    cookies = [c.get("name", "") for c in page.context.cookies()]
+                    if any("CAUTH" in c for c in cookies):
+                        print("   [COURSERA AUTO-LOGIN] Magic Link orqali muvaffaqiyatli kirildi!")
+                        ensure_enrolled_on_coursera(page)
+                        return True
+            except Exception as ml_err:
+                print(f"   [!] Magic link fallback xatosi: {ml_err}")
         return False
 
     all_invite_links = mail_svc.get_all_coursera_invites() if hasattr(mail_svc, "get_all_coursera_invites") else [coursera_link]
