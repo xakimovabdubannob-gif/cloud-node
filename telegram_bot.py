@@ -1852,6 +1852,8 @@ class TelegramBotServer:
         return None, None, None
 
     def _process_order_student(self, ctx: dict, idx: int, st: dict, worker_id: int):
+        if ctx.get("cancelled") or getattr(self, "clear_cancel_epoch", 0) > ctx.get("start_time", 0):
+            return
         chat_id = ctx["chat_id"]
         total = ctx["total"]
         pass_num = ctx["pass_num"]
@@ -2093,7 +2095,7 @@ class TelegramBotServer:
 
                 try:
                     while True:
-                        if getattr(self, "is_paused", False):
+                        if getattr(self, "is_paused", False) or ctx.get("cancelled") or getattr(self, "clear_cancel_epoch", 0) > ctx.get("start_time", 0):
                             break
                         try:
                             idx, st = student_q.get_nowait()
@@ -2114,6 +2116,8 @@ class TelegramBotServer:
                             self.shared_orders.remove(ctx)
 
             self.active_worker_status[worker_id] = ""
+            if ctx.get("cancelled") or order.get("cancelled") or getattr(self, "clear_cancel_epoch", 0) > order.get("start_time", 0):
+                continue
             orig_fname = order.get("orig_fname", "Buyurtma")
             clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
             order_start_t = order.get("start_time", time.time())
@@ -2171,49 +2175,72 @@ class TelegramBotServer:
         """Eski buyurtmalarni va xatolarni tozalaydi/arxivlaydi.
         FAQAT akkountlar.txt (Login/Parollar) va natijalar_sertifikatlar.txt (Tayyor sertifikatlar) saqlanadi!"""
         import shutil
+        now_ts = time.time()
+        self.clear_cancel_epoch = now_ts
+        self.is_paused = True
+
+        with self.shared_lock:
+            for ctx in self.shared_orders:
+                ctx["cancelled"] = True
+                q = ctx.get("student_q")
+                if q:
+                    while not q.empty():
+                        try:
+                            q.get_nowait()
+                            q.task_done()
+                        except Exception:
+                            break
+            self.shared_orders.clear()
+
+        while not order_queue.empty():
+            try:
+                o = order_queue.get_nowait()
+                if isinstance(o, dict):
+                    o["cancelled"] = True
+                order_queue.task_done()
+            except Exception:
+                break
+
+        self.active_worker_status.clear()
+
         if os.path.exists(ORDERS_DIR):
             arch_dir = os.path.join(ORDERS_DIR, "archived")
             os.makedirs(arch_dir, exist_ok=True)
             for fn in os.listdir(ORDERS_DIR):
                 if fn.startswith("in_") and fn.endswith(".xlsx"):
                     src = os.path.join(ORDERS_DIR, fn)
-                    dst = os.path.join(arch_dir, f"arch_{int(time.time())}_{fn}")
+                    dst = os.path.join(arch_dir, f"arch_cancelled_{int(now_ts)}_{fn}")
                     try:
                         shutil.move(src, dst)
                     except Exception:
-                        pass
+                        try:
+                            os.remove(src)
+                        except Exception:
+                            pass
 
-        # Xatolar ro'yxatini tozalaymiz (zaxirasini arxivga olamiz)
         if os.path.exists(ERRORS_FILE):
             try:
-                err_bkp = f"xatolar_archived_{int(time.time())}.txt"
+                err_bkp = f"xatolar_archived_{int(now_ts)}.txt"
                 shutil.copy(ERRORS_FILE, err_bkp)
                 with open(ERRORS_FILE, "w", encoding="utf-8") as ef:
                     ef.write("# Xatolar kesh tozalandi\n")
             except Exception:
                 pass
 
-        with self.shared_lock:
-            self.shared_orders.clear()
-        while not order_queue.empty():
-            try:
-                order_queue.get_nowait()
-                order_queue.task_done()
-            except Exception:
-                break
         for f in ("cluster_tried_students.json", "cluster_nodes_state.json", "cluster_pause_state.txt"):
             if os.path.exists(f):
                 try:
                     os.remove(f)
                 except Exception:
                     pass
+
         try:
             requests.get("http://127.0.0.1:8766/cluster/clear_cache", timeout=3)
         except Exception:
             pass
         if os.path.exists("cluster_url.txt"):
             try:
-                t_u = open("cluster_url.txt", "r", encoding="utf-8").read().strip()
+                t_u = open("cluster_url.txt", "r", encoding="utf-8").read().strip().splitlines()[0].strip()
                 if t_u.startswith("http"):
                     requests.get(f"{t_u}/cluster/clear_cache", timeout=5)
             except Exception:

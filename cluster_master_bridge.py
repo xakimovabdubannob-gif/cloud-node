@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+_CACHE_CLEAR_TS = 0.0\n# -*- coding: utf-8 -*-
 """
 =============================================================================
 UZBEK CODERS - MUSTAQIL MULTI-PC CLUSTER KO'PRIGI (MASTER BRIDGE)
@@ -1652,6 +1652,8 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "/cluster/clear_cache":
             import shutil
+            global _CACHE_CLEAR_TS
+            _CACHE_CLEAR_TS = time.time()
             with nodes_lock:
                 if os.path.exists(ORDERS_DIR):
                     arch_dir = os.path.join(ORDERS_DIR, "archived")
@@ -2186,7 +2188,9 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
 
             # Faqat masofaviy klaster kompyuterlari uchun Telegram xabari yuboramiz.
             # 1-Kompyuter (MASTER_PC) uchun asosiy telegram_bot.py o'zi allaqachon to'g'ridan-to'g'ri xabar beradi!
-            if node_id != "MASTER_PC":
+            task_st_t = agent_task_start_times.get(f"{node_id}_{worker_id}", 0)
+            is_cancelled_old_task = (_CACHE_CLEAR_TS > 0 and task_st_t < _CACHE_CLEAR_TS)
+            if node_id != "MASTER_PC" and not is_cancelled_old_task:
                 if status == "COMPLETED":
                     certs = get_certificate_map()
                     accs = get_existing_accounts()
@@ -2211,7 +2215,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     threading.Thread(target=send_tg, args=(chat_id, msg_skip), daemon=True).start()
 
             # Agar bu o'quvchi oxirgisi bo'lsa va buyurtma to'liq yakunlangan bo'lsa, umumiy Excelni yuboramiz
-            if status == "COMPLETED":
+            if status == "COMPLETED" and not is_cancelled_old_task:
                 try:
                     cands = sorted(
                         [(os.path.getmtime(os.path.join(ORDERS_DIR, fn)), os.path.join(ORDERS_DIR, fn), fn)
