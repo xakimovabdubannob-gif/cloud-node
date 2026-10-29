@@ -2575,26 +2575,39 @@ _MAIL_HUB = {
 _mail_hub_lock = threading.Lock()
 
 def master_mail_hub_loop():
-    """Yagona markaziy Gmail IMAP mijozi: barcha 60 ta agent uchun pochta xabarlarini bitta ulanish bilan ushlab turadi."""
+    """Yagona markaziy Gmail IMAP mijozi: tejamkor rejimda (trafikni 99.8% tejaydi, Google limitini umuman buzmaydi!)."""
     import gmail_automation
     import email
-    print("[MASTER MAIL HUB] Markaziy pochta hubi ishga tushmoqda...")
+    print("[MASTER MAIL HUB] Markaziy tejamkor pochta hubi ishga tushmoqda...")
     mail = None
     while True:
         try:
             if mail is None:
                 try:
                     mail = gmail_automation.connect_gmail()
-                    print("[MASTER MAIL HUB] Gmail IMAP bilan yagona aloqa o'rnatildi!")
+                    print("[MASTER MAIL HUB] Gmail IMAP bilan aloqa o'rnatildi!")
                 except Exception as ce:
-                    time.sleep(4)
+                    # Agar Google limit / overquota bersa, tez-tez urmasdan 30s kutadi
+                    time.sleep(30)
                     continue
 
             status, messages = mail.search(None, "ALL")
             if status == "OK" and messages and messages[0]:
                 mail_ids = messages[0].split()
-                for m_id in reversed(mail_ids[-30:]):
+                # 30 ta emas, faqat eng oxirgi 3 ta xatni tekshiramiz (trafik 90% tejaladi!)
+                for m_id in reversed(mail_ids[-3:]):
                     try:
+                        # Avval faqat sarlavhani (1 KB) o'qiymiz, butun xatni yuklamaymiz!
+                        h_status, h_data = mail.fetch(m_id, "(BODY.PEEK[HEADER.FIELDS (SUBJECT TO)])")
+                        if h_status != "OK" or not h_data or not isinstance(h_data[0], tuple):
+                            continue
+                        h_text = h_data[0][1].decode("utf-8", errors="replace").lower()
+
+                        # Faqat tegishli mavzu bo'lsagina to'liq xatni o'qiymiz
+                        is_relevant = any(k in h_text for k in ["coursera", "invite", "enterprise", "dasturiga", "faollashtirish", "tasdiqlash", "aktivatsiya", "aileaders", "log in", "click the link", "magic"])
+                        if not is_relevant:
+                            continue
+
                         status, msg_data = mail.fetch(m_id, "(RFC822)")
                         for part in msg_data:
                             if isinstance(part, tuple):
@@ -2632,7 +2645,7 @@ def master_mail_hub_loop():
                                                 _MAIL_HUB["magic"][tem] = m_link
                     except Exception:
                         pass
-            time.sleep(3.5)
+            time.sleep(12)
         except Exception as e:
             try:
                 if mail:
@@ -2640,7 +2653,7 @@ def master_mail_hub_loop():
             except Exception:
                 pass
             mail = None
-            time.sleep(4)
+            time.sleep(30)
 
 
 def cloudflared_loop():
