@@ -2625,11 +2625,11 @@ def master_mail_hub_loop():
 
                                 # 3. Coursera Magic Login Link
                                 if "log in" in subj or "click the link" in subj or "magic" in subj:
-                                    for l in links:
-                                        if "link.coursera.org" in l or "coursera.org/magicLinks" in l:
-                                            with _mail_hub_lock:
-                                                for tem in target_emails:
-                                                    _MAIL_HUB["magic"][tem] = l.replace("&amp;", "&")
+                                    m_link = gmail_automation.extract_coursera_magic_link_from_msg(msg)
+                                    if m_link:
+                                        with _mail_hub_lock:
+                                            for tem in target_emails:
+                                                _MAIL_HUB["magic"][tem] = m_link
                     except Exception:
                         pass
             time.sleep(3.5)

@@ -151,6 +151,30 @@ def wait_for_aileaders_activation(target_email: str, timeout_sec=90) -> str:
     return None
 
 
+def extract_coursera_magic_link_from_msg(msg):
+    """
+    Coursera Magic Link xabaridan aynan 'Log in' tugmasining havolasini oladi (tepadagi logoni EMAS!).
+    """
+    body, links = get_clean_body_and_links(msg)
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(body, "html.parser")
+        for a in soup.find_all("a", href=True):
+            txt = a.get_text().strip().lower()
+            href = a["href"]
+            if any(k in txt for k in ["log in", "sign in", "войти", "kirish", "click the link", "sign in using this link"]):
+                return href.replace("&amp;", "&")
+    except Exception:
+        pass
+
+    coursera_links = [l.replace("&amp;", "&") for l in links if "link.coursera.org" in l or "coursera.org/magicLinks" in l]
+    if len(coursera_links) > 1:
+        return coursera_links[1]
+    elif coursera_links:
+        return coursera_links[0]
+    return None
+
+
 def extract_coursera_invite_link_from_msg(msg):
     """
     Coursera xabaridan aynan taklifnoma / kursga kirish tugmasining havolasini oladi (logoni emas!).
@@ -268,13 +292,11 @@ def fetch_coursera_magic_link(target_email: str, timeout_sec=40) -> str:
                         to_addr = (msg.get("To") or "").lower()
                         subj = (msg.get("Subject") or "").lower()
                         if clean_target in to_addr and ("log in" in subj or "click the link" in subj or "magic" in subj or "link" in subj):
-                            body, links = get_clean_body_and_links(msg)
-                            for l in links:
-                                if "link.coursera.org" in l or "coursera.org/magicLinks" in l:
-                                    clean_l = l.replace("&amp;", "&")
-                                    print(f"[GMAIL IMAP] Magic Link topildi ({clean_target}): {clean_l}")
-                                    mail.logout()
-                                    return clean_l
+                            clean_l = extract_coursera_magic_link_from_msg(msg)
+                            if clean_l:
+                                print(f"[GMAIL IMAP] Magic Link topildi ({clean_target}): {clean_l}")
+                                mail.logout()
+                                return clean_l
             mail.logout()
         except Exception:
             pass
