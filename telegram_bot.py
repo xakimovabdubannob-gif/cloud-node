@@ -593,8 +593,8 @@ def get_excel_order_info(file_path: str):
 
 def get_order_file_date_and_ts(fpath, fn):
     """Fayl nomidagi 10 xonali timestamp yoki sanani ajratib oladi (GitHub Runnerda mtime bugungi bo'lib qolmasligi uchun)."""
-    # E'tibor: fn ichida user_id (masalan 6580113791) ham 10 xonali, lekin unix timestamp 1700000000..1850000000 oraliqda bo'ladi:
-    all_10 = re.findall(r'(\d{10})', fn)
+    clean_fn = re.sub(r'^arch_\d+_', '', fn)
+    all_10 = re.findall(r'(\d{10})', clean_fn)
     for s_ts in all_10:
         try:
             ts = int(s_ts)
@@ -1053,10 +1053,27 @@ class TelegramBotServer:
             title = info["title"]
             tot = info["total"]
             done = info["done"]
-            dedup_key = f"{title}_{tot}"
+
+            # Filter out 0/1 test orders (shovqin bo'lmasligi uchun)
+            if tot <= 1 and done == 0:
+                continue
+
+            # Sinf nomini tozalash va dublikatlarni bitta eng to'liq variantga birlashtirish
+            clean_t = re.sub(r'\d{2}[._-]\d{2}[._-]\d{4}.*', '', title)
+            clean_t = re.sub(r'\(\d+daq.*\)', '', clean_t)
+            clean_t = re.sub(r'[\/\\_\-\s]+', ' ', clean_t).strip()
+            if '5 D' in clean_t.upper() or '5D' in clean_t.upper():
+                clean_t = '5-D sinf'
+            elif '6 B' in clean_t.upper() or '6B' in clean_t.upper():
+                clean_t = '6-B sinf'
+            elif '6 SINF' in clean_t.upper():
+                clean_t = '6-Sinf'
+
+            dedup_key = clean_t.upper()
             if dedup_key in seen_titles:
                 continue
             seen_titles.add(dedup_key)
+            title = clean_t
 
             total_day_students += tot
             total_day_done += done
