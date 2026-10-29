@@ -36,7 +36,7 @@ jobs:
       - name: Kutubxonalar
         shell: cmd
         run: |
-          python -m pip install --quiet --disable-pip-version-check requests openpyxl playwright selenium undetected-chromedriver setuptools cryptography
+          python -m pip install --quiet --disable-pip-version-check requests openpyxl xlrd playwright selenium undetected-chromedriver setuptools cryptography
           python -m playwright install chromium
       - name: AnyDesk ornatish va sozlash
         shell: cmd

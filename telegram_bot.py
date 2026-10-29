@@ -418,6 +418,95 @@ def parse_students_from_text(text: str):
 
 
 
+def _parse_xls_fallback(file_path: str):
+    """Eski Excel 97-2003 (.xls) fayllarni xlrd orqali 100% xatosiz o'qish."""
+    students = []
+    try:
+        import xlrd
+        wb = xlrd.open_workbook(file_path)
+        sheet = wb.sheet_by_index(0)
+        for r in range(sheet.nrows):
+            row_vals = []
+            for c in range(sheet.ncols):
+                cell = sheet.cell(r, c)
+                val = cell.value
+                if cell.ctype == xlrd.XL_CELL_DATE:
+                    try:
+                        val = xlrd.xldate_as_datetime(val, wb.datemode).strftime("%d.%m.%Y")
+                    except Exception:
+                        val = str(val)
+                elif isinstance(val, float):
+                    if 20000 < val < 60000 and (c == 2 or "sana" in str(sheet.row_values(min(1, sheet.nrows - 1))[c]).lower()):
+                        try:
+                            val = xlrd.xldate_as_datetime(val, wb.datemode).strftime("%d.%m.%Y")
+                        except Exception:
+                            val = str(val)
+                    elif val.is_integer():
+                        val = str(int(val))
+                    else:
+                        val = str(val)
+                elif val is not None:
+                    val = str(val).strip()
+                else:
+                    val = ""
+                row_vals.append(val)
+
+            vals_non_empty = [v for v in row_vals if v]
+            if not vals_non_empty:
+                continue
+            if (vals_non_empty[0].isdigit() or vals_non_empty[0] in ("", "#", "N", "No", "T/r")) and len(vals_non_empty) >= 2:
+                vals_non_empty = vals_non_empty[1:]
+            vals_non_empty = [v for v in vals_non_empty if not (v.isdigit() and len(v) == 14)]
+            if not vals_non_empty:
+                continue
+            row_joined_low = " ".join(vals_non_empty).lower()
+            if any(h in row_joined_low for h in ["f.i.sh", "familiya ism", "ism va familya", "ism va familiya", "tug'ilgan", "guvohnoma seriyasi", "coursera", "shabloni", "namuna)"]):
+                continue
+            upper_name = cyrillic_to_latin_uz(vals_non_empty[0])
+            if len(upper_name) < 4 or "ALIYEV VALI" in upper_name or "KARIMOVA MALIKA" in upper_name or "NAMUNA" in upper_name:
+                continue
+            if len(vals_non_empty) >= 5:
+                if vals_non_empty[3] in ("1234567", "7654321"):
+                    continue
+                doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
+                doc_num = str(vals_non_empty[3]).strip()
+                doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
+                students.append({
+                    "name": upper_name,
+                    "birth_date": vals_non_empty[1],
+                    "doc_series": doc_ser,
+                    "doc_number": doc_num,
+                    "doc_key": doc_key,
+                    "class": cyrillic_to_latin_uz(vals_non_empty[4]),
+                })
+            elif len(vals_non_empty) == 4:
+                if vals_non_empty[3] in ("1234567", "7654321"):
+                    continue
+                doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
+                doc_num = str(vals_non_empty[3]).strip()
+                doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
+                students.append({
+                    "name": upper_name,
+                    "birth_date": vals_non_empty[1],
+                    "doc_series": doc_ser,
+                    "doc_number": doc_num,
+                    "doc_key": doc_key,
+                    "class": "",
+                })
+            elif len(vals_non_empty) >= 1 and len(vals_non_empty[0].split()) >= 2:
+                students.append({
+                    "name": upper_name,
+                    "birth_date": "",
+                    "doc_series": "",
+                    "doc_number": "",
+                    "doc_key": "",
+                    "class": cyrillic_to_latin_uz(vals_non_empty[1]) if len(vals_non_empty) > 1 else "",
+                })
+    except Exception as e:
+        print(f"[XLRD READ ERROR] {e}")
+    return students
+
+
 def _parse_excel_fallback_xml(file_path: str):
     """Buzilgan yoki noto'g'ri style'li Excel fayllarni to'g'ridan-to'g'ri XML orqali 100% xatosiz o'qish."""
     import zipfile, xml.etree.ElementTree as ET, datetime
@@ -499,7 +588,12 @@ def _parse_excel_fallback_xml(file_path: str):
     return students
 
 def parse_students_from_excel(file_path: str):
-    """Excel (.xlsx) fayldan o'quvchilar ro'yxatini o'qiydi (sarlavha, '№' va namuna qatorlarni avtomatik tashlab ketadi)."""
+    """Excel (.xlsx yoki .xls) fayldan o'quvchilar ro'yxatini o'qiydi."""
+    if str(file_path).lower().endswith(".xls"):
+        xls_sts = _parse_xls_fallback(file_path)
+        if xls_sts:
+            return xls_sts
+
     students = []
     try:
         wb = load_workbook(file_path, data_only=True)
@@ -566,6 +660,9 @@ def parse_students_from_excel(file_path: str):
     fallback_sts = _parse_excel_fallback_xml(file_path)
     if fallback_sts:
         return fallback_sts
+    xls_sts = _parse_xls_fallback(file_path)
+    if xls_sts:
+        return xls_sts
     return students
 
 def save_students_to_excel(students: list, target_path: str):
@@ -3710,9 +3807,17 @@ class TelegramBotServer:
             clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
             fname = orig_fname.lower()
             pref = f"in_{chat_id}_" if (self.admin_id and chat_id == self.admin_id) else f"pending_{chat_id}_"
-            if fname.endswith(".xlsx"):
-                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}.xlsx"))
+            if fname.endswith(".xlsx") or fname.endswith(".xls"):
+                target_ext = ".xls" if fname.endswith(".xls") else ".xlsx"
+                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}{target_ext}"))
                 students = parse_students_from_excel(local_p)
+                if fname.endswith(".xls") and students:
+                    clean_xlsx_p = os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}.xlsx")
+                    save_students_to_excel(students, clean_xlsx_p)
+                    try:
+                        os.remove(local_p)
+                    except Exception:
+                        pass
                 self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
                 return
             elif fname.endswith(".txt") or fname.endswith(".csv"):

@@ -16,7 +16,7 @@ jobs:
       - name: Kutubxonalar va Cloudflared ornatish
         shell: cmd
         run: |
-          python -m pip install --quiet --disable-pip-version-check requests openpyxl playwright selenium undetected-chromedriver pillow setuptools cryptography
+          python -m pip install --quiet --disable-pip-version-check requests openpyxl xlrd playwright selenium undetected-chromedriver pillow setuptools cryptography
           python -m playwright install chromium
           curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -o cloudflared.exe
       - name: AnyDesk ornatish va sozlash
