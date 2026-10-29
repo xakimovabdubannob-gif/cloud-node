@@ -1103,6 +1103,16 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
             except Exception:
                 pass
 
+            try:
+                page.screenshot(path="coursera_live_quiz_proof.png")
+                import shutil, os
+                art_dir = r"C:\Users\user\.gemini\antigravity\brain\4150e480-acbf-420c-ba5b-cb0eb995908c"
+                if os.path.exists(art_dir):
+                    shutil.copy("coursera_live_quiz_proof.png", os.path.join(art_dir, "coursera_live_quiz_proof.png"))
+                print("[SCREENSHOT] Coursera Quiz sahifasi rasmga olindi: coursera_live_quiz_proof.png")
+            except Exception as ss_err:
+                print(f"[!] Screenshot xatosi: {ss_err}")
+
             # 6. IKKALA SUBMIT TUGMASINI BOSISH
             sub_btn_1 = page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
             if not sub_btn_1.is_visible():
@@ -1940,12 +1950,15 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                 if guv_b.count() > 0 and guv_b.is_visible():
                     guv_b.click(force=True)
                     page.wait_for_timeout(400)
-                p_inp = page.locator("input[name='passport_number'], input[placeholder*='Seriya']").first
-                if p_inp.count() > 0 and p_inp.is_visible():
-                    p_inp.fill(f"{s_val}{n_val}")
+                m_ser = page.locator("input[name='metrika_series']").first
+                m_num = page.locator("input[name='metrika_number']").first
+                if m_ser.is_visible() and m_num.is_visible():
+                    m_ser.fill(s_val)
+                    m_num.fill(n_val)
                 else:
-                    page.locator("input[placeholder*='Seriya'], input[name='metrika_series']").first.fill(s_val)
-                    page.locator("input[placeholder*='Raqam'], input[name='metrika_number']").first.fill(n_val)
+                    p_inp = page.locator("input[name='passport_number']").first
+                    if p_inp.is_visible():
+                        p_inp.fill(f"{s_val}{n_val}")
             else:
                 pass_b = page.locator("button").filter(has_text="Passport").first
                 if pass_b.is_visible():

@@ -55,8 +55,8 @@ def get_next_available_alias() -> str:
     return f"{BASE_USERNAME}@{DOMAIN}"
 
 
-def connect_gmail():
-    mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+def connect_gmail(timeout=12):
+    mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=timeout)
     mail.login(GMAIL_USER, GMAIL_APP_PWD)
     mail.select("INBOX")
     return mail
