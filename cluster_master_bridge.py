@@ -1534,7 +1534,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             with _mail_hub_lock:
                 cache_dict = _MAIL_HUB.get(mail_type, {})
                 link = cache_dict.get(em, "")
-                if not link and "gmail.com" not in em:
+                if not link:
                     em_clean = em.replace(".", "")
                     for k, v in cache_dict.items():
                         if k.replace(".", "") == em_clean:
