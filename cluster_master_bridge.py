@@ -395,7 +395,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 if not s_name:
                     continue
                 s_norm = normalize_student_key(s_name)
-                if s_norm in done_norm or s_norm in unrec_norm:
+                if s_norm in done_norm or s_norm in unrec_norm or s_norm in tried_cluster_set or s_name in tried_cluster_set:
                     continue
                 if s_norm == normalize_student_key("MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"):
                     continue
@@ -2165,7 +2165,8 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         _state_mem_cache["unrec"].add(s_name)
                 else:
                     sticky = _sticky_workers.get(w_key)
-                    if sticky and sticky.get("student", {}).get("name") == s_name and sticky.get("tries", 1) < 4:
+                    cur_tries = sticky.get("tries", 1) if sticky else 1
+                    if sticky and sticky.get("student", {}).get("name") == s_name and cur_tries < 2:
                         if acc_line:
                             sticky["account_line"] = acc_line.strip()
                         in_progress_students[s_name] = time.time()
@@ -2174,6 +2175,24 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         _worker_assigned.pop(w_key, None)
                         in_progress_students.pop(s_name, None)
                         tried_cluster_set.add(s_name)
+                        # Cheksiz aylanmasligi uchun darhol xato deb belgilash va Telegramga bildirish:
+                        _state_mem_cache["unrec"].add(s_name)
+                        skip_reason = err_line or "Login/parol xato yoki oldin o'qituvchisi tomonidan ro'yxatdan o'tkazilgan (parol noma'lum)"
+                        try:
+                            if os.path.exists(ERRORS_FILE):
+                                ef_text = open(ERRORS_FILE, "r", encoding="utf-8", errors="replace").read()
+                            else:
+                                ef_text = ""
+                            if s_name not in ef_text:
+                                with open(ERRORS_FILE, "a", encoding="utf-8") as _ef:
+                                    _ef.write(f"{s_name} | {st.get('class', '')} | ILOJI_YOQ: {skip_reason}\n")
+                        except Exception:
+                            pass
+                        msg_auto_skip = (
+                            f"❌ <b>[{idx}/{total}] {s_name} - O'TKAZIB YUBORILDI!</b>\n"
+                            f"Sababi: <i>{skip_reason}</i>"
+                        )
+                        threading.Thread(target=send_tg, args=(chat_id, msg_auto_skip), daemon=True).start()
                 if node_id in cluster_nodes:
                     if "worker_statuses" not in cluster_nodes[node_id]:
                         cluster_nodes[node_id]["worker_statuses"] = {}
