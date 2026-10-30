@@ -352,11 +352,18 @@ def login_via_magic_link(page, email):
             if mlink:
                 print(f"   [GMAIL MAGIC LINK] Havola olindi, tizimga kirilmoqda...")
                 page.goto(mlink, wait_until="domcontentloaded", timeout=35000)
-                time.sleep(6.0)
-                cookies = [c.get("name", "") for c in page.context.cookies()]
-                if any("CAUTH" in c for c in cookies):
-                    print(f"[LOGIN] Gmail Magic Link orqali muvaffaqiyatli kirildi! ({email})")
-                    return True
+                for _w in range(30):
+                    time.sleep(1.0)
+                    cookies = [c.get("name", "") for c in page.context.cookies()]
+                    if any("CAUTH" in c for c in cookies):
+                        print(f"[LOGIN] Gmail Magic Link orqali muvaffaqiyatli kirildi! ({email}) ({_w+1}s)")
+                        return True
+                    btn = page.locator("button:has-text('Continue'), button:has-text('Продолжить'), button:has-text('Log In'), a:has-text('Continue')").first
+                    if btn.count() > 0 and btn.is_visible():
+                        try:
+                            btn.click(force=True)
+                        except Exception:
+                            pass
         except Exception as e:
             print(f"   [!] Gmail Magic link xatosi: {e}")
         return False
