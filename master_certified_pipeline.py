@@ -2331,11 +2331,6 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
         print(f"{tag}[CHECK] {full_name} ({doc_key}) allaqachon sertifikat olgan. Keyingi o'quvchiga o'tiladi.")
         return "COMPLETED"
 
-    unrec_set = get_unrecoverable_students()
-    if (doc_key and doc_key in unrec_set) or any(v in unrec_set for v in fn_variants):
-        print(f"{tag}[SKIP - ILOJI YO'Q] {full_name} oldin ro'yxatdan o'tgan va bazada paroli yo'q (yoki kirib bo'lmaydi). Qayta urinilmaydi!")
-        return "UNRECOVERABLE"
-
     if student.get("email") and student.get("password"):
         acc = {"email": student["email"].strip(), "password": student["password"].strip()}
     else:
@@ -2351,6 +2346,12 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                 accounts.get(normalize_name(full_name)) or
                 accounts.get(re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ]", "", full_name))
             )
+
+    if not acc:
+        unrec_set = get_unrecoverable_students()
+        if (doc_key and doc_key in unrec_set) or any(v in unrec_set for v in fn_variants):
+            print(f"{tag}[SKIP - ILOJI YO'Q] {full_name} oldin ro'yxatdan o'tgan va bazada paroli yo'q (yoki kirib bo'lmaydi). Qayta urinilmaydi!")
+            return "UNRECOVERABLE"
 
 
     common_media_args = [
