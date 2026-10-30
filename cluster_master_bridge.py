@@ -2166,7 +2166,8 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     sticky = _sticky_workers.get(w_key)
                     cur_tries = sticky.get("tries", 1) if sticky else 1
-                    if sticky and sticky.get("student", {}).get("name") == s_name and cur_tries < 2:
+                    if sticky and sticky.get("student", {}).get("name") == s_name and cur_tries < 3:
+                        sticky["tries"] = cur_tries + 1
                         if acc_line:
                             sticky["account_line"] = acc_line.strip()
                         in_progress_students[s_name] = time.time()
@@ -2175,9 +2176,9 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         _worker_assigned.pop(w_key, None)
                         in_progress_students.pop(s_name, None)
                         tried_cluster_set.add(s_name)
-                        # Cheksiz aylanmasligi uchun darhol xato deb belgilash va Telegramga bildirish:
+                        # 3 marta urinishdan keyin cheksiz aylanmasligi uchun darhol xato deb belgilash va Telegramga bildirish:
                         _state_mem_cache["unrec"].add(s_name)
-                        skip_reason = err_line or "Login/parol xato yoki oldin o'qituvchisi tomonidan ro'yxatdan o'tkazilgan (parol noma'lum)"
+                        skip_reason = err_line or "3 marta urinishda ham kirib bo'lmadi (Login/parol xato yoki oldin o'qituvchisi tomonidan ro'yxatdan o'tkazilgan)"
                         try:
                             if os.path.exists(ERRORS_FILE):
                                 ef_text = open(ERRORS_FILE, "r", encoding="utf-8", errors="replace").read()
