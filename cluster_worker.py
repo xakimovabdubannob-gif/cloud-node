@@ -192,6 +192,13 @@ class ClusterWorkerNode:
                     if "|" in ln_s:
                         fn = ln_s.split("|")[0].replace("`", "'").strip().upper()
                         if fn == s_norm:
+                            try:
+                                from cert_validator import is_cert_already_used_by_other
+                                used_other, _ = is_cert_already_used_by_other(ln_s, s_name, results_file=RESULTS_FILE)
+                                if used_other:
+                                    continue
+                            except Exception:
+                                pass
                             if "Y0MWT5MYGV8I" not in ln_s or "KOMILOVA" in fn:
                                 return ln_s
         return ""

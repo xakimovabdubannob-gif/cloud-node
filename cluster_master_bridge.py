@@ -2097,10 +2097,24 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             st = data.get("student", {})
             s_name = st.get("name", "?")
             cert_line = data.get("cert_line", "")
-            if "Y0MWT5MYGV8I" in cert_line and "KOMILOVA" not in s_name.upper():
-                print(f"[CLUSTER FINISH] {s_name} uchun Y0MWT5MYGV8I rad etildi (Komilova sertifikati)!")
-                cert_line = ""
-                status = "INCOMPLETE"
+# 100% QAT'IY SERTIFIKAT EGASI VA DUBLIKAT TEKSHIRUVI
+            if cert_line and status == "COMPLETED":
+                try:
+                    from cert_validator import is_cert_already_used_by_other, verify_cert_matches_student, get_cert_code
+                    c_code = get_cert_code(cert_line)
+                    used_other, other_st = is_cert_already_used_by_other(cert_line, s_name, results_file=RESULTS_FILE)
+                    if used_other:
+                        print(f"[CLUSTER FINISH RAD ETILDI] {s_name} uchun {c_code} rad etildi! Bu sertifikat avval {other_st} ga berilgan!")
+                        cert_line = ""
+                        status = "INCOMPLETE"
+                    else:
+                        is_owner_match, owner_or_err = verify_cert_matches_student(cert_line, s_name, timeout=8)
+                        if not is_owner_match:
+                            print(f"[CLUSTER FINISH RAD ETILDI] {s_name} uchun {c_code} rad etildi! {owner_or_err}")
+                            cert_line = ""
+                            status = "INCOMPLETE"
+                except Exception as _cve:
+                    print(f"[CERT VALIDATION ERR] {_cve}")
             acc_line = data.get("account_line", "")
             err_line = data.get("error_line", "")
             chat_id = data.get("chat_id") or load_bot_config().get("admin_id", 6580113791)
