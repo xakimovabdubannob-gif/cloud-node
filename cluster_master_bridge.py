@@ -63,6 +63,7 @@ in_progress_students = {}
 pending_screen_requests = {}  # node_id -> chat_id
 _worker_assigned = {}
 _sticky_workers = {}
+_global_student_tries = {}
 _started_notified_students = set()
 _last_nodes_save_ts = 0.0
 
@@ -395,7 +396,9 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 if not s_name:
                     continue
                 s_norm = normalize_student_key(s_name)
-                if s_norm in done_norm or s_norm in unrec_norm or s_norm in tried_cluster_set or s_name in tried_cluster_set:
+                if s_norm in done_norm or s_norm in unrec_norm:
+                    continue
+                if _global_student_tries.get(s_name, 0) >= 3 or (s_name not in accs and (s_norm in tried_cluster_set or s_name in tried_cluster_set)):
                     continue
                 if s_norm == normalize_student_key("MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"):
                     continue
@@ -2164,19 +2167,15 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     elif status == "UNRECOVERABLE":
                         _state_mem_cache["unrec"].add(s_name)
                 else:
-                    sticky = _sticky_workers.get(w_key)
-                    cur_tries = sticky.get("tries", 1) if sticky else 1
-                    if sticky and sticky.get("student", {}).get("name") == s_name and cur_tries < 3:
-                        sticky["tries"] = cur_tries + 1
-                        if acc_line:
-                            sticky["account_line"] = acc_line.strip()
-                        in_progress_students[s_name] = time.time()
+                    cur_tries = _global_student_tries.get(s_name, 0) + 1
+                    _global_student_tries[s_name] = cur_tries
+                    _sticky_workers.pop(w_key, None)
+                    _worker_assigned.pop(w_key, None)
+                    in_progress_students.pop(s_name, None)
+                    if cur_tries < 3:
+                        print(f"[CLUSTER RETRY] {s_name} {cur_tries}-urinishda chiqmadi, qayta navbatga qo'yildi (max 3)")
                     else:
-                        _sticky_workers.pop(w_key, None)
-                        _worker_assigned.pop(w_key, None)
-                        in_progress_students.pop(s_name, None)
                         tried_cluster_set.add(s_name)
-                        # 3 marta urinishdan keyin cheksiz aylanmasligi uchun darhol xato deb belgilash va Telegramga bildirish:
                         _state_mem_cache["unrec"].add(s_name)
                         skip_reason = err_line or "3 marta urinishda ham kirib bo'lmadi (Login/parol xato yoki oldin o'qituvchisi tomonidan ro'yxatdan o'tkazilgan)"
                         try:
