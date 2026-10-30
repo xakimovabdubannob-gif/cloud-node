@@ -1345,8 +1345,20 @@ class TelegramBotServer:
                 if not s.get("class") and acc.get("class"):
                     s["class"] = acc["class"]
 
-        done_cnt = sum(1 for s in students if s.get("name", "").strip().upper() in certs_map)
-        unrec_cnt = sum(1 for s in students if s.get("name", "").strip().upper() in unrec_set)
+        def _check_st_done(st):
+            dk = st.get("doc_key") or f"{st.get('doc_series','')}{st.get('doc_number','')}".replace(" ", "").replace("-", "").upper()
+            nm = st.get("name", "").strip().upper()
+            norm = re.sub(r"['`ʻʼ‘’ʻʼ\s]+", "", nm)
+            return bool((dk and certs_map.get(dk)) or certs_map.get(nm) or certs_map.get(norm))
+
+        def _check_st_unrec(st):
+            dk = st.get("doc_key") or f"{st.get('doc_series','')}{st.get('doc_number','')}".replace(" ", "").replace("-", "").upper()
+            nm = st.get("name", "").strip().upper()
+            norm = re.sub(r"['`ʻʼ‘’ʻʼ\s]+", "", nm)
+            return bool((dk and dk in unrec_set) or (nm in unrec_set) or (norm in unrec_set))
+
+        done_cnt = sum(1 for s in students if _check_st_done(s))
+        unrec_cnt = sum(1 for s in students if not _check_st_done(s) and _check_st_unrec(s))
         in_prog_cnt = max(0, total - done_cnt - unrec_cnt)
 
         safe_title = re.sub(r'[\\/*?:"<>|]', "", title).strip() or "Buyurtma"
@@ -2239,8 +2251,23 @@ class TelegramBotServer:
             excel_path = os.path.join(ORDERS_DIR, out_filename)
             generate_results_excel(students, excel_path)
 
-            done_cnt = sum(1 for s in students if s["name"] in get_completed_students())
-            unrec_cnt = sum(1 for s in students if s["name"] in get_unrecoverable_students())
+            completed_set = get_completed_students()
+            unrecoverable_set = get_unrecoverable_students()
+
+            def _st_done(st):
+                dk = st.get("doc_key") or f"{st.get('doc_series','')}{st.get('doc_number','')}".replace(" ", "").replace("-", "").upper()
+                nm = st.get("name", "").strip().upper()
+                norm = re.sub(r"['`ʻʼ‘’ʻʼ\s]+", "", nm)
+                return bool((dk and dk in completed_set) or (nm in completed_set) or (norm in completed_set))
+
+            def _st_unrec(st):
+                dk = st.get("doc_key") or f"{st.get('doc_series','')}{st.get('doc_number','')}".replace(" ", "").replace("-", "").upper()
+                nm = st.get("name", "").strip().upper()
+                norm = re.sub(r"['`ʻʼ‘’ʻʼ\s]+", "", nm)
+                return bool((dk and dk in unrecoverable_set) or (nm in unrecoverable_set) or (norm in unrecoverable_set))
+
+            done_cnt = sum(1 for s in students if _st_done(s))
+            unrec_cnt = sum(1 for s in students if not _st_done(s) and _st_unrec(s))
 
             debt_info = get_user_debt_info(chat_id)
             rem_debt = debt_info.get("remaining_debt", 0)
