@@ -355,11 +355,23 @@ def parse_students_from_text(text: str):
         # Boshidagi tartib raqam (1. yoki 15)) ni olib tashlaymiz
         line = re.sub(r"^\d{1,3}[\s.)\-]+", "", line).strip()
 
-        # Tugilgan sanani topamiz (DD.MM.YYYY yoki DD-MM-YYYY yoki DD/MM/YYYY)
+        # Tugilgan sanani topamiz (D.M.YYYY, DD.MM.YYYY, M/D/YYYY, DD/MM/YYYY yoki DD-MM-YYYY)
         birth_date = ""
-        m_date = re.search(r"\b(\d{2}[./-]\d{2}[./-]\d{4})\b", line)
+        m_date = re.search(r"\b(\d{1,2}[./-]\d{1,2}[./-]\d{4})\b", line)
         if m_date:
-            birth_date = m_date.group(1).replace("/", ".").replace("-", ".")
+            raw_d = m_date.group(1)
+            sep = "/" if "/" in raw_d else ("-" if "-" in raw_d else ".")
+            p = raw_d.split(sep)
+            if len(p) == 3:
+                p0 = p[0].zfill(2)
+                p1 = p[1].zfill(2)
+                p2 = p[2]
+                if sep == "/" and int(p[1]) > 12:
+                    birth_date = f"{p1}.{p0}.{p2}"
+                else:
+                    birth_date = f"{p0}.{p1}.{p2}"
+            else:
+                birth_date = raw_d.replace("/", ".").replace("-", ".")
             line = line[:m_date.start()] + " " + line[m_date.end():]
 
         # Sinfni topamiz (masalan 6-V, 6V, 6-B, 5-A, 11-sinf)

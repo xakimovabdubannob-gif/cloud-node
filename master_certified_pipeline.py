@@ -1923,30 +1923,39 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
 
     try:
         reg_step2_ok = False
-        for cand_idx, (doc_mode, s_val, n_val) in enumerate(doc_candidates):
-            if cand_idx > 0:
-                print(f"   [HUJJAT VARIANTI #{cand_idx + 1}] {doc_mode.upper()} sifatida '{s_val} {n_val}' tekshirilmoqda...")
-            safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.5)
+        birth_variants = [birth_date]
+        if "." in birth_date:
+            _bp = birth_date.split(".")
+            if len(_bp) == 3 and int(_bp[0]) <= 12 and int(_bp[1]) <= 12 and _bp[0] != _bp[1]:
+                birth_variants.append(f"{_bp[1]}.{_bp[0]}.{_bp[2]}")
 
-            if doc_mode == "guvohnoma":
-                guv_b = page.locator("button:has-text('Guvohnoma')").first
-                try:
-                    guv_b.wait_for(state="visible", timeout=12000)
-                except Exception:
-                    pass
-                if guv_b.is_visible():
-                    guv_b.click(force=True)
-                    page.wait_for_timeout(600)
-                page.locator("input[placeholder*='Seriya'], input[name='metrika_series']").first.fill(s_val)
-                page.locator("input[placeholder*='Raqam'], input[name='metrika_number']").first.fill(n_val)
-            else:
-                pass_b = page.locator("button").filter(has_text="Passport").first
-                if pass_b.is_visible():
-                    pass_b.click(force=True)
-                    page.wait_for_timeout(400)
-                page.locator("input[name='passport_number'], input[placeholder*='Seriya']").first.fill(f"{s_val}{n_val}")
+        for b_val in birth_variants:
+            if reg_step2_ok:
+                break
+            for cand_idx, (doc_mode, s_val, n_val) in enumerate(doc_candidates):
+                if cand_idx > 0 or len(birth_variants) > 1:
+                    print(f"   [HUJJAT VARIANTI] {doc_mode.upper()} '{s_val} {n_val}' | Sana: {b_val} tekshirilmoqda...")
+                safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.5)
 
-            pick_date_aileaders(page, birth_date)
+                if doc_mode == "guvohnoma":
+                    guv_b = page.locator("button:has-text('Guvohnoma')").first
+                    try:
+                        guv_b.wait_for(state="visible", timeout=12000)
+                    except Exception:
+                        pass
+                    if guv_b.is_visible():
+                        guv_b.click(force=True)
+                        page.wait_for_timeout(600)
+                    page.locator("input[placeholder*='Seriya'], input[name='metrika_series']").first.fill(s_val)
+                    page.locator("input[placeholder*='Raqam'], input[name='metrika_number']").first.fill(n_val)
+                else:
+                    pass_b = page.locator("button").filter(has_text="Passport").first
+                    if pass_b.is_visible():
+                        pass_b.click(force=True)
+                        page.wait_for_timeout(400)
+                    page.locator("input[name='passport_number'], input[placeholder*='Seriya']").first.fill(f"{s_val}{n_val}")
+
+                pick_date_aileaders(page, b_val)
 
             cb = page.locator("button[role='combobox'], button[data-slot='select-trigger']").first
             if cb.is_visible():
