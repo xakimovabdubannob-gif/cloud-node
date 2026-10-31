@@ -1493,7 +1493,12 @@ class TempMailAPI:
             try:
                 req = urllib.request.Request('https://api.mail.tm/domains', headers={'User-Agent': 'Mozilla/5.0'})
                 with urllib.request.urlopen(req, context=self.ctx, timeout=10) as r:
-                    dom = json.loads(r.read().decode())['hydra:member'][0]['domain']
+                    dom_items = json.loads(r.read().decode()).get('hydra:member', [])
+                    dom_list = [d['domain'] for d in dom_items if d.get('isActive', True)]
+                    if 'fldubai.com' in dom_list:
+                        dom = 'fldubai.com'
+                    else:
+                        dom = dom_list[0] if dom_list else 'fldubai.com'
                 rnd = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=10))
                 self.email = f"{rnd}@{dom}"
                 body = json.dumps({'address': self.email, 'password': self.password}).encode()
