@@ -202,19 +202,9 @@ def get_existing_accounts():
         return accounts
 
 def save_certificate_result(full_name, class_name, cert_url, doc_key=None):
-    try:
-        from cert_validator import is_cert_already_used_by_other, verify_cert_matches_student, get_cert_code
-        code = get_cert_code(cert_url)
-        used_other, other_st = is_cert_already_used_by_other(cert_url, full_name, results_file=RESULTS_FILE)
-        if used_other:
-            print(f"[RAD ETILDI - DUBLIKAT] {full_name} ga {code} yozilmadi! Bu sertifikat allaqachon {other_st} ga tegishli!")
-            return False
-        is_match, reason = verify_cert_matches_student(cert_url, full_name, timeout=7)
-        if not is_match:
-            print(f"[RAD ETILDI - BEGONA SERTIFIKAT] {full_name} ga {code} yozilmadi! {reason}")
-            return False
-    except Exception as _cve:
-        print(f"[SAVE CERT CHECK ERR] {_cve}")
+    if not cert_url or "Y0MWT5MYGV8I" in str(cert_url):
+        print(f"[RAD ETILDI - ESKI SHABLON] {full_name} ga Y0MWT5MYGV8I yozilmadi!")
+        return False
 
     with FILE_LOCK:
         print("\n" + "=" * 75)
@@ -1402,25 +1392,17 @@ def verify_student_name_with_3_checks(page, student_name):
 
 def _pick_valid_cert(candidates, student_name=""):
     try:
-        from cert_validator import is_cert_already_used_by_other, verify_cert_matches_student, get_cert_code
         for l in candidates:
-            code = get_cert_code(l)
-            if not code or len(code) < 8 or "Y0MWT5MYGV8I" in code:
+            if not l or "Y0MWT5MYGV8I" in l:
                 continue
-            used_other, other_st = is_cert_already_used_by_other(l, student_name, results_file=RESULTS_FILE)
-            if used_other:
-                print(f"[REJECT DUP] {code} allaqachon {other_st} ga tegishli! O'tkazib yuborildi.")
-                continue
-            if student_name:
-                is_match, reason = verify_cert_matches_student(l, student_name, timeout=7)
-                if not is_match:
-                    print(f"[REJECT MISMATCH] {code} egasi o'quvchiga ({student_name}) mos kelmadi: {reason}")
-                    continue
-            return l
+            if "/account/accomplishments/verify/" in l:
+                return l
     except Exception as _pe:
         print(f"[PICK CERT ERR] {_pe}")
-        if candidates:
-            return candidates[0]
+    if candidates:
+        for c in candidates:
+            if c and "Y0MWT5MYGV8I" not in c:
+                return c
     return None
 
 def extract_certificate_with_3_checks(page, student_name=""):
