@@ -2197,7 +2197,8 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         _state_mem_cache["unrec"].add(s_name)
                 else:
                     sticky = _sticky_workers.get(w_key)
-                    if sticky and sticky.get("student", {}).get("name") == s_name and sticky.get("tries", 1) < 4:
+                    if sticky and sticky.get("student", {}).get("name") == s_name and sticky.get("tries", 1) < 2:
+                        sticky["tries"] = sticky.get("tries", 1) + 1
                         if acc_line:
                             sticky["account_line"] = acc_line.strip()
                         in_progress_students[s_name] = time.time()
