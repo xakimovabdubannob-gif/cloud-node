@@ -1980,6 +1980,22 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
             page.wait_for_timeout(3500)
 
             body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+            # Agar pochta allaqachon ro'yxatdan o'tgan bo'lsa yoki formadan o'tmagan bo'lsa, yangi fresh alias olinadi
+            if "/auth/register" in page.url and em_in.is_visible():
+                from gmail_automation import get_next_available_alias
+                for _al_try in range(15):
+                    if not em_in.is_visible() or "/auth/register" not in page.url:
+                        break
+                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud yoki xato! Yangi fresh alias olinmoqda ({_al_try + 1}/15)...")
+                    student_email = get_next_available_alias()
+                    if hasattr(mail_svc, "email"):
+                        mail_svc.email = student_email
+                    fill_react_input(em_in, student_email)
+                    page.wait_for_timeout(500)
+                    sub2.click(force=True)
+                    page.wait_for_timeout(3500)
+                    body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+
             if "Serverda ichki xatolik" in body_txt or ("/auth/register" in page.url and em_in.is_visible() and "xatolik" in body_txt.lower()):
                 print(f"   [!] '{s_val} {n_val}' da Aileaders server xatosi berdi, keyingi variant sinab ko'riladi...")
                 continue
@@ -2164,6 +2180,22 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
             page.wait_for_timeout(3500)
 
             body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+            # Agar pochta allaqachon ro'yxatdan o'tgan bo'lsa yoki formadan o'tmagan bo'lsa, yangi fresh alias olinadi
+            if "/auth/register" in page.url and em_in.is_visible():
+                from gmail_automation import get_next_available_alias
+                for _al_try in range(15):
+                    if not em_in.is_visible() or "/auth/register" not in page.url:
+                        break
+                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud yoki xato! Yangi fresh alias olinmoqda ({_al_try + 1}/15)...")
+                    student_email = get_next_available_alias()
+                    if hasattr(mail_svc, "email"):
+                        mail_svc.email = student_email
+                    fill_react_input(em_in, student_email)
+                    page.wait_for_timeout(500)
+                    sub2.click(force=True)
+                    page.wait_for_timeout(3500)
+                    body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+
             if "Serverda ichki xatolik" in body_txt or ("/auth/register" in page.url and em_in.is_visible() and "xatolik" in body_txt.lower()):
                 print(f"   [!] '{s_val} {n_val}' da Aileaders server xatosi berdi, keyingi variant sinab ko'riladi...")
                 continue
