@@ -51,12 +51,28 @@ def decrypt_data_store(shield_key: str = None) -> bool:
         raw_json = fernet.decrypt(enc_bytes)
         pack = json.loads(raw_json.decode("utf-8"))
         
+        # Birlashtirish (Merge) - hech qachon mavjud yangi sertifikatlarni o'chirib yubormaymiz!
         if "akkountlar" in pack and pack["akkountlar"]:
-            with open("akkountlar.txt", "w", encoding="utf-8") as f:
-                f.write(pack["akkountlar"])
+            existing_acc = set()
+            if os.path.exists("akkountlar.txt"):
+                with open("akkountlar.txt", "r", encoding="utf-8", errors="replace") as f:
+                    existing_acc = {line.strip() for line in f if line.strip()}
+            vault_accs = [l.strip() for l in pack["akkountlar"].splitlines() if l.strip()]
+            new_accs = [l for l in vault_accs if l not in existing_acc]
+            if new_accs:
+                with open("akkountlar.txt", "a", encoding="utf-8") as f:
+                    f.write("\n".join(new_accs) + "\n")
+
         if "natijalar" in pack and pack["natijalar"]:
-            with open("natijalar_sertifikatlar.txt", "w", encoding="utf-8") as f:
-                f.write(pack["natijalar"])
+            existing_certs = set()
+            if os.path.exists("natijalar_sertifikatlar.txt"):
+                with open("natijalar_sertifikatlar.txt", "r", encoding="utf-8", errors="replace") as f:
+                    existing_certs = {line.strip() for line in f if line.strip()}
+            vault_certs = [l.strip() for l in pack["natijalar"].splitlines() if l.strip()]
+            new_certs = [l for l in vault_certs if l not in existing_certs]
+            if new_certs:
+                with open("natijalar_sertifikatlar.txt", "a", encoding="utf-8") as f:
+                    f.write("\n".join(new_certs) + "\n")
         return True
     except Exception as e:
         print(f"[VAULT DECRYPT ERROR] {e}")
