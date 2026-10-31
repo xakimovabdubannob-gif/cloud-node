@@ -1882,12 +1882,7 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
 
     print(f"[REGISTRATSIYA] {full_name} bazada yo'q. Aileaders.uz orqali yangi profil ochilmoqda...")
     try:
-        assigned_em = student.get("assigned_email", "").strip()
-        if assigned_em and "gmail.com" in assigned_em:
-            from gmail_automation import GmailMailboxService
-            mail_svc = GmailMailboxService(existing_email=assigned_em)
-        else:
-            mail_svc = TempMailAPI()
+        mail_svc = TempMailAPI()
         student_email = mail_svc.email
         student_password = generate_student_password(full_name)
         print(f"   Yangi unikal pochta (TempMail): {student_email} | Yangi parol: {student_password}")
@@ -1895,7 +1890,7 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
         print(f"[!] TempMail yaratish xatosi: {e}")
         return "RETRY", None
 
-    # Hujjat seriyasini har xil variantlarda (Guvohnoma: T, I-TV, TV, I-FR va Passport) tekshirib ko'rish ro'yxati
+    # Hujjat seriyasini har xil variantlarda (Guvohnoma: T, I-TV, TV, I-FR, III-FR va Passport) tekshirib ko'rish ro'yxati
     ds_up = doc_series.upper().strip()
     num_pad7 = doc_number.zfill(7) if len(doc_number) < 7 else doc_number
     doc_candidates = []
@@ -1930,20 +1925,21 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
         doc_candidates.append(("guvohnoma", f"I-{ds_up}", num_pad7))
         doc_candidates.append(("guvohnoma", "T", doc_number))
 
+    # Tug'ilgan sana variantlari (masalan 06.10.2019 va 10.06.2019)
+    birth_variants = [birth_date]
+    if "." in birth_date:
+        _bp = birth_date.split(".")
+        if len(_bp) == 3 and int(_bp[0]) <= 12 and int(_bp[1]) <= 12 and _bp[0] != _bp[1]:
+            birth_variants.append(f"{_bp[1]}.{_bp[0]}.{_bp[2]}")
+
     try:
         reg_step2_ok = False
-        birth_variants = [birth_date]
-        if "." in birth_date:
-            _bp = birth_date.split(".")
-            if len(_bp) == 3 and int(_bp[0]) <= 12 and int(_bp[1]) <= 12 and _bp[0] != _bp[1]:
-                birth_variants.append(f"{_bp[1]}.{_bp[0]}.{_bp[2]}")
-
-        for b_val in birth_variants:
+        for b_cand in birth_variants:
             if reg_step2_ok:
                 break
             for cand_idx, (doc_mode, s_val, n_val) in enumerate(doc_candidates):
                 if cand_idx > 0 or len(birth_variants) > 1:
-                    print(f"   [HUJJAT VARIANTI] {doc_mode.upper()} '{s_val} {n_val}' | Sana: {b_val} tekshirilmoqda...")
+                    print(f"   [HUJJAT VARIANTI] {doc_mode.upper()} '{s_val} {n_val}' | Sana: {b_cand} tekshirilmoqda...")
                 safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.5)
 
                 if doc_mode == "guvohnoma":
@@ -1964,128 +1960,113 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                         page.wait_for_timeout(400)
                     page.locator("input[name='passport_number'], input[placeholder*='Seriya']").first.fill(f"{s_val}{n_val}")
 
-                pick_date_aileaders(page, b_val)
+                pick_date_aileaders(page, b_cand)
 
-            cb = page.locator("button[role='combobox'], button[data-slot='select-trigger']").first
-            if cb.is_visible():
-                cb.click(force=True)
-                page.wait_for_timeout(400)
-                opt = page.locator("[role='option']").first
-                if opt.is_visible():
-                    opt.click(force=True)
-                page.wait_for_timeout(400)
+                cb = page.locator("button[role='combobox'], button[data-slot='select-trigger']").first
+                if cb.is_visible():
+                    cb.click(force=True)
+                    page.wait_for_timeout(400)
+                    opt = page.locator("[role='option']").first
+                    if opt.is_visible():
+                        opt.click(force=True)
+                    page.wait_for_timeout(400)
 
-            sub1 = page.locator("button[type='submit']").filter(has_text=re.compile(r"Ro.yxatdan o.tish", re.I)).first
-            if sub1.is_visible():
-                sub1.click(force=True)
-                page.wait_for_timeout(3500)
+                sub1 = page.locator("button[type='submit']").filter(has_text=re.compile(r"Ro.yxatdan o.tish", re.I)).first
+                if sub1.is_visible():
+                    sub1.click(force=True)
+                    page.wait_for_timeout(3500)
 
-            keyingi = page.locator("button:has-text('Keyingi')").first
-            if not keyingi.is_visible():
-                b_txt1 = page.evaluate("() => (document.body ? document.body.innerText : '')")
-                if "registratsiya qilingan" in b_txt1.lower():
-                    print(f"   [!] Aileaders.uz javobi: '{s_val} {n_val}' ushbu ma'lumotlar bilan oldin registratsiya qilingan!")
-                    save_unrecoverable_student(full_name, class_name, f"Aileaders.uz: Ushbu ma'lumotlar bilan oldin registratsiya qilingan ({s_val} {n_val})")
-                    return "UNRECOVERABLE", None
-                continue
+                keyingi = page.locator("button:has-text('Keyingi')").first
+                if not keyingi.is_visible():
+                    b_txt1 = page.evaluate("() => (document.body ? document.body.innerText : '')")
+                    if "registratsiya qilingan" in b_txt1.lower():
+                        print(f"   [!] Aileaders.uz javobi: '{s_val} {n_val}' ushbu ma'lumotlar bilan oldin registratsiya qilingan!")
+                        save_unrecoverable_student(full_name, class_name, f"Aileaders.uz: Ushbu ma'lumotlar bilan oldin registratsiya qilingan ({s_val} {n_val})")
+                        return "UNRECOVERABLE", None
+                    continue
 
-            print(f"   1-bosqich muvaffaqiyatli ({s_val} {n_val})! 2-bosqichga o'tilmoqda...")
-            keyingi.click(force=True)
-            page.wait_for_timeout(2000)
+                print(f"   1-bosqich muvaffaqiyatli ({s_val} {n_val})! 'Keyingi' bosilmoqda...")
+                keyingi.click(force=True)
+                page.wait_for_timeout(2000)
 
-            em_in = page.locator("input[type='email'], input[name='email']").first
-            try:
-                em_in.wait_for(state="visible", timeout=10000)
-            except Exception:
-                pass
-
-            if not em_in.is_visible():
-                print(f"   [!] 2-bosqich formasi ochilmadi, qayta tekshiriladi...")
-                continue
-
-            # Har bir maydonni shoshmasdan, xotirjam to'ldirish
-            fill_react_input(em_in, student_email)
-            page.wait_for_timeout(1000)
-
-            ph_in = page.locator("input[name='number'], input[type='tel']").first
-            if ph_in.is_visible():
-                ph_in.click(force=True)
-                ph_in.evaluate("""(el, val) => {
-                    el.focus();
-                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                    setter.call(el, val);
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                }""", PHONE_FORMATTED)
-                page.wait_for_timeout(1000)
-
-            p1 = page.locator("input[name='password1'], input[type='password']").first
-            p2 = page.locator("input[name='password2']").first
-            if p1.is_visible():
-                fill_react_input(p1, student_password)
-                page.wait_for_timeout(600)
-            if p2.is_visible():
-                fill_react_input(p2, student_password)
-                page.wait_for_timeout(600)
-
-            # Forma to'liq reaktiv saqlanishi uchun qisqa pauza
-            page.wait_for_timeout(1500)
-            sub2 = page.locator("div[role='dialog'] button, form button").filter(has_text=re.compile(r"Keyingi|Ro.yxatdan|Yuborish", re.I)).last
-            print(f"   [2-bosqich] Ro'yxatdan o'tish tugmasi bir marta bosildi. Server javobi shoshmasdan kutilmoqda...")
-            sub2.click(force=True)
-
-            # Server javobini 25 soniyagacha xotirjam kutamiz (har soniyada tekshirib)
-            verified_reached = False
-            body_txt = ""
-            for wait_sec in range(1, 26):
-                page.wait_for_timeout(1000)
-                cur_url = page.url
-                body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-                if "/auth/verify" in cur_url or "Pochtangizni tekshiring" in body_txt or "Verifikatsiya havolasi" in body_txt:
-                    print(f"   [JAVOB KELDI ({wait_sec}s)] Muvaffaqiyatli! Aileaders verifikatsiya sahifasi ochildi.")
-                    verified_reached = True
-                    break
-                if "allaqachon ro'yxatdan o'tgan" in body_txt.lower():
-                    print(f"   [JAVOB KELDI ({wait_sec}s)] Ushbu pochta ({student_email}) allaqachon ro'yxatdan o'tgan!")
-                    break
-                if "Serverda ichki xatolik" in body_txt:
-                    print(f"   [JAVOB KELDI ({wait_sec}s)] Serverda ichki xatolik yuz berdi!")
-                    break
-                if wait_sec % 5 == 0:
-                    print(f"   ... Server javobi kutilmoqda ({wait_sec}/25s) ...")
-
-            # FAQAT pochta allaqachon mavjud deb xato bersa, yangi TempMail olinadi
-            if not verified_reached and "allaqachon" in body_txt.lower():
-                for _al_try in range(5):
-                    if verified_reached:
+                em_in = page.locator("input[type='email'], input[name='email']").first
+                for _ in range(3):
+                    if em_in.count() > 0 and em_in.is_visible():
                         break
-                    print(f"   [!] Yangi unikal TempMail olinmoqda ({_al_try + 1}/5)...")
-                    mail_svc = TempMailAPI()
-                    student_email = mail_svc.email
-                    fill_react_input(em_in, student_email)
+                    keyingi.click(force=True)
                     page.wait_for_timeout(1500)
-                    sub2.click(force=True)
-                    print(f"   [2-bosqich] Qayta yuborildi, javob kutilmoqda...")
-                    for wait_sec2 in range(1, 26):
-                        page.wait_for_timeout(1000)
-                        cur_url = page.url
-                        body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-                        if "/auth/verify" in cur_url or "Pochtangizni tekshiring" in body_txt or "Verifikatsiya havolasi" in body_txt:
-                            print(f"   [JAVOB KELDI ({wait_sec2}s)] Muvaffaqiyatli! Verifikatsiya sahifasi ochildi.")
-                            verified_reached = True
-                            break
-                        if "allaqachon" in body_txt.lower():
-                            break
 
-            if not verified_reached:
-                print(f"   [!] '{s_val} {n_val}' da verifikatsiya sahifasi ochilmadi, keyingi variant tekshiriladi...")
-                continue
+                try:
+                    em_in.wait_for(state="visible", timeout=7000)
+                except Exception:
+                    pass
 
-            reg_step2_ok = True
-            break
+                if not em_in.is_visible():
+                    continue
+
+                fill_react_input(em_in, student_email)
+                page.wait_for_timeout(800)
+
+                ph_in = page.locator("input[name='number'], input[type='tel']").first
+                if ph_in.is_visible():
+                    ph_in.click(force=True)
+                    ph_in.evaluate("""(el, val) => {
+                        el.focus();
+                        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                        setter.call(el, val);
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    }""", PHONE_FORMATTED)
+                    page.wait_for_timeout(800)
+
+                p1 = page.locator("input[name='password1'], input[type='password']").first
+                p2 = page.locator("input[name='password2']").first
+                if p1.is_visible():
+                    fill_react_input(p1, student_password)
+                    page.wait_for_timeout(400)
+                if p2.is_visible():
+                    fill_react_input(p2, student_password)
+                    page.wait_for_timeout(400)
+
+                page.wait_for_timeout(1000)
+                sub2 = page.locator("div[role='dialog'] button, form button").filter(has_text=re.compile(r"Keyingi|Ro.yxatdan|Yuborish", re.I)).last
+                print(f"   [2-bosqich] Ro'yxatdan o'tish yuborildi. Server javobi kutilmoqda...")
+                sub2.click(force=True)
+
+                # Server javobini 20 soniyagacha kutamiz
+                for wait_sec in range(1, 21):
+                    page.wait_for_timeout(1000)
+                    cur_url = page.url
+                    body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+                    if "/auth/verify" in cur_url or "Pochtangizni tekshiring" in body_txt or "Verifikatsiya havolasi" in body_txt:
+                        print(f"   [JAVOB KELDI ({wait_sec}s)] Muvaffaqiyatli! Aileaders verifikatsiya sahifasi ochildi.")
+                        break
+                    if "allaqachon ro'yxatdan o'tgan" in body_txt.lower():
+                        break
+
+                body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+                # Agar pochta allaqachon mavjud deb xato bersagina yangi pochta olinadi
+                if "/auth/verify" not in page.url and "allaqachon" in body_txt.lower():
+                    for _al_try in range(5):
+                        if "/auth/verify" in page.url:
+                            break
+                        print(f"   [!] Pochta ({student_email}) allaqachon mavjud! Yangi unikal TempMail olinmoqda ({_al_try + 1}/5)...")
+                        mail_svc = TempMailAPI()
+                        student_email = mail_svc.email
+                        fill_react_input(em_in, student_email)
+                        page.wait_for_timeout(500)
+                        sub2.click(force=True)
+                        page.wait_for_timeout(4000)
+
+                if "Serverda ichki xatolik" in body_txt or ("/auth/register" in page.url and em_in.is_visible() and "xatolik" in body_txt.lower()):
+                    print(f"   [!] '{s_val} {n_val}' da Aileaders server xatosi berdi, keyingi variant sinab ko'riladi...")
+                    continue
+
+                reg_step2_ok = True
+                break
 
         if not reg_step2_ok:
-            save_unrecoverable_student(full_name, class_name, f"Barcha hujjat variantlari ({doc_series} {doc_number}: T/TV/I-TV/I-FR) tekshirildi, Aileaders ma'lumotni topmadi!")
+            save_unrecoverable_student(full_name, class_name, f"Barcha hujjat variantlari ({doc_series} {doc_number}: T/TV/I-TV/I-FR/III-FR) tekshirildi, Aileaders ma'lumotni topmadi!")
             return "UNRECOVERABLE", None
 
         with FILE_LOCK:
