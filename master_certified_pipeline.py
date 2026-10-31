@@ -1644,7 +1644,7 @@ def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, stu
     so'ng Aileaders-ga kirib 'Generativ AI' kursida 'TEKSHIRISH' tugmasini bosadi."""
     try:
         print("   [1-XABAR: Aileaders Tasdiqlash] Pochtaga aktivatsiya havolasi kutilmoqda...")
-        act_link = mail_svc.wait_for_activation(timeout=20)
+        act_link = mail_svc.wait_for_activation(timeout=50)
         if not act_link:
             print("   [1-XABAR: Aileaders Tasdiqlash] Xat kechikdi, Aileaders.uz orqali 'Qayta yuborish' bosilmoqda...")
             safe_goto_commit(page, "https://aileaders.uz/auth/login", wait_sec=2.0)
@@ -1952,22 +1952,23 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                     return "UNRECOVERABLE", None
                 continue
 
-            print(f"   1-bosqich muvaffaqiyatli ({s_val} {n_val})! 'Keyingi' bosilmoqda...")
-            em_in = page.locator("input[type='email'], input[name='email']").first
-            for _ in range(3):
-                if em_in.count() > 0 and em_in.is_visible():
-                    break
-                keyingi.click(force=True)
-                page.wait_for_timeout(1500)
+            print(f"   1-bosqich muvaffaqiyatli ({s_val} {n_val})! 2-bosqichga o'tilmoqda...")
+            keyingi.click(force=True)
+            page.wait_for_timeout(2000)
 
+            em_in = page.locator("input[type='email'], input[name='email']").first
             try:
-                em_in.wait_for(state="visible", timeout=7000)
+                em_in.wait_for(state="visible", timeout=10000)
             except Exception:
                 pass
 
             if not em_in.is_visible():
+                print(f"   [!] 2-bosqich formasi ochilmadi, qayta tekshiriladi...")
                 continue
+
+            # Har bir maydonni shoshmasdan, xotirjam to'ldirish
             fill_react_input(em_in, student_email)
+            page.wait_for_timeout(1000)
 
             ph_in = page.locator("input[name='number'], input[type='tel']").first
             if ph_in.is_visible():
@@ -1979,50 +1980,68 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                     el.dispatchEvent(new Event('input', { bubbles: true }));
                     el.dispatchEvent(new Event('change', { bubbles: true }));
                 }""", PHONE_FORMATTED)
+                page.wait_for_timeout(1000)
 
             p1 = page.locator("input[name='password1'], input[type='password']").first
             p2 = page.locator("input[name='password2']").first
             if p1.is_visible():
                 fill_react_input(p1, student_password)
+                page.wait_for_timeout(600)
             if p2.is_visible():
                 fill_react_input(p2, student_password)
+                page.wait_for_timeout(600)
 
-            page.wait_for_timeout(800)
+            # Forma to'liq reaktiv saqlanishi uchun qisqa pauza
+            page.wait_for_timeout(1500)
             sub2 = page.locator("div[role='dialog'] button, form button").filter(has_text=re.compile(r"Keyingi|Ro.yxatdan|Yuborish", re.I)).last
+            print(f"   [2-bosqich] Ro'yxatdan o'tish tugmasi bir marta bosildi. Server javobi shoshmasdan kutilmoqda...")
             sub2.click(force=True)
 
-            # Aileaders ro'yxatdan o'tkazib /auth/verify sahifasiga o'tishini kutamiz (15 soniyagacha)
-            for _w in range(30):
-                page.wait_for_timeout(500)
-                if "/auth/verify" in page.url:
-                    break
+            # Server javobini 25 soniyagacha xotirjam kutamiz (har soniyada tekshirib)
+            verified_reached = False
+            body_txt = ""
+            for wait_sec in range(1, 26):
+                page.wait_for_timeout(1000)
+                cur_url = page.url
                 body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-                if "allaqachon ro'yxatdan o'tgan" in body_txt.lower():
+                if "/auth/verify" in cur_url or "Pochtangizni tekshiring" in body_txt or "Verifikatsiya havolasi" in body_txt:
+                    print(f"   [JAVOB KELDI ({wait_sec}s)] Muvaffaqiyatli! Aileaders verifikatsiya sahifasi ochildi.")
+                    verified_reached = True
                     break
+                if "allaqachon ro'yxatdan o'tgan" in body_txt.lower():
+                    print(f"   [JAVOB KELDI ({wait_sec}s)] Ushbu pochta ({student_email}) allaqachon ro'yxatdan o'tgan!")
+                    break
+                if "Serverda ichki xatolik" in body_txt:
+                    print(f"   [JAVOB KELDI ({wait_sec}s)] Serverda ichki xatolik yuz berdi!")
+                    break
+                if wait_sec % 5 == 0:
+                    print(f"   ... Server javobi kutilmoqda ({wait_sec}/25s) ...")
 
-            body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-            # FAQAT va FAQAT "allaqachon ro'yxatdan o'tgan" deb xatolik bersagina yangi pochta olinadi
-            if "/auth/verify" not in page.url and "allaqachon" in body_txt.lower():
+            # FAQAT pochta allaqachon mavjud deb xato bersa, yangi TempMail olinadi
+            if not verified_reached and "allaqachon" in body_txt.lower():
                 for _al_try in range(5):
-                    if "/auth/verify" in page.url:
+                    if verified_reached:
                         break
-                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud! Yangi unikal TempMail olinmoqda ({_al_try + 1}/5)...")
+                    print(f"   [!] Yangi unikal TempMail olinmoqda ({_al_try + 1}/5)...")
                     mail_svc = TempMailAPI()
                     student_email = mail_svc.email
                     fill_react_input(em_in, student_email)
-                    page.wait_for_timeout(500)
+                    page.wait_for_timeout(1500)
                     sub2.click(force=True)
-                    for _w2 in range(30):
-                        page.wait_for_timeout(500)
-                        if "/auth/verify" in page.url:
+                    print(f"   [2-bosqich] Qayta yuborildi, javob kutilmoqda...")
+                    for wait_sec2 in range(1, 26):
+                        page.wait_for_timeout(1000)
+                        cur_url = page.url
+                        body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+                        if "/auth/verify" in cur_url or "Pochtangizni tekshiring" in body_txt or "Verifikatsiya havolasi" in body_txt:
+                            print(f"   [JAVOB KELDI ({wait_sec2}s)] Muvaffaqiyatli! Verifikatsiya sahifasi ochildi.")
+                            verified_reached = True
                             break
-                        b2 = page.evaluate("() => (document.body ? document.body.innerText : '')")
-                        if "allaqachon" in b2.lower():
+                        if "allaqachon" in body_txt.lower():
                             break
-                    body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
 
-            if "Serverda ichki xatolik" in body_txt or ("/auth/register" in page.url and em_in.is_visible() and "xatolik" in body_txt.lower()):
-                print(f"   [!] '{s_val} {n_val}' da Aileaders server xatosi berdi, keyingi variant sinab ko'riladi...")
+            if not verified_reached:
+                print(f"   [!] '{s_val} {n_val}' da verifikatsiya sahifasi ochilmadi, keyingi variant tekshiriladi...")
                 continue
 
             reg_step2_ok = True
