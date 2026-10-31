@@ -382,20 +382,20 @@ def parse_students_from_text(text: str):
             cls = cyrillic_to_latin_uz(cls_raw).replace(" ", "")
             line = line[:m_cls.start()] + " " + line[m_cls.end():]
 
-        # Hujjat seriya va raqamini topamiz (masalan TA 28055555, I-FR 0763053, AA 1234567)
+        # Hujjat seriya va raqamini topamiz (masalan TA 28055555, I-FR 0763053, AA 1234567, III-FR 23817)
         doc_series = ""
         doc_number = ""
-        m_doc = re.search(r"\b([I|V|X|A-Z]{1,4}(?:-[A-Z]{1,3})?)\s*(\d{6,8})\b", line, re.IGNORECASE)
+        m_doc = re.search(r"\b([IVXLCDM]{1,4}(?:-[A-Za-z]{1,3})?|[A-Za-z]{1,4}(?:-[A-Za-z]{1,3})?)\s*(\d{5,8})\b", line, re.IGNORECASE)
         if m_doc:
             doc_series = cyrillic_to_latin_uz(m_doc.group(1).upper().strip())
             doc_number = m_doc.group(2).strip()
             line = line[:m_doc.start()] + " " + line[m_doc.end():]
         else:
-            m_num = re.search(r"\b(\d{6,8})\b", line)
+            m_num = re.search(r"\b(\d{5,8})\b", line)
             if m_num:
                 doc_number = m_num.group(1).strip()
                 line = line[:m_num.start()] + " " + line[m_num.end():]
-                m_ser = re.search(r"\b([A-Z]{2}|I-FR|II-FR)\b", line, re.IGNORECASE)
+                m_ser = re.search(r"\b([A-Za-z]{1,4}(?:-[A-Za-z]{1,3})?|[IVXLCDM]{1,4}(?:-[A-Za-z]{1,3})?)\b", line, re.IGNORECASE)
                 if m_ser:
                     doc_series = cyrillic_to_latin_uz(m_ser.group(1).upper().strip())
                     line = line[:m_ser.start()] + " " + line[m_ser.end():]

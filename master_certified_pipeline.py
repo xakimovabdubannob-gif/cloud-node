@@ -1901,10 +1901,14 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
     doc_candidates = []
     if "-" in ds_up:
         doc_candidates.append(("guvohnoma", ds_up, num_pad7))
-        if ds_up != "I-TV":
-            doc_candidates.append(("guvohnoma", "I-TV", num_pad7))
+        if len(doc_number) < 7:
+            doc_candidates.append(("guvohnoma", ds_up, doc_number))
         if ds_up != "I-FR":
             doc_candidates.append(("guvohnoma", "I-FR", num_pad7))
+        if ds_up != "II-FR":
+            doc_candidates.append(("guvohnoma", "II-FR", num_pad7))
+        if ds_up != "I-TV":
+            doc_candidates.append(("guvohnoma", "I-TV", num_pad7))
         doc_candidates.append(("guvohnoma", "T", doc_number))
     elif ds_up in ("T", "TV", "FR", "TN", "AN", "SM", "QA", "SU", "NA", "BU", "XO", "JZ", "SI", "QR", "TS"):
         doc_candidates.append(("guvohnoma", ds_up, doc_number if ds_up == "T" else num_pad7))
