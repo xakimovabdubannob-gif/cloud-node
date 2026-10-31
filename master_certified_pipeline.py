@@ -258,10 +258,29 @@ def dismiss_all_popups(page):
                 if (t === 'Start the course' || t === 'Close' || t.startsWith('Close') ||
                     t === 'Continue learning' || t === 'Next' || t === 'Got it' || t === 'Done' || t === 'Dismiss' ||
                     t === 'Начать курс' || t === 'Закрыть' || t === 'Далее' || t === 'Понятно' || t === 'Готово' ||
+                    t.includes("Yes, I'm verified") || t.includes('verified') ||
                     aria.includes('close') || aria.includes('закрыть')) {
                     try { b.click(); } catch(e) {}
                 }
             });
+
+            // 3. Coursera Verify email modal removal
+            const verifyModal = Array.from(document.querySelectorAll("div[role='dialog'], .cds-Modal-container, .cds-Modal-dialog")).find(m => {
+                const t = (m.innerText || '').toLowerCase();
+                return t.includes('verify your email') || t.includes('verify email');
+            });
+            if (verifyModal) {
+                const yesB = Array.from(verifyModal.querySelectorAll('button')).find(b => (b.innerText || '').toLowerCase().includes('verified'));
+                if (yesB) {
+                    try { yesB.click(); } catch(e) {}
+                }
+                const closeBtn = verifyModal.querySelector("button[aria-label*='Close'], button.cds-Modal-close");
+                if (closeBtn) {
+                    try { closeBtn.click(); } catch(e) {}
+                } else {
+                    try { verifyModal.remove(); } catch(e) {}
+                }
+            }
         }""")
     except Exception:
         pass
