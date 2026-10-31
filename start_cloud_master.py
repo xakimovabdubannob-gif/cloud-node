@@ -116,6 +116,19 @@ if os.path.exists("orders_archive.zip"):
                             print(f"[ACTIVE ORDER SAQLANDI] {fn} -> Qolgan o'quvchilar: {len(rem)} ta!")
                     except Exception:
                         pass
+            # Shuningdek, archived dagi chala qolgan bugungi buyurtmalarni bot_orders ga qaytaramiz:
+            for fn in os.listdir(arch_dir):
+                if fn.startswith("in_") and fn.endswith(".xlsx"):
+                    src = os.path.join(arch_dir, fn)
+                    try:
+                        sts = parse_students_from_excel(src)
+                        rem = [s for s in sts if s["name"] not in done_set and s["name"] not in unrec_set]
+                        if len(rem) > 0:
+                            dst = os.path.join("bot_orders", fn)
+                            shutil.copy2(src, dst)
+                            print(f"[ACTIVE ORDER TIKLANDI] {fn} -> bot_orders ga qaytarildi ({len(rem)} ta o'quvchi)!")
+                    except Exception:
+                        pass
         except Exception as filter_err:
             print(f"[ORDERS SMART FILTER ERROR] {filter_err}")
     except Exception as e:

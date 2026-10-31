@@ -18,7 +18,6 @@ import uuid
 import threading
 import subprocess
 import requests
-socket.setdefaulttimeout(15)
 
 try:
     from master_certified_pipeline import (
@@ -184,23 +183,11 @@ class ClusterWorkerNode:
             return {}
 
     def get_student_cert_line(self, s_name: str) -> str:
-        s_norm = s_name.replace("`", "'").strip().upper()
         if os.path.exists(RESULTS_FILE):
             with open(RESULTS_FILE, "r", encoding="utf-8", errors="replace") as f:
                 for ln in f.read().splitlines():
-                    ln_s = ln.strip()
-                    if "|" in ln_s:
-                        fn = ln_s.split("|")[0].replace("`", "'").strip().upper()
-                        if fn == s_norm:
-                            try:
-                                from cert_validator import is_cert_already_used_by_other
-                                used_other, _ = is_cert_already_used_by_other(ln_s, s_name, results_file=RESULTS_FILE)
-                                if used_other:
-                                    continue
-                            except Exception:
-                                pass
-                            if "Y0MWT5MYGV8I" not in ln_s or "KOMILOVA" in fn:
-                                return ln_s
+                    if ln.strip().startswith(s_name + " |"):
+                        return ln.strip()
         return ""
 
     def get_student_acc_line(self, s_name: str) -> str:
@@ -224,8 +211,6 @@ class ClusterWorkerNode:
             if not self.approved or local_wid > self.target_workers or not self.master_url:
                 time.sleep(2)
                 continue
-            if self.master_url:
-                os.environ["CLUSTER_MASTER_URL"] = self.master_url
 
             try:
                 r = requests.post(
@@ -276,32 +261,13 @@ class ClusterWorkerNode:
             t_work_start = time.time()
             try:
                 try:
-                    subprocess.run(["git", "pull", "--rebase", "origin", "main"], timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                except Exception:
-                    pass
-                try:
                     import importlib, master_certified_pipeline
                     importlib.reload(master_certified_pipeline)
                     from master_certified_pipeline import process_student
                 except Exception:
                     pass
                 is_headless = os.environ.get("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
-                res_holder = ["INCOMPLETE"]
-                def _run_worker_job():
-                    try:
-                        res_holder[0] = process_student(st, status_callback=update_step, headless=is_headless, worker_id=local_wid)
-                    except Exception as _e:
-                        print(f"[WORKER #{local_wid} THREAD ERR] {_e}")
-                        res_holder[0] = "ERROR"
-
-                w_th = threading.Thread(target=_run_worker_job, daemon=True)
-                w_th.start()
-                w_th.join(timeout=720)
-                if w_th.is_alive():
-                    print(f"[WORKER #{local_wid} WATCHDOG TIMEOUT] {s_name} 720s ichida javob bermadi! Bekor qilindi.")
-                    status = "TIMEOUT"
-                else:
-                    status = res_holder[0]
+                status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=local_wid)
             except Exception as e:
                 print(f"[CLUSTER WORKER #{local_wid} XATO] {e}")
 
@@ -463,8 +429,6 @@ class ClusterWorkerNode:
                 if not self.master_url:
                     time.sleep(4)
                     continue
-            if self.master_url:
-                os.environ["CLUSTER_MASTER_URL"] = self.master_url
 
             try:
                 r = requests.post(

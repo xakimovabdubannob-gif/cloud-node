@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-_CACHE_CLEAR_TS = 0.0
 """
 =============================================================================
 UZBEK CODERS - MUSTAQIL MULTI-PC CLUSTER KO'PRIGI (MASTER BRIDGE)
@@ -63,7 +62,6 @@ in_progress_students = {}
 pending_screen_requests = {}  # node_id -> chat_id
 _worker_assigned = {}
 _sticky_workers = {}
-_global_student_tries = {}
 _started_notified_students = set()
 _last_nodes_save_ts = 0.0
 
@@ -338,16 +336,13 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 st_sticky = sticky["student"]
                 sn_sticky = st_sticky["name"]
                 sn_norm = normalize_student_key(sn_sticky)
-                cur_sticky_tries = sticky.get("tries", 1)
-                global_tries = _global_student_tries.get(sn_sticky, 0)
                 if (
                     sn_norm not in done_norm
                     and sn_norm not in unrec_norm
                     and sn_norm not in busy_by_others_norm
-                    and cur_sticky_tries < 3
-                    and global_tries < 3
+                    and sticky.get("tries", 1) < 10
                 ):
-                    sticky["tries"] = cur_sticky_tries + 1
+                    sticky["tries"] = sticky.get("tries", 1) + 1
                     in_progress_students[sn_sticky] = now
                     _worker_assigned[w_key] = sn_sticky
                     acc_line = ""
@@ -381,14 +376,6 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                     if prev_st and normalize_student_key(prev_st) not in busy_by_others_norm:
                         in_progress_students.pop(prev_st, None)
                     tried_cluster_set.add(sn_sticky)
-                    _state_mem_cache["unrec"].add(sn_sticky)
-                    try:
-                        ef_text = open(ERRORS_FILE, "r", encoding="utf-8", errors="replace").read() if os.path.exists(ERRORS_FILE) else ""
-                        if sn_sticky not in ef_text:
-                            with open(ERRORS_FILE, "a", encoding="utf-8") as _ef:
-                                _ef.write(f"{sn_sticky} | {st_sticky.get('class', '')} | ILOJI_YOQ: 3 marta urinishda ham sertifikat chiqmadi\n")
-                    except Exception:
-                        pass
             else:
                 prev_st = _worker_assigned.pop(w_key, None)
                 if prev_st and normalize_student_key(prev_st) not in busy_by_others_norm:
@@ -408,8 +395,6 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                     continue
                 s_norm = normalize_student_key(s_name)
                 if s_norm in done_norm or s_norm in unrec_norm:
-                    continue
-                if _global_student_tries.get(s_name, 0) >= 3 or s_norm in tried_cluster_set or s_name in tried_cluster_set:
                     continue
                 if s_norm == normalize_student_key("MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"):
                     continue
@@ -1541,22 +1526,6 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             self._send_text("OK")
             return
 
-        if path == "/cluster/mail_invite":
-            mail_type = qs.get("type", ["coursera"])[0]
-            em = qs.get("email", [""])[0].lower().strip()
-            link = ""
-            with _mail_hub_lock:
-                cache_dict = _MAIL_HUB.get(mail_type, {})
-                link = cache_dict.get(em, "")
-                if not link:
-                    em_clean = em.replace(".", "")
-                    for k, v in cache_dict.items():
-                        if k.replace(".", "") == em_clean:
-                            link = v
-                            break
-            self._send_json({"ok": bool(link), "link": link})
-            return
-
         if path == "/cluster/request_screenshot":
             node_id = qs.get("node", [""])[0]
             chat_id = int(qs.get("chat_id", [str(load_bot_config().get("admin_id", 6580113791))])[0])
@@ -1683,8 +1652,6 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "/cluster/clear_cache":
             import shutil
-            global _CACHE_CLEAR_TS
-            _CACHE_CLEAR_TS = time.time()
             with nodes_lock:
                 if os.path.exists(ORDERS_DIR):
                     arch_dir = os.path.join(ORDERS_DIR, "archived")
@@ -1708,8 +1675,6 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 _sticky_workers.clear()
                 in_progress_students.clear()
                 tried_cluster_set.clear()
-                _global_student_tries.clear()
-                _started_notified_students.clear()
                 if os.path.exists(ERRORS_FILE):
                     try:
                         with open(ERRORS_FILE, "w", encoding="utf-8") as ef:
@@ -2112,16 +2077,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             status = data.get("status", "INCOMPLETE")
             st = data.get("student", {})
             s_name = st.get("name", "?")
-            idx_val = data.get("idx", "")
-            tot_val = data.get("total", "")
-            num_prefix = f"[{idx_val}/{tot_val}] " if (idx_val and tot_val) else ""
             cert_line = data.get("cert_line", "")
-# 100% QAT'IY SERTIFIKAT EGASI VA DUBLIKAT TEKSHIRUVI
-            if cert_line and status == "COMPLETED":
-                if "Y0MWT5MYGV8I" in cert_line:
-                    print(f"[CLUSTER FINISH RAD ETILDI] {s_name} uchun eski shablon kodi Y0MWT5MYGV8I rad etildi!")
-                    cert_line = ""
-                    status = "INCOMPLETE" 
             acc_line = data.get("account_line", "")
             err_line = data.get("error_line", "")
             chat_id = data.get("chat_id") or load_bot_config().get("admin_id", 6580113791)
@@ -2171,34 +2127,16 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     elif status == "UNRECOVERABLE":
                         _state_mem_cache["unrec"].add(s_name)
                 else:
-                    cur_tries = _global_student_tries.get(s_name, 0) + 1
-                    _global_student_tries[s_name] = cur_tries
-                    _sticky_workers.pop(w_key, None)
-                    _worker_assigned.pop(w_key, None)
-                    in_progress_students.pop(s_name, None)
-                    if cur_tries < 3:
-                        print(f"[CLUSTER RETRY #{cur_tries}/3] {s_name} sertifikat chiqmadi, qayta navbatga qo'yildi ({cur_tries}/3)")
+                    sticky = _sticky_workers.get(w_key)
+                    if sticky and sticky.get("student", {}).get("name") == s_name and sticky.get("tries", 1) < 4:
+                        if acc_line:
+                            sticky["account_line"] = acc_line.strip()
+                        in_progress_students[s_name] = time.time()
                     else:
+                        _sticky_workers.pop(w_key, None)
+                        _worker_assigned.pop(w_key, None)
+                        in_progress_students.pop(s_name, None)
                         tried_cluster_set.add(s_name)
-                        _state_mem_cache["unrec"].add(s_name)
-                        status = "UNRECOVERABLE"
-                        skip_reason = err_line or "3 marta to'liq urinishda ham sertifikat chiqmadi (Coursera kirish / Test topshirishda to'siq)"
-                        try:
-                            if os.path.exists(ERRORS_FILE):
-                                ef_text = open(ERRORS_FILE, "r", encoding="utf-8", errors="replace").read()
-                            else:
-                                ef_text = ""
-                            if s_name not in ef_text:
-                                with open(ERRORS_FILE, "a", encoding="utf-8") as _ef:
-                                    _ef.write(f"{s_name} | {st.get('class', '')} | ILOJI_YOQ: {skip_reason}\n")
-                        except Exception:
-                            pass
-                        msg_auto_skip = (
-                            f"❌ <b>{num_prefix}{s_name} — 3 MARTA URINILDI, TO'XTATILDI!</b>\n"
-                            f"Sababi: <i>{skip_reason}</i>\n"
-                            f"⚠️ Ushbu o'quvchi o'tkazib yuborildi va keyingi o'quvchiga o'tildi."
-                        )
-                        threading.Thread(target=send_tg, args=(chat_id, msg_auto_skip), daemon=True).start()
                 if node_id in cluster_nodes:
                     if "worker_statuses" not in cluster_nodes[node_id]:
                         cluster_nodes[node_id]["worker_statuses"] = {}
@@ -2248,8 +2186,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
 
             # Faqat masofaviy klaster kompyuterlari uchun Telegram xabari yuboramiz.
             # 1-Kompyuter (MASTER_PC) uchun asosiy telegram_bot.py o'zi allaqachon to'g'ridan-to'g'ri xabar beradi!
-            is_cancelled_old_task = bool(_CACHE_CLEAR_TS > 0 and start_time_val and start_time_val < _CACHE_CLEAR_TS)
-            if node_id != "MASTER_PC" and not is_cancelled_old_task:
+            if node_id != "MASTER_PC":
                 if status == "COMPLETED":
                     certs = get_certificate_map()
                     accs = get_existing_accounts()
@@ -2274,7 +2211,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     threading.Thread(target=send_tg, args=(chat_id, msg_skip), daemon=True).start()
 
             # Agar bu o'quvchi oxirgisi bo'lsa va buyurtma to'liq yakunlangan bo'lsa, umumiy Excelni yuboramiz
-            if status == "COMPLETED" and not is_cancelled_old_task:
+            if status == "COMPLETED":
                 try:
                     cands = sorted(
                         [(os.path.getmtime(os.path.join(ORDERS_DIR, fn)), os.path.join(ORDERS_DIR, fn), fn)
@@ -2407,14 +2344,9 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
         self._send_text("Not Found", 404)
 
 
-_LAST_SYNCED_TUNNEL_URL = ""
-
 def _sync_tunnel_to_github(tunnel_url: str):
-    global _LAST_SYNCED_TUNNEL_URL
-    if not tunnel_url or tunnel_url == _LAST_SYNCED_TUNNEL_URL:
-        return
     gh_token = os.environ.get("GH_TOKEN", "nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg"[::-1])
-    if not gh_token:
+    if not gh_token or not tunnel_url:
         return
     try:
         import base64
@@ -2422,21 +2354,11 @@ def _sync_tunnel_to_github(tunnel_url: str):
         api_u = "https://api.github.com/repos/xakimovabdubannob-gif/cloud-node/contents/cluster_url.txt"
         r_get = requests.get(api_u, headers=hdr, timeout=5)
         sha = r_get.json().get("sha") if r_get.status_code == 200 else None
-        curr = ""
-        if r_get.status_code == 200:
-            try:
-                curr = base64.b64decode(r_get.json().get("content", "")).decode("utf-8").strip()
-            except Exception:
-                pass
-        if curr == tunnel_url:
-            _LAST_SYNCED_TUNNEL_URL = tunnel_url
-            return
         content_b64 = base64.b64encode((tunnel_url + "\n").encode("utf-8")).decode("utf-8")
-        data = {"message": "sync: cluster tunnel updated [skip ci]", "content": content_b64, "branch": "main"}
+        data = {"message": f"sync: cluster tunnel updated [skip ci]", "content": content_b64}
         if sha:
             data["sha"] = sha
         requests.put(api_u, headers=hdr, json=data, timeout=6)
-        _LAST_SYNCED_TUNNEL_URL = tunnel_url
         print(f"[GITHUB TUNNEL SYNC OK] cluster_url.txt -> {tunnel_url}")
     except Exception as e:
         print(f"[GITHUB TUNNEL SYNC ERROR] {e}")
@@ -2609,114 +2531,6 @@ def _watch_user_pin_loop():
         time.sleep(2.5)
 
 
-
-_MAIL_HUB = {
-    "activation": {},
-    "coursera": {},
-    "magic": {},
-}
-_mail_hub_lock = threading.Lock()
-
-def master_mail_hub_loop():
-    """Yagona markaziy Gmail IMAP mijozi: tejamkor rejimda (trafikni 99.8% tejaydi, Google limitini umuman buzmaydi!)."""
-    import gmail_automation
-    import email
-    print("[MASTER MAIL HUB] Markaziy tejamkor pochta hubi ishga tushmoqda...")
-    mail = None
-    while True:
-        try:
-            if mail is None:
-                try:
-                    mail = gmail_automation.connect_gmail()
-                    print("[MASTER MAIL HUB] Gmail IMAP bilan aloqa o'rnatildi!")
-                except Exception as ce:
-                    # Agar Google limit / overquota bersa, tez-tez urmasdan 30s kutadi
-                    time.sleep(30)
-                    continue
-
-            try:
-                mail.noop()
-            except Exception:
-                try:
-                    mail.logout()
-                except Exception:
-                    pass
-                mail = None
-                time.sleep(1)
-                continue
-            status, messages = mail.search(None, "ALL")
-            if status == "OK" and messages and messages[0]:
-                mail_ids = messages[0].split()
-                # 30 ta emas, faqat eng oxirgi 3 ta xatni tekshiramiz (trafik 90% tejaladi!)
-                for m_id in reversed(mail_ids[-30:]):
-                    try:
-                        # Avval faqat sarlavhani (1 KB) o'qiymiz, butun xatni yuklamaymiz!
-                        h_status, h_data = mail.fetch(m_id, "(BODY.PEEK[HEADER.FIELDS (SUBJECT TO FROM)])")
-                        if h_status != "OK" or not h_data or not isinstance(h_data[0], tuple):
-                            continue
-                        h_text = h_data[0][1].decode("utf-8", errors="replace").lower()
-
-                        # Faqat tegishli mavzu bo'lsagina to'liq xatni o'qiymiz
-                        is_relevant = any(k in h_text for k in ["coursera", "invite", "enterprise", "dasturiga", "faollashtirish", "tasdiqlash", "tasdiq", "faol", "pochta", "aktivatsiya", "aileaders", "log in", "click the link", "magic"])
-                        if not is_relevant:
-                            continue
-
-                        status, msg_data = mail.fetch(m_id, "(RFC822)")
-                        for part in msg_data:
-                            if isinstance(part, tuple):
-                                msg = email.message_from_bytes(part[1])
-                                to_addr = (msg.get("To") or "").lower()
-                                subj = (msg.get("Subject") or "").lower()
-                                body, links = gmail_automation.get_clean_body_and_links(msg)
-
-                                headers_text = " ".join([
-                                    msg.get("Delivered-To") or "",
-                                    msg.get("X-Forwarded-To") or "",
-                                    msg.get("To") or "",
-                                    msg.get("Envelope-To") or "",
-                                    msg.get("X-Original-To") or "",
-                                    msg.get("Cc") or ""
-                                ]).lower()
-                                target_emails = set()
-                                for m in re.findall(r"[a-z0-9\.]+@gmail\.com", headers_text + " " + body.lower()):
-                                    target_emails.add(m.strip().lower())
-
-                                # 1. Coursera Invite
-                                if "coursera" in subj or "invite" in subj or "enterprise" in subj or "dasturiga" in subj:
-                                    c_link = gmail_automation.extract_coursera_invite_link_from_msg(msg)
-                                    if c_link:
-                                        with _mail_hub_lock:
-                                            for tem in target_emails:
-                                                _MAIL_HUB["coursera"][tem] = c_link
-
-                                # 2. Aileaders Activation
-                                if "faol" in subj or "tasdiq" in subj or "pochta" in subj or "aktivatsiya" in subj or "aileaders" in subj:
-                                    for l in links:
-                                        if "auth/activate" in l or "verify" in l:
-                                            with _mail_hub_lock:
-                                                for tem in target_emails:
-                                                    _MAIL_HUB["activation"][tem] = l
-
-                                # 3. Coursera Magic Login Link
-                                if "log in" in subj or "click the link" in subj or "magic" in subj:
-                                    m_link = gmail_automation.extract_coursera_magic_link_from_msg(msg)
-                                    if m_link:
-                                        with _mail_hub_lock:
-                                            for tem in target_emails:
-                                                _MAIL_HUB["magic"][tem] = m_link
-                    except Exception:
-                        pass
-            time.sleep(12)
-        except Exception as e:
-            try:
-                if mail:
-                    mail.logout()
-            except Exception:
-                pass
-            mail = None
-            time.sleep(30)
-
-
 def cloudflared_loop():
     global public_tunnel_url
     time.sleep(1.5)
@@ -2747,14 +2561,8 @@ def cloudflared_loop():
 
     cf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloudflared.exe")
     if not os.path.exists(cf_path):
-        print("[CLUSTER] cloudflared.exe topilmadi! Avtomatik yuklab olinmoqda...")
-        try:
-            cf_dl_url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
-            urllib.request.urlretrieve(cf_dl_url, cf_path)
-            print("[CLUSTER] cloudflared.exe muvaffaqiyatli yuklab olindi!")
-        except Exception as dl_err:
-            print(f"[CLUSTER] cloudflared.exe yuklashda xato: {dl_err}")
-            return
+        print("[CLUSTER] cloudflared.exe topilmadi!")
+        return
 
     while True:
         try:
@@ -3174,7 +2982,6 @@ if __name__ == "__main__":
         pass
     threading.Thread(target=_prewarm_cache, daemon=True).start()
     threading.Thread(target=cloudflared_loop, daemon=True).start()
-    threading.Thread(target=master_mail_hub_loop, daemon=True).start()
     threading.Thread(target=_watch_user_pin_loop, daemon=True).start()
     threading.Thread(target=node_health_monitor_loop, daemon=True).start()
     print(f"🚀 Cluster Master Bridge port {CLUSTER_PORT} da faol ishga tushdi! (12 ta Kompyuter ulangan)")

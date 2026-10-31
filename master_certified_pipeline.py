@@ -23,8 +23,6 @@ import json
 import ssl
 import random
 import threading
-import socket
-socket.setdefaulttimeout(15)
 import urllib.request
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -49,8 +47,13 @@ import random
 import string
 
 def generate_student_password(name=""):
-    """Barcha o'quvchilar uchun yagona, standart va ishonchli parol (@Ak101095)."""
-    return "@Ak101095"
+    """Har bir o'quvchi uchun har xil, kuchli va eslab qolish oson parol yaratadi."""
+    prefixes = ["Uzbek", "Coder", "Leader", "Smart", "Tech", "Edu", "Star", "Super", "Online", "Skill"]
+    pfx = random.choice(prefixes)
+    digits = "".join(random.choices(string.digits, k=4))
+    special = random.choice(["!", "#", "$", "@"])
+    letter = random.choice(["A", "B", "C", "D", "X", "Y", "Z"])
+    return f"{pfx}{digits}{special}{letter}"
 
 def normalize_name(name):
     if not name:
@@ -106,8 +109,6 @@ def get_completed_students():
                     if line and "http" in line:
                         parts = [p.strip() for p in line.split("|")]
                         if len(parts) >= 1:
-                            if "Y0MWT5MYGV8I" in line and "KOMILOVA" not in parts[0].upper():
-                                continue  # Stale cert ignore
                             fn = parts[0].upper()
                             completed.add(fn)
                             completed.add(fn.replace("`", "'"))
@@ -134,8 +135,6 @@ def get_unrecoverable_students():
                     if "ILOJI_YOQ" in line:
                         parts = [p.strip() for p in line.split("|")]
                         if len(parts) >= 1:
-                            if "Y0MWT5MYGV8I" in line and "KOMILOVA" not in parts[0].upper():
-                                continue  # Stale cert ignore
                             fn = parts[0].upper()
                             unrec.add(fn)
                             unrec.add(fn.replace("`", "'"))
@@ -202,10 +201,6 @@ def get_existing_accounts():
         return accounts
 
 def save_certificate_result(full_name, class_name, cert_url, doc_key=None):
-    if not cert_url or "Y0MWT5MYGV8I" in str(cert_url):
-        print(f"[RAD ETILDI - ESKI SHABLON] {full_name} ga Y0MWT5MYGV8I yozilmadi!")
-        return False
-
     with FILE_LOCK:
         print("\n" + "=" * 75)
         print(f"MUVAFFAQIYAT! {full_name} SERTIFIKATI OLINDI:")
@@ -216,7 +211,6 @@ def save_certificate_result(full_name, class_name, cert_url, doc_key=None):
                 f.write(f"{full_name} | {class_name} | {cert_url} | {doc_key}\n")
             else:
                 f.write(f"{full_name} | {class_name} | {cert_url}\n")
-    return True
 
 
 def dismiss_all_popups(page):
@@ -306,19 +300,6 @@ def safe_navigate(page, url, max_retries=3, wait_sec=1.5):
 def login_via_magic_link(page, email):
     """Pochtaga 'Email me a login link' orqali kirish havolasi yuborib, 100% kirish kafolati!"""
     if "gmail.com" in email.lower():
-        try:
-            from gmail_automation import fetch_coursera_magic_link
-            cached_mlink = fetch_coursera_magic_link(email, timeout_sec=2)
-            if cached_mlink:
-                print(f"   [GMAIL MAGIC LINK] Keshdagi havola topildi: {email} tizimga kirilmoqda...")
-                page.goto(cached_mlink, wait_until="domcontentloaded", timeout=30000)
-                time.sleep(5.0)
-                cookies = [c.get("name", "") for c in page.context.cookies()]
-                if any("CAUTH" in c for c in cookies):
-                    print(f"[LOGIN] Keshdagi Magic Link orqali muvaffaqiyatli kirildi! ({email})")
-                    return True
-        except Exception:
-            pass
         print(f"   [GMAIL MAGIC LINK] {email} uchun login link so'ralmoqda...")
         try:
             page.goto("https://www.coursera.org/?authMode=login", wait_until="domcontentloaded", timeout=22000)
@@ -342,18 +323,11 @@ def login_via_magic_link(page, email):
             if mlink:
                 print(f"   [GMAIL MAGIC LINK] Havola olindi, tizimga kirilmoqda...")
                 page.goto(mlink, wait_until="domcontentloaded", timeout=35000)
-                for _w in range(30):
-                    time.sleep(1.0)
-                    cookies = [c.get("name", "") for c in page.context.cookies()]
-                    if any("CAUTH" in c for c in cookies):
-                        print(f"[LOGIN] Gmail Magic Link orqali muvaffaqiyatli kirildi! ({email}) ({_w+1}s)")
-                        return True
-                    btn = page.locator("button:has-text('Continue'), button:has-text('Продолжить'), button:has-text('Log In'), a:has-text('Continue')").first
-                    if btn.count() > 0 and btn.is_visible():
-                        try:
-                            btn.click(force=True)
-                        except Exception:
-                            pass
+                time.sleep(6.0)
+                cookies = [c.get("name", "") for c in page.context.cookies()]
+                if any("CAUTH" in c for c in cookies):
+                    print(f"[LOGIN] Gmail Magic Link orqali muvaffaqiyatli kirildi! ({email})")
+                    return True
         except Exception as e:
             print(f"   [!] Gmail Magic link xatosi: {e}")
         return False
@@ -1129,16 +1103,6 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
             except Exception:
                 pass
 
-            try:
-                page.screenshot(path="coursera_live_quiz_proof.png")
-                import shutil, os
-                art_dir = r"C:\Users\user\.gemini\antigravity\brain\4150e480-acbf-420c-ba5b-cb0eb995908c"
-                if os.path.exists(art_dir):
-                    shutil.copy("coursera_live_quiz_proof.png", os.path.join(art_dir, "coursera_live_quiz_proof.png"))
-                print("[SCREENSHOT] Coursera Quiz sahifasi rasmga olindi: coursera_live_quiz_proof.png")
-            except Exception as ss_err:
-                print(f"[!] Screenshot xatosi: {ss_err}")
-
             # 6. IKKALA SUBMIT TUGMASINI BOSISH
             sub_btn_1 = page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
             if not sub_btn_1.is_visible():
@@ -1390,21 +1354,6 @@ def verify_student_name_with_3_checks(page, student_name):
 
     return False
 
-def _pick_valid_cert(candidates, student_name=""):
-    try:
-        for l in candidates:
-            if not l or "Y0MWT5MYGV8I" in l:
-                continue
-            if "/account/accomplishments/verify/" in l:
-                return l
-    except Exception as _pe:
-        print(f"[PICK CERT ERR] {_pe}")
-    if candidates:
-        for c in candidates:
-            if c and "Y0MWT5MYGV8I" not in c:
-                return c
-    return None
-
 def extract_certificate_with_3_checks(page, student_name=""):
     """Sertifikat havolasini 3 martagacha (1x, 2x, 3x kutish bilan) tekshirib oladi. Agar kurs hali IN_PROGRESS bo'lsa, o'sha yerdagi kamchilikni (Quiz yoki Video) darhol topib bajaradi!"""
     for c_try in range(1, 4):
@@ -1416,25 +1365,22 @@ def extract_certificate_with_3_checks(page, student_name=""):
             time.sleep(4.5 * mult)
             dismiss_all_popups(page)
             links = page.evaluate("""() => Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h && h.includes('/account/accomplishments/verify/'))""")
-            cand = _pick_valid_cert(links, student_name)
-            if cand:
-                return cand
+            if links:
+                return links[0]
 
             vc = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Посмотреть сертификат'), button:has-text('Посмотреть сертификат')").first
             if vc.is_visible():
                 vc.click(force=True)
                 time.sleep(4.5 * mult)
                 if "/account/accomplishments/verify/" in page.url:
-                    cand = _pick_valid_cert([page.url], student_name)
-                    if cand:
-                        return cand
+                    return page.url
 
             # Agar CERTIFICATES bo'sh bo'lsa, IN_PROGRESS tabini tekshiramiz: qaysi Quiz yoki Video qolib ketganini ko'ramiz!
             safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=IN_PROGRESS")
             time.sleep(4)
             dismiss_all_popups(page)
             in_prog_text = page.evaluate("() => (document.body ? document.body.innerText : '')")
-            if "Introduction to Generative AI" in in_prog_text and "% complete" in in_prog_text and not ("100% complete" in in_prog_text or "100 %" in in_prog_text):
+            if "Introduction to Generative AI" in in_prog_text and "% complete" in in_prog_text:
                 print("[!] DIQQAT: Kurs hali 'In Progress' da turibdi! IN_PROGRESS ichida qolib ketgan Quiz/Video tekshirilmoqda...")
                 handled_in_prog = False
                 # Birinchi o'rinda IN_PROGRESS kartochkasida qaysi Quiz yozilganini tekshiramiz
@@ -1482,24 +1428,22 @@ def extract_certificate_with_3_checks(page, student_name=""):
                 if handled_in_prog and student_name:
                     verify_student_name_with_3_checks(page, student_name)
                     continue
+                return None
 
             # 2. Accomplishments sahifasi
             safe_navigate(page, "https://www.coursera.org/account/accomplishments")
             time.sleep(5)
             dismiss_all_popups(page)
             links = page.evaluate("""() => Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h && h.includes('/account/accomplishments/verify/'))""")
-            cand = _pick_valid_cert(links, student_name)
-            if cand:
-                return cand
+            if links:
+                return links[0]
 
             vc2 = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Посмотреть сертификат')").first
             if vc2.is_visible():
                 vc2.click(force=True)
                 time.sleep(5)
                 if "/account/accomplishments/verify/" in page.url:
-                    cand = _pick_valid_cert([page.url], student_name)
-                    if cand:
-                        return cand
+                    return page.url
         except Exception as e:
             print(f"[!] Sertifikat qidiruv {c_try}-urinishda xatolik: {e}")
             time.sleep(2)
@@ -1794,10 +1738,9 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
     if not coursera_link:
         if getattr(mail_svc, "email", ""):
             ensure_aileaders_activated_and_tekshirish(page, mail_svc, mail_svc.email, student_password)
-        coursera_link = mail_svc.wait_for_coursera_invite(timeout=55)
+        coursera_link = mail_svc.wait_for_coursera_invite(timeout=40)
 
     if not coursera_link:
-        print("   [!] Coursera Join now xati kelmadi (yangi profil bilan qayta uriniladi).")
         return False
 
     all_invite_links = mail_svc.get_all_coursera_invites() if hasattr(mail_svc, "get_all_coursera_invites") else [coursera_link]
@@ -1955,10 +1898,6 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
         doc_candidates.append(("guvohnoma", "T", doc_number))
 
     try:
-        try:
-            context.clear_cookies()
-        except Exception:
-            pass
         reg_step2_ok = False
         for cand_idx, (doc_mode, s_val, n_val) in enumerate(doc_candidates):
             if cand_idx > 0:
@@ -1967,18 +1906,15 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
 
             if doc_mode == "guvohnoma":
                 guv_b = page.locator("button:has-text('Guvohnoma')").first
-                if guv_b.count() > 0 and guv_b.is_visible():
+                try:
+                    guv_b.wait_for(state="visible", timeout=12000)
+                except Exception:
+                    pass
+                if guv_b.is_visible():
                     guv_b.click(force=True)
-                    page.wait_for_timeout(400)
-                m_ser = page.locator("input[name='metrika_series']").first
-                m_num = page.locator("input[name='metrika_number']").first
-                if m_ser.is_visible() and m_num.is_visible():
-                    m_ser.fill(s_val)
-                    m_num.fill(n_val)
-                else:
-                    p_inp = page.locator("input[name='passport_number']").first
-                    if p_inp.is_visible():
-                        p_inp.fill(f"{s_val}{n_val}")
+                    page.wait_for_timeout(600)
+                page.locator("input[placeholder*='Seriya'], input[name='metrika_series']").first.fill(s_val)
+                page.locator("input[placeholder*='Raqam'], input[name='metrika_number']").first.fill(n_val)
             else:
                 pass_b = page.locator("button").filter(has_text="Passport").first
                 if pass_b.is_visible():
@@ -2044,21 +1980,6 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
             page.wait_for_timeout(3500)
 
             body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-            # Agar pochta allaqachon ro'yxatdan o'tgan bo'lsa, hujjat xato deb tashlamaymiz, darhol yangi alias olamiz!
-            if "/auth/register" in page.url and em_in.is_visible():
-                from gmail_automation import get_next_available_alias
-                for _al_try in range(5):
-                    if not em_in.is_visible() or "/auth/register" not in page.url:
-                        break
-                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud yoki server xatosi! Yangi fresh alias olinmoqda...")
-                    student_email = get_next_available_alias()
-                    mail_svc.email = student_email
-                    fill_react_input(em_in, student_email)
-                    page.wait_for_timeout(400)
-                    sub2.click(force=True)
-                    page.wait_for_timeout(3500)
-                    body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-
             if "Serverda ichki xatolik" in body_txt or ("/auth/register" in page.url and em_in.is_visible() and "xatolik" in body_txt.lower()):
                 print(f"   [!] '{s_val} {n_val}' da Aileaders server xatosi berdi, keyingi variant sinab ko'riladi...")
                 continue
@@ -2153,10 +2074,6 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
         doc_candidates.append(("guvohnoma", "T", doc_number))
 
     try:
-        try:
-            context.clear_cookies()
-        except Exception:
-            pass
         reg_step2_ok = False
         for cand_idx, (doc_mode, s_val, n_val) in enumerate(doc_candidates):
             if cand_idx > 0:
@@ -2247,21 +2164,6 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
             page.wait_for_timeout(3500)
 
             body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-            # Agar pochta allaqachon ro'yxatdan o'tgan bo'lsa, hujjat xato deb tashlamaymiz, darhol yangi alias olamiz!
-            if "/auth/register" in page.url and em_in.is_visible():
-                from gmail_automation import get_next_available_alias
-                for _al_try in range(5):
-                    if not em_in.is_visible() or "/auth/register" not in page.url:
-                        break
-                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud yoki server xatosi! Yangi fresh alias olinmoqda...")
-                    student_email = get_next_available_alias()
-                    mail_svc.email = student_email
-                    fill_react_input(em_in, student_email)
-                    page.wait_for_timeout(400)
-                    sub2.click(force=True)
-                    page.wait_for_timeout(3500)
-                    body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-
             if "Serverda ichki xatolik" in body_txt or ("/auth/register" in page.url and em_in.is_visible() and "xatolik" in body_txt.lower()):
                 print(f"   [!] '{s_val} {n_val}' da Aileaders server xatosi berdi, keyingi variant sinab ko'riladi...")
                 continue
@@ -2320,6 +2222,11 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
         print(f"{tag}[CHECK] {full_name} ({doc_key}) allaqachon sertifikat olgan. Keyingi o'quvchiga o'tiladi.")
         return "COMPLETED"
 
+    unrec_set = get_unrecoverable_students()
+    if (doc_key and doc_key in unrec_set) or any(v in unrec_set for v in fn_variants):
+        print(f"{tag}[SKIP - ILOJI YO'Q] {full_name} oldin ro'yxatdan o'tgan va bazada paroli yo'q (yoki kirib bo'lmaydi). Qayta urinilmaydi!")
+        return "UNRECOVERABLE"
+
     if student.get("email") and student.get("password"):
         acc = {"email": student["email"].strip(), "password": student["password"].strip()}
     else:
@@ -2335,12 +2242,6 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                 accounts.get(normalize_name(full_name)) or
                 accounts.get(re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ]", "", full_name))
             )
-
-    if not acc:
-        unrec_set = get_unrecoverable_students()
-        if (doc_key and doc_key in unrec_set) or any(v in unrec_set for v in fn_variants):
-            print(f"{tag}[SKIP - ILOJI YO'Q] {full_name} oldin ro'yxatdan o'tgan va bazada paroli yo'q (yoki kirib bo'lmaydi). Qayta urinilmaydi!")
-            return "UNRECOVERABLE"
 
 
     common_media_args = [
@@ -2549,8 +2450,7 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                 return "COMPLETED"
             else:
                 print(f"{tag}[!] {full_name} uchun 3 marta urinishda ham sertifikat havolasi chiqmadi! ({elapsed}s)")
-                save_unrecoverable_student(full_name, class_name, "3 marta urinishda ham sertifikat havolasi chiqmadi (Coursera/Test to'siq)", doc_key=doc_key)
-                return "UNRECOVERABLE"
+                return "FAILED"
     except Exception as outer_err:
         print(f"{tag}[!] {full_name} jarayonida kutilmagan xato ushlandi (dastur to'xtab qolmaydi!): {outer_err}")
         return "FAILED"
@@ -2591,31 +2491,10 @@ def get_error_reason_map():
             with open(ERRORS_FILE, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
-                    if not line or line.startswith("#") or "|" not in line:
-                        continue
-                    parts = [p.strip() for p in line.split("|")]
-                    if len(parts) >= 2:
-                        fn = parts[0].upper()
-                        reason = ""
-                        for p in parts[1:]:
-                            if "ILOJI_YOQ:" in p:
-                                reason = p.split("ILOJI_YOQ:", 1)[-1].strip()
-                                break
-                            elif any(w in p.lower() for w in ("xato", "urinish", "o'tgan", "parol", "kirib", "chiqmadi")):
-                                reason = p.strip()
-                                break
-                        if not reason:
-                            reason = parts[2] if len(parts) >= 3 else parts[1]
-                        if " | " in reason:
-                            reason = reason.split(" | ")[0].strip()
-                        err_map[fn] = reason
-                        err_map[fn.replace("`", "'")] = reason
-                        err_map[fn.replace("'", "`")] = reason
-                        norm_fn = normalize_name(fn)
-                        err_map[norm_fn] = reason
-                        err_map[re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ\s]+", "", fn)] = reason
-                        if len(parts) >= 4 and parts[-1].isalnum() and len(parts[-1]) >= 8:
-                            err_map[parts[-1].upper()] = reason
+                    if "|" in line:
+                        parts = [p.strip() for p in line.split("|")]
+                        if len(parts) >= 2:
+                            err_map[parts[0].upper()] = parts[-1]
         return err_map
 
 def create_or_load_roster_excel():
@@ -2848,39 +2727,13 @@ def export_results_to_excel(students, output_file=RESULTS_EXCEL, school_info="")
                 cert_id = cert_url.rstrip("/").split("/")[-1]
                 cert_status = cert_id
                 r_fill = ok_fill
-            else:
+            elif name in unrec_set or st.get("doc_key") in unrec_set:
+                reason = errors.get(name, "Oldin ro'yxatdan o'tgan (bazada login-paroli yo'q)")
+                cert_status = f"ILOJI YO'Q: {reason}"
                 r_fill = skip_fill
-                dk_val = st.get("doc_key") or f"{st.get('doc_series','')}{st.get('doc_number','')}".replace(" ", "").replace("-", "").upper()
-                norm_nm = normalize_name(name)
-                stripped_nm = re.sub(r"['`\u02bb\u02bc\u2018\u2019ʻʼ\s]+", "", name)
-                
-                reason = (
-                    (errors.get(dk_val) if dk_val else None) or
-                    errors.get(name) or
-                    errors.get(name.replace("`", "'")) or
-                    errors.get(name.replace("'", "`")) or
-                    errors.get(norm_nm) or
-                    errors.get(stripped_nm)
-                )
-                if not reason:
-                    is_unrec = bool(
-                        (dk_val and dk_val in unrec_set) or
-                        name in unrec_set or
-                        norm_nm in unrec_set or
-                        stripped_nm in unrec_set
-                    )
-                    if is_unrec:
-                        reason = "3 marta urinishda sertifikat chiqmadi / Oldin ro'yxatdan o'tgan"
-                    else:
-                        reason = "3 marta urinishda ham sertifikat chiqmadi (Tekshirib ko'ring)"
-                
-                clean_err_text = reason
-                if clean_err_text.startswith("ILOJI_YOQ:"):
-                    clean_err_text = clean_err_text.split("ILOJI_YOQ:", 1)[-1].strip()
-                if not clean_err_text.startswith("❌"):
-                    cert_status = f"❌ {clean_err_text}"
-                else:
-                    cert_status = clean_err_text
+            else:
+                cert_status = "Jarayonda (Navbatda)"
+                r_fill = wait_fill
 
             row_data = [
                 idx,

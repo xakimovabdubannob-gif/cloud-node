@@ -59,8 +59,8 @@ while proc.poll() is None:
             if r.get('remaining_count', 1) == 0:
                 idle += 1
                 print(f"[WORKER IDLE] {idle}/6")
-                if idle >= 180:
-                    print("[WORKER] 1 soat davomida yangi vazifa bolmadi, to'xtatilmoqda.")
+                if idle >= 6:
+                    print("[WORKER] Barcha vazifalar bajarildi, klaster bo'sh. Worker 2 daqiqadan so'ng to'xtatilmoqda.")
                     proc.terminate()
                     break
             else:

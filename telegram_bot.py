@@ -295,8 +295,6 @@ def get_certificate_map():
                     parts = [p.strip() for p in line.split("|")]
                     cert_u = parts[2] if len(parts) >= 3 else parts[1]
                     fn = parts[0].upper()
-                    if "Y0MWT5MYGV8I" in cert_u and "KOMILOVA" not in fn:
-                        continue
                     cert_map[fn] = cert_u
                     cert_map[fn.replace("`", "'")] = cert_u
                     cert_map[fn.replace("'", "`")] = cert_u
@@ -420,252 +418,66 @@ def parse_students_from_text(text: str):
 
 
 
-def _parse_xls_fallback(file_path: str):
-    """Eski Excel 97-2003 (.xls) fayllarni xlrd orqali 100% xatosiz o'qish."""
-    students = []
-    try:
-        import xlrd
-        wb = xlrd.open_workbook(file_path)
-        sheet = wb.sheet_by_index(0)
-        for r in range(sheet.nrows):
-            row_vals = []
-            for c in range(sheet.ncols):
-                cell = sheet.cell(r, c)
-                val = cell.value
-                if cell.ctype == xlrd.XL_CELL_DATE:
-                    try:
-                        val = xlrd.xldate_as_datetime(val, wb.datemode).strftime("%d.%m.%Y")
-                    except Exception:
-                        val = str(val)
-                elif isinstance(val, float):
-                    if 20000 < val < 60000 and (c == 2 or "sana" in str(sheet.row_values(min(1, sheet.nrows - 1))[c]).lower()):
-                        try:
-                            val = xlrd.xldate_as_datetime(val, wb.datemode).strftime("%d.%m.%Y")
-                        except Exception:
-                            val = str(val)
-                    elif val.is_integer():
-                        val = str(int(val))
-                    else:
-                        val = str(val)
-                elif val is not None:
-                    val = str(val).strip()
-                else:
-                    val = ""
-                row_vals.append(val)
-
-            vals_non_empty = [v for v in row_vals if v]
-            if not vals_non_empty:
-                continue
-            if (vals_non_empty[0].isdigit() or vals_non_empty[0] in ("", "#", "N", "No", "T/r")) and len(vals_non_empty) >= 2:
-                vals_non_empty = vals_non_empty[1:]
-            vals_non_empty = [v for v in vals_non_empty if not (v.isdigit() and len(v) == 14)]
-            if not vals_non_empty:
-                continue
-            row_joined_low = " ".join(vals_non_empty).lower()
-            if any(h in row_joined_low for h in ["f.i.sh", "familiya ism", "ism va familya", "ism va familiya", "tug'ilgan", "guvohnoma seriyasi", "coursera", "shabloni", "namuna)"]):
-                continue
-            upper_name = cyrillic_to_latin_uz(vals_non_empty[0])
-            if len(upper_name) < 4 or "ALIYEV VALI" in upper_name or "KARIMOVA MALIKA" in upper_name or "NAMUNA" in upper_name:
-                continue
-            if len(vals_non_empty) >= 5:
-                if vals_non_empty[3] in ("1234567", "7654321"):
-                    continue
-                doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
-                doc_num = str(vals_non_empty[3]).strip()
-                doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
-                students.append({
-                    "name": upper_name,
-                    "birth_date": vals_non_empty[1],
-                    "doc_series": doc_ser,
-                    "doc_number": doc_num,
-                    "doc_key": doc_key,
-                    "class": cyrillic_to_latin_uz(vals_non_empty[4]),
-                })
-            elif len(vals_non_empty) == 4:
-                if vals_non_empty[3] in ("1234567", "7654321"):
-                    continue
-                doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
-                doc_num = str(vals_non_empty[3]).strip()
-                doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
-                students.append({
-                    "name": upper_name,
-                    "birth_date": vals_non_empty[1],
-                    "doc_series": doc_ser,
-                    "doc_number": doc_num,
-                    "doc_key": doc_key,
-                    "class": "",
-                })
-            elif len(vals_non_empty) >= 1 and len(vals_non_empty[0].split()) >= 2:
-                students.append({
-                    "name": upper_name,
-                    "birth_date": "",
-                    "doc_series": "",
-                    "doc_number": "",
-                    "doc_key": "",
-                    "class": cyrillic_to_latin_uz(vals_non_empty[1]) if len(vals_non_empty) > 1 else "",
-                })
-    except Exception as e:
-        print(f"[XLRD READ ERROR] {e}")
-    return students
-
-
-def _parse_excel_fallback_xml(file_path: str):
-    """Buzilgan yoki noto'g'ri style'li Excel fayllarni to'g'ridan-to'g'ri XML orqali 100% xatosiz o'qish."""
-    import zipfile, xml.etree.ElementTree as ET, datetime
-    students = []
-    try:
-        with zipfile.ZipFile(file_path, "r") as z:
-            strings = []
-            if "xl/sharedStrings.xml" in z.namelist():
-                s_tree = ET.fromstring(z.read("xl/sharedStrings.xml"))
-                for si in s_tree.findall("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}si"):
-                    t_elem = si.find("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t")
-                    if t_elem is not None and t_elem.text:
-                        strings.append(t_elem.text)
-                    else:
-                        txt = "".join([t.text for t in si.iter("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t") if t.text])
-                        strings.append(txt)
-
-            sheet_name = "xl/worksheets/sheet1.xml"
-            for sn in z.namelist():
-                if sn.startswith("xl/worksheets/sheet") and sn.endswith(".xml"):
-                    sheet_name = sn
-                    break
-            sheet_tree = ET.fromstring(z.read(sheet_name))
-
-            for r in sheet_tree.iter("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row"):
-                vals = []
-                for c in r.iter("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}c"):
-                    t = c.get("t")
-                    v = c.find("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}v")
-                    val = ""
-                    if v is not None and v.text:
-                        if t == "s":
-                            idx = int(v.text)
-                            val = strings[idx] if idx < len(strings) else ""
-                        else:
-                            val = v.text
-                    vals.append(val.strip())
-                vals_non_empty = [v for v in vals if v]
-                if not vals_non_empty:
-                    continue
-                if (vals_non_empty[0].isdigit() or vals_non_empty[0] in ("№", "#", "N", "No", "T/r")) and len(vals_non_empty) >= 2:
-                    vals_non_empty = vals_non_empty[1:]
-                vals_clean = [v for v in vals_non_empty if not (v.isdigit() and len(v) == 14)]
-                if not vals_clean:
-                    continue
-                row_joined_low = " ".join(vals_clean).lower()
-                if any(h in row_joined_low for h in ["f.i.sh", "familiya ism", "ism va familya", "ism va familiya", "tug'ilgan", "guvohnoma", "coursera", "shabloni"]):
-                    continue
-                upper_name = cyrillic_to_latin_uz(vals_clean[0])
-                if len(upper_name) < 4 or "ALIYEV VALI" in upper_name or "NAMUNA" in upper_name:
-                    continue
-
-                b_date = ""
-                if len(vals_clean) > 1:
-                    raw_b = vals_clean[1]
-                    if raw_b.isdigit() and 30000 < int(raw_b) < 60000:
-                        try:
-                            b_date = (datetime.datetime(1899, 12, 30) + datetime.timedelta(days=int(raw_b))).strftime("%d.%m.%Y")
-                        except Exception:
-                            b_date = raw_b
-                    else:
-                        b_date = raw_b
-
-                doc_ser = cyrillic_to_latin_uz(vals_clean[2]) if len(vals_clean) > 2 else ""
-                doc_num = vals_clean[3] if len(vals_clean) > 3 else ""
-                doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
-                cls_name = cyrillic_to_latin_uz(vals_clean[4]) if len(vals_clean) > 4 else "6-sinf"
-
-                students.append({
-                    "name": upper_name,
-                    "birth_date": b_date,
-                    "doc_series": doc_ser,
-                    "doc_number": doc_num,
-                    "doc_key": doc_key,
-                    "class": cls_name,
-                })
-    except Exception as e:
-        print(f"[FALLBACK XML EXCEL ERROR] {e}")
-    return students
-
 def parse_students_from_excel(file_path: str):
-    """Excel (.xlsx yoki .xls) fayldan o'quvchilar ro'yxatini o'qiydi."""
-    if str(file_path).lower().endswith(".xls"):
-        xls_sts = _parse_xls_fallback(file_path)
-        if xls_sts:
-            return xls_sts
-
+    """Excel (.xlsx) fayldan o'quvchilar ro'yxatini o'qiydi (sarlavha, '№' va namuna qatorlarni avtomatik tashlab ketadi)."""
     students = []
-    try:
-        wb = load_workbook(file_path, data_only=True)
-        ws = wb.active
-        for row in ws.iter_rows(values_only=True):
-            vals = [v.strftime("%d.%m.%Y") if hasattr(v, "strftime") else (str(v).strip() if v is not None else "") for v in row]
-            vals_non_empty = [v for v in vals if v]
-            if not vals_non_empty:
+    wb = load_workbook(file_path, data_only=True)
+    ws = wb.active
+    for row in ws.iter_rows(values_only=True):
+        vals = [v.strftime("%d.%m.%Y") if hasattr(v, "strftime") else (str(v).strip() if v is not None else "") for v in row]
+        vals_non_empty = [v for v in vals if v]
+        if not vals_non_empty:
+            continue
+        if (vals_non_empty[0].isdigit() or vals_non_empty[0] in ("№", "#", "N", "No", "T/r")) and len(vals_non_empty) >= 2:
+            vals_non_empty = vals_non_empty[1:]
+        vals_non_empty = [v for v in vals_non_empty if not (v.isdigit() and len(v) == 14)]
+        if not vals_non_empty:
+            continue
+        row_joined_low = " ".join(vals_non_empty).lower()
+        if any(h in row_joined_low for h in ["f.i.sh", "familiya ism", "ism va familya", "ism va familiya", "tug'ilgan", "guvohnoma seriyasi", "coursera", "shabloni", "namuna)"]):
+            continue
+        upper_name = cyrillic_to_latin_uz(vals_non_empty[0])
+        if len(upper_name) < 4 or "ALIYEV VALI" in upper_name or "KARIMOVA MALIKA" in upper_name or "NAMUNA" in upper_name:
+            continue
+        if len(vals_non_empty) >= 5:
+            if vals_non_empty[3] in ("1234567", "7654321"):
                 continue
-            if (vals_non_empty[0].isdigit() or vals_non_empty[0] in ("№", "#", "N", "No", "T/r")) and len(vals_non_empty) >= 2:
-                vals_non_empty = vals_non_empty[1:]
-            vals_non_empty = [v for v in vals_non_empty if not (v.isdigit() and len(v) == 14)]
-            if not vals_non_empty:
+            doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
+            doc_num = str(vals_non_empty[3]).strip()
+            doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
+            students.append({
+                "name": upper_name,
+                "birth_date": vals_non_empty[1],
+                "doc_series": doc_ser,
+                "doc_number": doc_num,
+                "doc_key": doc_key,
+                "class": cyrillic_to_latin_uz(vals_non_empty[4]),
+            })
+        elif len(vals_non_empty) == 4:
+            if vals_non_empty[3] in ("1234567", "7654321"):
                 continue
-            row_joined_low = " ".join(vals_non_empty).lower()
-            if any(h in row_joined_low for h in ["f.i.sh", "familiya ism", "ism va familya", "ism va familiya", "tug'ilgan", "guvohnoma seriyasi", "coursera", "shabloni", "namuna)"]):
-                continue
-            upper_name = cyrillic_to_latin_uz(vals_non_empty[0])
-            if len(upper_name) < 4 or "ALIYEV VALI" in upper_name or "KARIMOVA MALIKA" in upper_name or "NAMUNA" in upper_name:
-                continue
-            if len(vals_non_empty) >= 5:
-                if vals_non_empty[3] in ("1234567", "7654321"):
-                    continue
-                doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
-                doc_num = str(vals_non_empty[3]).strip()
-                doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
-                students.append({
-                    "name": upper_name,
-                    "birth_date": vals_non_empty[1],
-                    "doc_series": doc_ser,
-                    "doc_number": doc_num,
-                    "doc_key": doc_key,
-                    "class": cyrillic_to_latin_uz(vals_non_empty[4]),
-                })
-            elif len(vals_non_empty) == 4:
-                if vals_non_empty[3] in ("1234567", "7654321"):
-                    continue
-                doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
-                doc_num = str(vals_non_empty[3]).strip()
-                doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
-                students.append({
-                    "name": upper_name,
-                    "birth_date": vals_non_empty[1],
-                    "doc_series": doc_ser,
-                    "doc_number": doc_num,
-                    "doc_key": doc_key,
-                    "class": "",
-                })
-            elif len(vals_non_empty) >= 1 and len(vals_non_empty[0].split()) >= 2:
-                students.append({
-                    "name": upper_name,
-                    "birth_date": "",
-                    "doc_series": "",
-                    "doc_number": "",
-                    "doc_key": "",
-                    "class": cyrillic_to_latin_uz(vals_non_empty[1]) if len(vals_non_empty) > 1 else "",
-                })
-        if students:
-            return students
-    except Exception as e:
-        print(f"[OPENPYXL READ ERROR, FALLING BACK TO XML] {e}")
-
-    # Agar openpyxl xato bersa (masalan stylesheet TypeErrorda), XML orqali o'qiymiz:
-    fallback_sts = _parse_excel_fallback_xml(file_path)
-    if fallback_sts:
-        return fallback_sts
-    xls_sts = _parse_xls_fallback(file_path)
-    if xls_sts:
-        return xls_sts
+            doc_ser = cyrillic_to_latin_uz(vals_non_empty[2])
+            doc_num = str(vals_non_empty[3]).strip()
+            doc_key = f"{doc_ser}{doc_num}".replace(" ", "").replace("-", "").upper() if (doc_ser and doc_num) else ""
+            students.append({
+                "name": upper_name,
+                "birth_date": vals_non_empty[1],
+                "doc_series": doc_ser,
+                "doc_number": doc_num,
+                "doc_key": doc_key,
+                "class": "",
+            })
+        elif len(vals_non_empty) >= 1 and len(vals_non_empty[0].split()) >= 2:
+            students.append({
+                "name": upper_name,
+                "birth_date": "",
+                "doc_series": "",
+                "doc_number": "",
+                "doc_key": "",
+                "class": cyrillic_to_latin_uz(vals_non_empty[1]) if len(vals_non_empty) > 1 else "",
+            })
     return students
+
 
 def save_students_to_excel(students: list, target_path: str):
     """O'quvchilar ro'yxatini Klaster va Master Bridge tushunadigan .xlsx faylga saqlaydi."""
@@ -781,8 +593,8 @@ def get_excel_order_info(file_path: str):
 
 def get_order_file_date_and_ts(fpath, fn):
     """Fayl nomidagi 10 xonali timestamp yoki sanani ajratib oladi (GitHub Runnerda mtime bugungi bo'lib qolmasligi uchun)."""
-    clean_fn = re.sub(r'^arch_\d+_', '', fn)
-    all_10 = re.findall(r'(\d{10})', clean_fn)
+    # E'tibor: fn ichida user_id (masalan 6580113791) ham 10 xonali, lekin unix timestamp 1700000000..1850000000 oraliqda bo'ladi:
+    all_10 = re.findall(r'(\d{10})', fn)
     for s_ts in all_10:
         try:
             ts = int(s_ts)
@@ -820,27 +632,20 @@ def _get_orders_by_date():
         return {}
 
     all_files = []
-    # 1. Hozirgi faol buyurtmalar (bot_orders ichida turgan fayllar har doim BUGUNGI kunga tegishli)
     for fn in os.listdir(ORDERS_DIR):
-        if fn.startswith("in_") and fn.endswith(".xlsx"):
-            all_files.append((os.path.join(ORDERS_DIR, fn), fn, True))
+        if fn.endswith(".xlsx") and not fn.startswith("Oquvchilar_Shablon") and not fn.startswith("Yigma_") and not fn.startswith("Barcha_Tayyor_"):
+            all_files.append((os.path.join(ORDERS_DIR, fn), fn))
 
-    # 2. Arxivlangan eski buyurtmalar (o'zining asl sanasiga tegishli)
     arch_dir = os.path.join(ORDERS_DIR, "archived")
     if os.path.exists(arch_dir):
         for fn in os.listdir(arch_dir):
-            clean_fn = re.sub(r'^arch_\d+_', '', fn)
-            if clean_fn.startswith("in_") and clean_fn.endswith(".xlsx"):
-                all_files.append((os.path.join(arch_dir, fn), fn, False))
+            if fn.endswith(".xlsx") and not fn.startswith("Oquvchilar_Shablon") and not fn.startswith("Yigma_") and not fn.startswith("Barcha_Tayyor_"):
+                all_files.append((os.path.join(arch_dir, fn), fn))
 
     date_groups = {}
-    for fpath, fn, is_active in all_files:
+    for fpath, fn in all_files:
         try:
-            if is_active:
-                dt_key = datetime.now().strftime("%Y-%m-%d")
-                ts = int(time.time())
-            else:
-                dt_key, ts = get_order_file_date_and_ts(fpath, fn)
+            dt_key, ts = get_order_file_date_and_ts(fpath, fn)
             if dt_key not in date_groups:
                 date_groups[dt_key] = []
             date_groups[dt_key].append((fpath, fn, ts))
@@ -1248,27 +1053,10 @@ class TelegramBotServer:
             title = info["title"]
             tot = info["total"]
             done = info["done"]
-
-            # Filter out 0/1 test orders (shovqin bo'lmasligi uchun)
-            if tot <= 1 and done == 0:
-                continue
-
-            # Sinf nomini tozalash va dublikatlarni bitta eng to'liq variantga birlashtirish
-            clean_t = re.sub(r'\d{2}[._-]\d{2}[._-]\d{4}.*', '', title)
-            clean_t = re.sub(r'\(\d+daq.*\)', '', clean_t)
-            clean_t = re.sub(r'[\/\\_\-\s]+', ' ', clean_t).strip()
-            if '5 D' in clean_t.upper() or '5D' in clean_t.upper():
-                clean_t = '5-D sinf'
-            elif '6 B' in clean_t.upper() or '6B' in clean_t.upper():
-                clean_t = '6-B sinf'
-            elif '6 SINF' in clean_t.upper():
-                clean_t = '6-Sinf'
-
-            dedup_key = clean_t.upper()
+            dedup_key = f"{title}_{tot}"
             if dedup_key in seen_titles:
                 continue
             seen_titles.add(dedup_key)
-            title = clean_t
 
             total_day_students += tot
             total_day_done += done
@@ -1345,20 +1133,8 @@ class TelegramBotServer:
                 if not s.get("class") and acc.get("class"):
                     s["class"] = acc["class"]
 
-        def _check_st_done(st):
-            dk = st.get("doc_key") or f"{st.get('doc_series','')}{st.get('doc_number','')}".replace(" ", "").replace("-", "").upper()
-            nm = st.get("name", "").strip().upper()
-            norm = re.sub(r"['`ʻʼ‘’ʻʼ\s]+", "", nm)
-            return bool((dk and certs_map.get(dk)) or certs_map.get(nm) or certs_map.get(norm))
-
-        def _check_st_unrec(st):
-            dk = st.get("doc_key") or f"{st.get('doc_series','')}{st.get('doc_number','')}".replace(" ", "").replace("-", "").upper()
-            nm = st.get("name", "").strip().upper()
-            norm = re.sub(r"['`ʻʼ‘’ʻʼ\s]+", "", nm)
-            return bool((dk and dk in unrec_set) or (nm in unrec_set) or (norm in unrec_set))
-
-        done_cnt = sum(1 for s in students if _check_st_done(s))
-        unrec_cnt = sum(1 for s in students if not _check_st_done(s) and _check_st_unrec(s))
+        done_cnt = sum(1 for s in students if s.get("name", "").strip().upper() in certs_map)
+        unrec_cnt = sum(1 for s in students if s.get("name", "").strip().upper() in unrec_set)
         in_prog_cnt = max(0, total - done_cnt - unrec_cnt)
 
         safe_title = re.sub(r'[\\/*?:"<>|]', "", title).strip() or "Buyurtma"
@@ -1963,8 +1739,6 @@ class TelegramBotServer:
         return None, None, None
 
     def _process_order_student(self, ctx: dict, idx: int, st: dict, worker_id: int):
-        if ctx.get("cancelled") or getattr(self, "clear_cancel_epoch", 0) > ctx.get("start_time", 0):
-            return
         chat_id = ctx["chat_id"]
         total = ctx["total"]
         pass_num = ctx["pass_num"]
@@ -2130,28 +1904,17 @@ class TelegramBotServer:
             )
         elif result_status == "UNRECOVERABLE":
             errs = get_error_reason_map()
-            skip_r = errs.get(s_name) or errs.get(doc_key or "") or "Oldin boshqa joyda roʻyxatdan oʻtgan yoki 3 marta urinishda chiqmadi"
             self.send_message(
                 chat_id,
                 f"⚠️ <b>[{idx}/{total}] {s_name} — O'TKAZIB YUBORILDI! ({pc1_tag})</b>\n"
-                f"Sababi: <i>{skip_r}</i>\n"
-                f"❗️ Bu o'quvchiga qayta urinilmaydi, jadvalga xato sifatida qayd etildi.",
+                f"Sababi: <i>{errs.get(s_name, 'Oldin boshqa joyda roʻyxatdan oʻtgan va bazamizda login-paroli yoʻq')}</i>\n"
+                f"❗️ Bu o'quvchiga oxirida qayta urinilmaydi.",
             )
         else:
-            cur_p = ctx.get("pass_num", 1)
-            if cur_p >= 3:
-                save_unrecoverable_student(s_name, st.get("class", ""), "3 marta to'liq urinishda ham sertifikat chiqmadi", doc_key=doc_key)
-                self.send_message(
-                    chat_id,
-                    f"❌ <b>[{idx}/{total}] {s_name} ({pc1_tag}) — 3 MARTA URINILDI, TO'XTATILDI!</b>\n"
-                    f"Sababi: <i>3 marta to'liq urinishda ham sertifikat chiqmadi.</i>\n"
-                    f"⚠️ Ushbu o'quvchi o'tkazib yuborildi va jadvalga xato deb yozildi.",
-                )
-            else:
-                self.send_message(
-                    chat_id,
-                    f"🔄 <b>[{idx}/{total}] {s_name} ({pc1_tag})</b> — {cur_p}-urinishda sertifikat chiqmadi, ro'yxat oxirida yana qayta tekshiriladi ({cur_p}/3)...",
-                )
+            self.send_message(
+                chat_id,
+                f"🔄 <b>[{idx}/{total}] {s_name} ({pc1_tag})</b> — 1-urinishda sertifikat chiqmadi, ro'yxat oxirida yana qayta tekshiriladi!",
+            )
 
     def worker_loop(self, worker_id: int):
         while True:
@@ -2217,7 +1980,7 @@ class TelegramBotServer:
 
                 try:
                     while True:
-                        if getattr(self, "is_paused", False) or ctx.get("cancelled") or getattr(self, "clear_cancel_epoch", 0) > ctx.get("start_time", 0):
+                        if getattr(self, "is_paused", False):
                             break
                         try:
                             idx, st = student_q.get_nowait()
@@ -2238,8 +2001,6 @@ class TelegramBotServer:
                             self.shared_orders.remove(ctx)
 
             self.active_worker_status[worker_id] = ""
-            if ctx.get("cancelled") or order.get("cancelled") or getattr(self, "clear_cancel_epoch", 0) > order.get("start_time", 0):
-                continue
             orig_fname = order.get("orig_fname", "Buyurtma")
             clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
             order_start_t = order.get("start_time", time.time())
@@ -2262,23 +2023,8 @@ class TelegramBotServer:
             excel_path = os.path.join(ORDERS_DIR, out_filename)
             generate_results_excel(students, excel_path)
 
-            completed_set = get_completed_students()
-            unrecoverable_set = get_unrecoverable_students()
-
-            def _st_done(st):
-                dk = st.get("doc_key") or f"{st.get('doc_series','')}{st.get('doc_number','')}".replace(" ", "").replace("-", "").upper()
-                nm = st.get("name", "").strip().upper()
-                norm = re.sub(r"['`ʻʼ‘’ʻʼ\s]+", "", nm)
-                return bool((dk and dk in completed_set) or (nm in completed_set) or (norm in completed_set))
-
-            def _st_unrec(st):
-                dk = st.get("doc_key") or f"{st.get('doc_series','')}{st.get('doc_number','')}".replace(" ", "").replace("-", "").upper()
-                nm = st.get("name", "").strip().upper()
-                norm = re.sub(r"['`ʻʼ‘’ʻʼ\s]+", "", nm)
-                return bool((dk and dk in unrecoverable_set) or (nm in unrecoverable_set) or (norm in unrecoverable_set))
-
-            done_cnt = sum(1 for s in students if _st_done(s))
-            unrec_cnt = sum(1 for s in students if not _st_done(s) and _st_unrec(s))
+            done_cnt = sum(1 for s in students if s["name"] in get_completed_students())
+            unrec_cnt = sum(1 for s in students if s["name"] in get_unrecoverable_students())
 
             debt_info = get_user_debt_info(chat_id)
             rem_debt = debt_info.get("remaining_debt", 0)
@@ -2312,72 +2058,49 @@ class TelegramBotServer:
         """Eski buyurtmalarni va xatolarni tozalaydi/arxivlaydi.
         FAQAT akkountlar.txt (Login/Parollar) va natijalar_sertifikatlar.txt (Tayyor sertifikatlar) saqlanadi!"""
         import shutil
-        now_ts = time.time()
-        self.clear_cancel_epoch = now_ts
-        self.is_paused = True
-
-        with self.shared_lock:
-            for ctx in self.shared_orders:
-                ctx["cancelled"] = True
-                q = ctx.get("student_q")
-                if q:
-                    while not q.empty():
-                        try:
-                            q.get_nowait()
-                            q.task_done()
-                        except Exception:
-                            break
-            self.shared_orders.clear()
-
-        while not order_queue.empty():
-            try:
-                o = order_queue.get_nowait()
-                if isinstance(o, dict):
-                    o["cancelled"] = True
-                order_queue.task_done()
-            except Exception:
-                break
-
-        self.active_worker_status.clear()
-
         if os.path.exists(ORDERS_DIR):
             arch_dir = os.path.join(ORDERS_DIR, "archived")
             os.makedirs(arch_dir, exist_ok=True)
             for fn in os.listdir(ORDERS_DIR):
                 if fn.startswith("in_") and fn.endswith(".xlsx"):
                     src = os.path.join(ORDERS_DIR, fn)
-                    dst = os.path.join(arch_dir, f"arch_cancelled_{int(now_ts)}_{fn}")
+                    dst = os.path.join(arch_dir, f"arch_{int(time.time())}_{fn}")
                     try:
                         shutil.move(src, dst)
                     except Exception:
-                        try:
-                            os.remove(src)
-                        except Exception:
-                            pass
+                        pass
 
+        # Xatolar ro'yxatini tozalaymiz (zaxirasini arxivga olamiz)
         if os.path.exists(ERRORS_FILE):
             try:
-                err_bkp = f"xatolar_archived_{int(now_ts)}.txt"
+                err_bkp = f"xatolar_archived_{int(time.time())}.txt"
                 shutil.copy(ERRORS_FILE, err_bkp)
                 with open(ERRORS_FILE, "w", encoding="utf-8") as ef:
                     ef.write("# Xatolar kesh tozalandi\n")
             except Exception:
                 pass
 
+        with self.shared_lock:
+            self.shared_orders.clear()
+        while not order_queue.empty():
+            try:
+                order_queue.get_nowait()
+                order_queue.task_done()
+            except Exception:
+                break
         for f in ("cluster_tried_students.json", "cluster_nodes_state.json", "cluster_pause_state.txt"):
             if os.path.exists(f):
                 try:
                     os.remove(f)
                 except Exception:
                     pass
-
         try:
             requests.get("http://127.0.0.1:8766/cluster/clear_cache", timeout=3)
         except Exception:
             pass
         if os.path.exists("cluster_url.txt"):
             try:
-                t_u = open("cluster_url.txt", "r", encoding="utf-8").read().strip().splitlines()[0].strip()
+                t_u = open("cluster_url.txt", "r", encoding="utf-8").read().strip()
                 if t_u.startswith("http"):
                     requests.get(f"{t_u}/cluster/clear_cache", timeout=5)
             except Exception:
@@ -3847,17 +3570,9 @@ class TelegramBotServer:
             clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
             fname = orig_fname.lower()
             pref = f"in_{chat_id}_" if (self.admin_id and chat_id == self.admin_id) else f"pending_{chat_id}_"
-            if fname.endswith(".xlsx") or fname.endswith(".xls"):
-                target_ext = ".xls" if fname.endswith(".xls") else ".xlsx"
-                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}{target_ext}"))
+            if fname.endswith(".xlsx"):
+                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}.xlsx"))
                 students = parse_students_from_excel(local_p)
-                if fname.endswith(".xls") and students:
-                    clean_xlsx_p = os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}.xlsx")
-                    save_students_to_excel(students, clean_xlsx_p)
-                    try:
-                        os.remove(local_p)
-                    except Exception:
-                        pass
                 self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
                 return
             elif fname.endswith(".txt") or fname.endswith(".csv"):

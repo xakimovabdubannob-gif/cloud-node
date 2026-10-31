@@ -55,8 +55,8 @@ def get_next_available_alias() -> str:
     return f"{BASE_USERNAME}@{DOMAIN}"
 
 
-def connect_gmail(timeout=12):
-    mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=timeout)
+def connect_gmail():
+    mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
     mail.login(GMAIL_USER, GMAIL_APP_PWD)
     mail.select("INBOX")
     return mail
@@ -80,51 +80,15 @@ def get_clean_body_and_links(msg):
     return body, links
 
 
-
-def is_cluster_node():
-    return bool(os.environ.get("TUNNEL_URL") or os.environ.get("CLUSTER_MASTER_URL") or os.path.exists("cluster_url.txt"))
-
-
-def _query_master_mail_hub(mail_type: str, target_email: str) -> str:
-    """Master Server (port 8766 yoki Cloudflare tunnel) orqali keshdagi havolani 0ms da oladi (Gmailga ulanishsiz!)."""
-    master_url = os.environ.get("CLUSTER_MASTER_URL", "").strip()
-    if not master_url and os.path.exists("cluster_url.txt"):
-        try:
-            master_url = open("cluster_url.txt", "r", encoding="utf-8").read().strip().splitlines()[0].strip()
-        except Exception:
-            pass
-    if not master_url or not master_url.startswith("http"):
-        master_url = "http://127.0.0.1:8766"
-
-    try:
-        import requests
-        r = requests.get(f"{master_url}/cluster/mail_invite", params={"type": mail_type, "email": target_email}, timeout=3)
-        if r.status_code == 200:
-            d = r.json()
-            if d.get("ok") and d.get("link"):
-                return d["link"]
-    except Exception:
-        pass
-    return None
-
-
 def wait_for_aileaders_activation(target_email: str, timeout_sec=90) -> str:
     """
-    Master Hub yoki IMAP orqali target_email ga kelgan Aileaders faollashtirish havolasini avtomatik ushlaydi.
+    IMAP orqali target_email ga kelgan Aileaders faollashtirish havolasini avtomatik ushlaydi.
     """
     clean_target = target_email.lower().strip()
     t_start = time.time()
-    print(f"[GMAIL] Aileaders faollashtirish xabari kutilmoqda: {clean_target} (maksimum {timeout_sec}s)...")
+    print(f"[GMAIL IMAP] Aileaders faollashtirish xabari kutilmoqda: {clean_target} (maksimum {timeout_sec}s)...")
 
     while time.time() - t_start < timeout_sec:
-        hub_link = _query_master_mail_hub("activation", clean_target)
-        if hub_link:
-            print(f"[GMAIL HUB] Aileaders havolasi Master Hubdan olindi: {hub_link}")
-            return hub_link
-        if is_cluster_node() and (time.time() - t_start < 45):
-            time.sleep(2.5)
-            continue
-        time.sleep(2.5)
         try:
             mail = connect_gmail()
             status, messages = mail.search(None, "ALL")
@@ -158,30 +122,6 @@ def wait_for_aileaders_activation(target_email: str, timeout_sec=90) -> str:
     return None
 
 
-def extract_coursera_magic_link_from_msg(msg):
-    """
-    Coursera Magic Link xabaridan aynan 'Log in' tugmasining havolasini oladi (tepadagi logoni EMAS!).
-    """
-    body, links = get_clean_body_and_links(msg)
-    try:
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(body, "html.parser")
-        for a in soup.find_all("a", href=True):
-            txt = a.get_text().strip().lower()
-            href = a["href"]
-            if any(k in txt for k in ["log in", "sign in", "войти", "kirish", "click the link", "sign in using this link"]):
-                return href.replace("&amp;", "&")
-    except Exception:
-        pass
-
-    coursera_links = [l.replace("&amp;", "&") for l in links if "link.coursera.org" in l or "coursera.org/magicLinks" in l]
-    if len(coursera_links) > 1:
-        return coursera_links[1]
-    elif coursera_links:
-        return coursera_links[0]
-    return None
-
-
 def extract_coursera_invite_link_from_msg(msg):
     """
     Coursera xabaridan aynan taklifnoma / kursga kirish tugmasining havolasini oladi (logoni emas!).
@@ -209,21 +149,13 @@ def extract_coursera_invite_link_from_msg(msg):
 
 def wait_for_coursera_invite(target_email: str, timeout_sec=90) -> str:
     """
-    Master Hub yoki IMAP orqali Coursera Enterprise (DEDC) taklifnoma havolasini avtomatik ushlaydi.
+    IMAP orqali Coursera Enterprise (DEDC) taklifnoma yoki kirish havolasini avtomatik ushlaydi.
     """
     clean_target = target_email.lower().strip()
     t_start = time.time()
-    print(f"[GMAIL] Coursera taklifnoma xabari kutilmoqda: {clean_target} (maksimum {timeout_sec}s)...")
+    print(f"[GMAIL IMAP] Coursera taklifnoma xabari kutilmoqda: {clean_target} (maksimum {timeout_sec}s)...")
 
     while time.time() - t_start < timeout_sec:
-        hub_link = _query_master_mail_hub("coursera", clean_target)
-        if hub_link:
-            print(f"[GMAIL HUB] Coursera havolasi Master Hubdan olindi: {hub_link}")
-            return hub_link
-        if is_cluster_node() and (time.time() - t_start < 45):
-            time.sleep(2.5)
-            continue
-        time.sleep(2.5)
         try:
             mail = connect_gmail()
             status, messages = mail.search(None, "ALL")
@@ -281,18 +213,11 @@ class GmailMailboxService:
 
 
 def fetch_coursera_magic_link(target_email: str, timeout_sec=40) -> str:
-    """Master Hub yoki Gmail orqali Coursera Magic Link (login link) ni avtomatik ushlaydi."""
+    """Gmail orqali Coursera Magic Link (login link) ni avtomatik ushlaydi."""
     clean_target = target_email.lower().strip()
     t_start = time.time()
     while time.time() - t_start < timeout_sec:
-        hub_link = _query_master_mail_hub("magic", clean_target)
-        if hub_link and "5tTM5sERtHreZReD_lDVWA" not in hub_link:
-            print(f"[GMAIL HUB] Magic Link Master Hubdan olindi: {hub_link}")
-            return hub_link
-        if is_cluster_node() and (time.time() - t_start < 45):
-            time.sleep(2.5)
-            continue
-        time.sleep(2.5)
+        time.sleep(3.0)
         try:
             mail = connect_gmail()
             status, messages = mail.search(None, "ALL")
@@ -305,11 +230,13 @@ def fetch_coursera_magic_link(target_email: str, timeout_sec=40) -> str:
                         to_addr = (msg.get("To") or "").lower()
                         subj = (msg.get("Subject") or "").lower()
                         if clean_target in to_addr and ("log in" in subj or "click the link" in subj or "magic" in subj or "link" in subj):
-                            clean_l = extract_coursera_magic_link_from_msg(msg)
-                            if clean_l:
-                                print(f"[GMAIL IMAP] Magic Link topildi ({clean_target}): {clean_l}")
-                                mail.logout()
-                                return clean_l
+                            body, links = get_clean_body_and_links(msg)
+                            for l in links:
+                                if "link.coursera.org" in l or "coursera.org/magicLinks" in l:
+                                    clean_l = l.replace("&amp;", "&")
+                                    print(f"[GMAIL IMAP] Magic Link topildi ({clean_target}): {clean_l}")
+                                    mail.logout()
+                                    return clean_l
             mail.logout()
         except Exception:
             pass
