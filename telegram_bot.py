@@ -2074,13 +2074,19 @@ class TelegramBotServer:
             arch_dir = os.path.join(ORDERS_DIR, "archived")
             os.makedirs(arch_dir, exist_ok=True)
             for fn in os.listdir(ORDERS_DIR):
-                if fn.startswith("in_") and fn.endswith(".xlsx"):
+                if (fn.startswith("in_") or fn.startswith("Sertifikatlar_")) and fn.endswith(".xlsx"):
                     src = os.path.join(ORDERS_DIR, fn)
-                    dst = os.path.join(arch_dir, f"arch_{int(time.time())}_{fn}")
                     try:
-                        shutil.move(src, dst)
+                        os.remove(src)
                     except Exception:
                         pass
+            if os.path.exists(arch_dir):
+                for afn in os.listdir(arch_dir):
+                    if afn.endswith(".xlsx"):
+                        try:
+                            os.remove(os.path.join(arch_dir, afn))
+                        except Exception:
+                            pass
 
         # Xatolar ro'yxatini tozalaymiz (zaxirasini arxivga olamiz)
         if os.path.exists(ERRORS_FILE):
@@ -2193,13 +2199,17 @@ class TelegramBotServer:
                 key=os.path.getmtime,
                 reverse=True,
             )
-            if not files and os.path.exists(os.path.join(ORDERS_DIR, "archived")):
-                arch_d = os.path.join(ORDERS_DIR, "archived")
-                files = sorted(
-                    [os.path.join(arch_d, f) for f in os.listdir(arch_d) if f.startswith("in_") and f.endswith(".xlsx")],
-                    key=os.path.getmtime,
-                    reverse=True,
-                )
+            if not files:
+                if manual and notify_chat_id:
+                    self.send_message(
+                        notify_chat_id,
+                        "🎉 <b>Barcha buyurtmalar tozalangan va yakunlangan!</b>\n"
+                        "━━━━━━━━━━━━━━━━━━━━━━\n"
+                        "Navbatda hech qanday chala buyurtma yo'q.\n\n"
+                        "📁 Marhamat, botga yangi <b>Excel (.xlsx)</b> fayl yuboring!",
+                        reply_markup=self.get_reply_keyboard(notify_chat_id),
+                    )
+                return False
             done_set = get_completed_students()
             unrec_set = get_unrecoverable_students()
             for fpath in files:
@@ -2209,12 +2219,7 @@ class TelegramBotServer:
                 rem = [s for s in sts if s["name"] not in done_set and s["name"] not in unrec_set]
                 if rem:
                     bn = os.path.basename(fpath)
-                    if "archived" in fpath:
-                        import shutil
-                        try:
-                            shutil.copy2(fpath, os.path.join(ORDERS_DIR, bn))
-                        except Exception:
-                            pass
+# archived revival completely disabled
                     parts = bn.split("_", 3)
                     ord_cid = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else (self.admin_id or notify_chat_id)
                     res_orig_fname = parts[3].rsplit(".", 1)[0] if len(parts) >= 4 else "Buyurtma"
