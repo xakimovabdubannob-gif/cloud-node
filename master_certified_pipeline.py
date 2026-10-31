@@ -1858,191 +1858,6 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
 
     print(f"[REGISTRATSIYA] {full_name} bazada yo'q. Aileaders.uz orqali yangi profil ochilmoqda...")
     try:
-        mail_svc = TempMailAPI()
-        student_email = mail_svc.email
-        student_password = COMMON_PASSWORD
-        print(f"   Yangi pochta: {student_email}")
-    except Exception as e:
-        print(f"[!] TempMail xatosi: {e}")
-        return "RETRY", None
-
-    # Hujjat seriyasini har xil variantlarda (Guvohnoma: T, I-TV, TV, I-FR va Passport) tekshirib ko'rish ro'yxati
-    ds_up = doc_series.upper().strip()
-    num_pad7 = doc_number.zfill(7) if len(doc_number) < 7 else doc_number
-    doc_candidates = []
-    if "-" in ds_up:
-        doc_candidates.append(("guvohnoma", ds_up, num_pad7))
-        if ds_up != "I-TV":
-            doc_candidates.append(("guvohnoma", "I-TV", num_pad7))
-        if ds_up != "I-FR":
-            doc_candidates.append(("guvohnoma", "I-FR", num_pad7))
-        doc_candidates.append(("guvohnoma", "T", doc_number))
-    elif ds_up in ("T", "TV", "FR", "TN", "AN", "SM", "QA", "SU", "NA", "BU", "XO", "JZ", "SI", "QR", "TS"):
-        doc_candidates.append(("guvohnoma", ds_up, doc_number if ds_up == "T" else num_pad7))
-        if ds_up == "T":
-            doc_candidates.append(("guvohnoma", "I-TV", num_pad7))
-            doc_candidates.append(("guvohnoma", "TV", num_pad7))
-            doc_candidates.append(("guvohnoma", "I-FR", num_pad7))
-            if len(doc_number) == 8:
-                doc_candidates.append(("guvohnoma", "I-TV", doc_number[1:]))
-                doc_candidates.append(("guvohnoma", "I-FR", doc_number[1:]))
-        else:
-            doc_candidates.append(("guvohnoma", f"I-{ds_up}", num_pad7))
-            doc_candidates.append(("guvohnoma", "T", doc_number))
-            doc_candidates.append(("guvohnoma", "I-FR", num_pad7))
-        doc_candidates.append(("passport", ds_up, doc_number))
-    else:
-        doc_candidates.append(("passport", ds_up, doc_number))
-        doc_candidates.append(("guvohnoma", ds_up, num_pad7))
-        doc_candidates.append(("guvohnoma", f"I-{ds_up}", num_pad7))
-        doc_candidates.append(("guvohnoma", "T", doc_number))
-
-    try:
-        reg_step2_ok = False
-        for cand_idx, (doc_mode, s_val, n_val) in enumerate(doc_candidates):
-            if cand_idx > 0:
-                print(f"   [HUJJAT VARIANTI #{cand_idx + 1}] {doc_mode.upper()} sifatida '{s_val} {n_val}' tekshirilmoqda...")
-            safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.5)
-
-            if doc_mode == "guvohnoma":
-                guv_b = page.locator("button:has-text('Guvohnoma')").first
-                try:
-                    guv_b.wait_for(state="visible", timeout=12000)
-                except Exception:
-                    pass
-                if guv_b.is_visible():
-                    guv_b.click(force=True)
-                    page.wait_for_timeout(600)
-                page.locator("input[placeholder*='Seriya'], input[name='metrika_series']").first.fill(s_val)
-                page.locator("input[placeholder*='Raqam'], input[name='metrika_number']").first.fill(n_val)
-            else:
-                pass_b = page.locator("button").filter(has_text="Passport").first
-                if pass_b.is_visible():
-                    pass_b.click(force=True)
-                    page.wait_for_timeout(400)
-                page.locator("input[name='passport_number'], input[placeholder*='Seriya']").first.fill(f"{s_val}{n_val}")
-
-            pick_date_aileaders(page, birth_date)
-
-            cb = page.locator("button[role='combobox'], button[data-slot='select-trigger']").first
-            if cb.is_visible():
-                cb.click(force=True)
-                page.wait_for_timeout(400)
-                opt = page.locator("[role='option']").first
-                if opt.is_visible():
-                    opt.click(force=True)
-                page.wait_for_timeout(400)
-
-            sub1 = page.locator("button[type='submit']").filter(has_text=re.compile(r"Ro.yxatdan o.tish", re.I)).first
-            if sub1.is_visible():
-                sub1.click(force=True)
-                page.wait_for_timeout(3500)
-
-            keyingi = page.locator("button:has-text('Keyingi')").first
-            if not keyingi.is_visible():
-                b_txt1 = page.evaluate("() => (document.body ? document.body.innerText : '')")
-                if "registratsiya qilingan" in b_txt1.lower():
-                    print(f"   [!] Aileaders.uz javobi: '{s_val} {n_val}' ushbu ma'lumotlar bilan oldin registratsiya qilingan!")
-                    save_unrecoverable_student(full_name, class_name, f"Aileaders.uz: Ushbu ma'lumotlar bilan oldin registratsiya qilingan ({s_val} {n_val})")
-                    return "UNRECOVERABLE", None
-                continue
-
-            print(f"   1-bosqich muvaffaqiyatli ({s_val} {n_val})! 'Keyingi' bosilmoqda...")
-            keyingi.click(force=True)
-            page.wait_for_timeout(2000)
-
-            em_in = page.locator("input[type='email'], input[name='email']").first
-            if not em_in.is_visible():
-                continue
-            fill_react_input(em_in, student_email)
-
-            ph_in = page.locator("input[name='number'], input[type='tel']").first
-            if ph_in.is_visible():
-                ph_in.click(force=True)
-                ph_in.evaluate("""(el, val) => {
-                    el.focus();
-                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                    setter.call(el, val);
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                }""", PHONE_FORMATTED)
-
-            p1 = page.locator("input[name='password1'], input[type='password']").first
-            p2 = page.locator("input[name='password2']").first
-            if p1.is_visible():
-                fill_react_input(p1, student_password)
-            if p2.is_visible():
-                fill_react_input(p2, student_password)
-
-            page.wait_for_timeout(800)
-            sub2 = page.locator("div[role='dialog'] button, form button").filter(has_text=re.compile(r"Keyingi|Ro.yxatdan|Yuborish", re.I)).last
-            sub2.click(force=True)
-            page.wait_for_timeout(3500)
-
-            body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-            # Agar pochta allaqachon ro'yxatdan o'tgan bo'lsa yoki formadan o'tmagan bo'lsa, yangi unikal TempMail olinadi
-            if "/auth/register" in page.url and em_in.is_visible():
-                for _al_try in range(5):
-                    if not em_in.is_visible() or "/auth/register" not in page.url:
-                        break
-                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud yoki xato! Yangi unikal TempMail olinmoqda ({_al_try + 1}/5)...")
-                    mail_svc = TempMailAPI()
-                    student_email = mail_svc.email
-                    fill_react_input(em_in, student_email)
-                    page.wait_for_timeout(500)
-                    sub2.click(force=True)
-                    page.wait_for_timeout(3500)
-                    body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-
-            if "Serverda ichki xatolik" in body_txt or ("/auth/register" in page.url and em_in.is_visible() and "xatolik" in body_txt.lower()):
-                print(f"   [!] '{s_val} {n_val}' da Aileaders server xatosi berdi, keyingi variant sinab ko'riladi...")
-                continue
-
-            reg_step2_ok = True
-            break
-
-        if not reg_step2_ok:
-            save_unrecoverable_student(full_name, class_name, f"Barcha hujjat variantlari ({doc_series} {doc_number}: T/TV/I-TV/I-FR) tekshirildi, Aileaders ma'lumotni topmadi!")
-            return "UNRECOVERABLE", None
-
-        with FILE_LOCK:
-            with open(ACCOUNTS_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{full_name} | {class_name} | {student_email} | {student_password} | {PHONE_RAW}\n")
-        print(f"   [OK] Yangi akkount bazaga (akkountlar.txt) saqlandi: {student_email}")
-        if status_callback:
-            status_callback(f"📧 Aileaders.uz profil ochildi ({student_email})! 1-xabar aktivatsiya qilinmoqda...")
-
-        # 1-XABAR: Aileaders Tasdiqlash + TEKSHIRISH
-        ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, student_password)
-        if status_callback:
-            status_callback(f"🔗 1-xabar tasdiqlandi! Coursera 2-xabar (Join now) ulanmoqda...")
-
-        # 2-XABAR: Coursera Join now + Set Password
-        joined_ok = complete_coursera_join_and_enroll(page, mail_svc, student_password, full_name=full_name, wait_timeout=45)
-        if joined_ok:
-            if status_callback:
-                status_callback(f"✅ Coursera DEDC dasturiga ulandi va kursga yozildi!")
-            return "OK", {"email": student_email, "password": student_password}
-        return "RETRY", {"email": student_email, "password": student_password}
-    except Exception as e:
-        print(f"   [!] Ro'yxatdan o'tishda xatolik ushlandi (to'xtab qolmaydi!): {e}")
-        return "RETRY", ({"email": student_email, "password": student_password} if reg_step2_ok else None)
-
-
-def register_new_student_and_enroll(context, page, student, status_callback=None):
-    """Bazada (akkountlar.txt) yo'q o'quvchini Aileaders.uz + Coursera da ro'yxatdan o'tkazadi."""
-    full_name = student["name"]
-    class_name = student.get("class", "")
-    birth_date = student.get("birth_date", "").strip()
-    doc_series = student.get("doc_series", "").strip()
-    doc_number = student.get("doc_number", "").strip()
-
-    if not birth_date or not doc_series or not doc_number:
-        save_unrecoverable_student(full_name, class_name, "akkountlar.txt da yo'q va ro'yxatdan o'tish uchun tug'ilgan sana/hujjat ma'lumotlari berilmagan")
-        return "UNRECOVERABLE", None
-
-    print(f"[REGISTRATSIYA] {full_name} bazada yo'q. Aileaders.uz orqali yangi profil ochilmoqda...")
-    try:
         assigned_em = student.get("assigned_email", "").strip()
         if assigned_em and "gmail.com" in assigned_em:
             from gmail_automation import GmailMailboxService
@@ -2175,21 +1990,35 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
             page.wait_for_timeout(800)
             sub2 = page.locator("div[role='dialog'] button, form button").filter(has_text=re.compile(r"Keyingi|Ro.yxatdan|Yuborish", re.I)).last
             sub2.click(force=True)
-            page.wait_for_timeout(3500)
+
+            # Aileaders ro'yxatdan o'tkazib /auth/verify sahifasiga o'tishini kutamiz (15 soniyagacha)
+            for _w in range(30):
+                page.wait_for_timeout(500)
+                if "/auth/verify" in page.url:
+                    break
+                body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+                if "allaqachon ro'yxatdan o'tgan" in body_txt.lower():
+                    break
 
             body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-            # Agar pochta allaqachon ro'yxatdan o'tgan bo'lsa yoki formadan o'tmagan bo'lsa, yangi unikal TempMail olinadi
-            if "/auth/register" in page.url and em_in.is_visible():
+            # FAQAT va FAQAT "allaqachon ro'yxatdan o'tgan" deb xatolik bersagina yangi pochta olinadi
+            if "/auth/verify" not in page.url and "allaqachon" in body_txt.lower():
                 for _al_try in range(5):
-                    if not em_in.is_visible() or "/auth/register" not in page.url:
+                    if "/auth/verify" in page.url:
                         break
-                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud yoki xato! Yangi unikal TempMail olinmoqda ({_al_try + 1}/5)...")
+                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud! Yangi unikal TempMail olinmoqda ({_al_try + 1}/5)...")
                     mail_svc = TempMailAPI()
                     student_email = mail_svc.email
                     fill_react_input(em_in, student_email)
                     page.wait_for_timeout(500)
                     sub2.click(force=True)
-                    page.wait_for_timeout(3500)
+                    for _w2 in range(30):
+                        page.wait_for_timeout(500)
+                        if "/auth/verify" in page.url:
+                            break
+                        b2 = page.evaluate("() => (document.body ? document.body.innerText : '')")
+                        if "allaqachon" in b2.lower():
+                            break
                     body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
 
             if "Serverda ichki xatolik" in body_txt or ("/auth/register" in page.url and em_in.is_visible() and "xatolik" in body_txt.lower()):
