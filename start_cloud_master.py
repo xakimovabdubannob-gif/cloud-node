@@ -89,50 +89,21 @@ for fn in ("akkountlar.txt", "natijalar_sertifikatlar.txt", "xatolar.txt"):
 os.makedirs("bot_orders", exist_ok=True)
 arch_dir = os.path.join("bot_orders", "archived")
 os.makedirs(arch_dir, exist_ok=True)
-if os.path.exists("orders_archive.zip"):
-    try:
-        import zipfile, shutil
-        with zipfile.ZipFile("orders_archive.zip", "r") as z:
-            z.extractall(".")
-        print("[ORDERS] orders_archive.zip (barcha sanalar va buyurtmalar) muvaffaqiyatli ochildi!")
-        # Faqat 100% tugallangan tarixlarni arxivga o'tkazamiz, chala qolgan faol buyurtmalar bot_orders da qoladi!
+# Eski buyurtmalar butunlay tozalanadi, bot faqat yangi kelgan buyurtmalar bilan toza boshlanadi
+for fn in os.listdir("bot_orders"):
+    if fn.startswith("in_") and fn.endswith(".xlsx"):
         try:
-            from master_certified_pipeline import get_completed_students, get_unrecoverable_students
-            from telegram_bot import parse_students_from_excel
-            done_set = get_completed_students()
-            unrec_set = get_unrecoverable_students()
-            for fn in os.listdir("bot_orders"):
-                if fn.startswith("in_") and fn.endswith(".xlsx"):
-                    src = os.path.join("bot_orders", fn)
-                    try:
-                        sts = parse_students_from_excel(src)
-                        rem = [s for s in sts if s["name"] not in done_set and s["name"] not in unrec_set]
-                        if len(rem) == 0:
-                            dst = os.path.join(arch_dir, fn)
-                            if os.path.exists(dst):
-                                os.remove(dst)
-                            shutil.move(src, dst)
-                        else:
-                            print(f"[ACTIVE ORDER SAQLANDI] {fn} -> Qolgan o'quvchilar: {len(rem)} ta!")
-                    except Exception:
-                        pass
-            # Shuningdek, archived dagi chala qolgan bugungi buyurtmalarni bot_orders ga qaytaramiz:
-            for fn in os.listdir(arch_dir):
-                if fn.startswith("in_") and fn.endswith(".xlsx"):
-                    src = os.path.join(arch_dir, fn)
-                    try:
-                        sts = parse_students_from_excel(src)
-                        rem = [s for s in sts if s["name"] not in done_set and s["name"] not in unrec_set]
-                        if len(rem) > 0:
-                            dst = os.path.join("bot_orders", fn)
-                            shutil.copy2(src, dst)
-                            print(f"[ACTIVE ORDER TIKLANDI] {fn} -> bot_orders ga qaytarildi ({len(rem)} ta o'quvchi)!")
-                    except Exception:
-                        pass
-        except Exception as filter_err:
-            print(f"[ORDERS SMART FILTER ERROR] {filter_err}")
-    except Exception as e:
-        print(f"[ORDERS UNZIP ERROR] {e}")
+            os.remove(os.path.join("bot_orders", fn))
+        except Exception:
+            pass
+if os.path.exists(arch_dir):
+    for fn in os.listdir(arch_dir):
+        if fn.endswith(".xlsx"):
+            try:
+                os.remove(os.path.join(arch_dir, fn))
+            except Exception:
+                pass
+print("[ORDERS] Buyurtmalar navbati toza boshlandi (eski chala navbatlar butunlay yo'q qilindi).")
 
 
 existing_vid = ""
