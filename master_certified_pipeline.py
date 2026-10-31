@@ -2288,6 +2288,24 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                             pass
                         return "FAILED"
 
+                # Har doim DEDC enterprise taklifnomasiga qo'shilganini tekshirib ochamiz:
+                try:
+                    if "gmail.com" in email.lower():
+                        from gmail_automation import GmailMailboxService
+                        m_svc = GmailMailboxService(existing_email=email)
+                    else:
+                        m_svc = TempMailAPI(existing_email=email)
+                    invs = m_svc.get_all_coursera_invites()
+                    if invs:
+                        print(f"{tag}[DEDC] Pochtadagi Coursera taklifnomasi ochilmoqda...")
+                        safe_goto_commit(page, invs[-1], wait_sec=3.5)
+                        prog_btn = page.locator("button:has-text('Join Program'), button:has-text('Присоединиться к программе'), div[role='dialog'] button:has-text('Continue')").first
+                        if prog_btn.count() > 0 and prog_btn.is_visible():
+                            prog_btn.click(force=True)
+                            time.sleep(2.5)
+                except Exception as _e:
+                    print(f"{tag}[!] DEDC taklifnomasi tekshirishda: {_e}")
+
                 ensure_enrolled_on_coursera(page)
 
             cert_url = None
