@@ -1925,12 +1925,18 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
         doc_candidates.append(("guvohnoma", f"I-{ds_up}", num_pad7))
         doc_candidates.append(("guvohnoma", "T", doc_number))
 
-    # Tug'ilgan sana variantlari (masalan 06.10.2019 va 10.06.2019)
+    # Tug'ilgan sana variantlari (kun/oy va oy/kun ikkala variantni ham avtomat tekshirish)
     birth_variants = [birth_date]
-    if "." in birth_date:
-        _bp = birth_date.split(".")
-        if len(_bp) == 3 and int(_bp[0]) <= 12 and int(_bp[1]) <= 12 and _bp[0] != _bp[1]:
-            birth_variants.append(f"{_bp[1]}.{_bp[0]}.{_bp[2]}")
+    _sep = "." if "." in birth_date else ("/" if "/" in birth_date else ("-" if "-" in birth_date else None))
+    if _sep:
+        _bp = birth_date.split(_sep)
+        if len(_bp) == 3:
+            try:
+                p1, p2, p3 = int(_bp[0]), int(_bp[1]), _bp[2]
+                if p1 <= 12 and p2 <= 12 and p1 != p2:
+                    birth_variants.append(f"{p2}{_sep}{p1}{_sep}{p3}")
+            except Exception:
+                pass
 
     try:
         reg_step2_ok = False
