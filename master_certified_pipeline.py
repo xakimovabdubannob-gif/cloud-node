@@ -1980,16 +1980,14 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
             page.wait_for_timeout(3500)
 
             body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-            # Agar pochta allaqachon ro'yxatdan o'tgan bo'lsa yoki formadan o'tmagan bo'lsa, yangi fresh alias olinadi
+            # Agar pochta allaqachon ro'yxatdan o'tgan bo'lsa yoki formadan o'tmagan bo'lsa, yangi unikal TempMail olinadi
             if "/auth/register" in page.url and em_in.is_visible():
-                from gmail_automation import get_next_available_alias
-                for _al_try in range(15):
+                for _al_try in range(5):
                     if not em_in.is_visible() or "/auth/register" not in page.url:
                         break
-                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud yoki xato! Yangi fresh alias olinmoqda ({_al_try + 1}/15)...")
-                    student_email = get_next_available_alias()
-                    if hasattr(mail_svc, "email"):
-                        mail_svc.email = student_email
+                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud yoki xato! Yangi unikal TempMail olinmoqda ({_al_try + 1}/5)...")
+                    mail_svc = TempMailAPI()
+                    student_email = mail_svc.email
                     fill_react_input(em_in, student_email)
                     page.wait_for_timeout(500)
                     sub2.click(force=True)
@@ -2045,17 +2043,17 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
 
     print(f"[REGISTRATSIYA] {full_name} bazada yo'q. Aileaders.uz orqali yangi profil ochilmoqda...")
     try:
-        from gmail_automation import GmailMailboxService
         assigned_em = student.get("assigned_email", "").strip()
-        if assigned_em:
+        if assigned_em and "gmail.com" in assigned_em:
+            from gmail_automation import GmailMailboxService
             mail_svc = GmailMailboxService(existing_email=assigned_em)
         else:
-            mail_svc = GmailMailboxService()
+            mail_svc = TempMailAPI()
         student_email = mail_svc.email
         student_password = generate_student_password(full_name)
-        print(f"   Yangi pochta (Markaziy): {student_email} | Yangi parol: {student_password}")
+        print(f"   Yangi unikal pochta (TempMail): {student_email} | Yangi parol: {student_password}")
     except Exception as e:
-        print(f"[!] TempMail xatosi: {e}")
+        print(f"[!] TempMail yaratish xatosi: {e}")
         return "RETRY", None
 
     # Hujjat seriyasini har xil variantlarda (Guvohnoma: T, I-TV, TV, I-FR va Passport) tekshirib ko'rish ro'yxati
@@ -2180,16 +2178,14 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
             page.wait_for_timeout(3500)
 
             body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-            # Agar pochta allaqachon ro'yxatdan o'tgan bo'lsa yoki formadan o'tmagan bo'lsa, yangi fresh alias olinadi
+            # Agar pochta allaqachon ro'yxatdan o'tgan bo'lsa yoki formadan o'tmagan bo'lsa, yangi unikal TempMail olinadi
             if "/auth/register" in page.url and em_in.is_visible():
-                from gmail_automation import get_next_available_alias
-                for _al_try in range(15):
+                for _al_try in range(5):
                     if not em_in.is_visible() or "/auth/register" not in page.url:
                         break
-                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud yoki xato! Yangi fresh alias olinmoqda ({_al_try + 1}/15)...")
-                    student_email = get_next_available_alias()
-                    if hasattr(mail_svc, "email"):
-                        mail_svc.email = student_email
+                    print(f"   [!] Pochta ({student_email}) allaqachon mavjud yoki xato! Yangi unikal TempMail olinmoqda ({_al_try + 1}/5)...")
+                    mail_svc = TempMailAPI()
+                    student_email = mail_svc.email
                     fill_react_input(em_in, student_email)
                     page.wait_for_timeout(500)
                     sub2.click(force=True)
