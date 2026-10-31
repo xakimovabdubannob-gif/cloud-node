@@ -109,6 +109,8 @@ class ClusterWorkerNode:
         self.master_url = ""
         self.active_threads = {}
         self.lock = threading.Lock()
+        self.start_time = time.time()
+        self.consecutive_fails = 0
 
     def discover_master_url(self) -> str:
         candidates = []
@@ -208,6 +210,12 @@ class ClusterWorkerNode:
 
     def worker_thread_fn(self, local_wid: int):
         while True:
+            # GitHub Runner 6 soat yashaydi. 5.5 soat (19800 soniya) o'tgach, o'chishidan 30 daqiqa oldin xavfsiz to'xtaymiz
+            if hasattr(self, 'start_time') and (time.time() - self.start_time > 19800):
+                print(f"[RUNNER TIMEOUT SAFEGUARD] Kompyuter 5.5 soat ishladi. O'chishidan 30 daqiqa oldin yangi vazifa olinmadi.")
+                time.sleep(30)
+                break
+
             if not self.approved or local_wid > self.target_workers or not self.master_url:
                 time.sleep(2)
                 continue
@@ -220,6 +228,16 @@ class ClusterWorkerNode:
                 )
                 data = r.json()
             except Exception:
+                self.consecutive_fails += 1
+                if self.consecutive_fails >= 3:
+                    try:
+                        new_u = self.discover_master_url()
+                        if new_u and new_u != self.master_url:
+                            print(f"[RECONNECTED] Yangi master server topildi: {new_u}")
+                            self.master_url = new_u
+                            self.consecutive_fails = 0
+                    except Exception:
+                        pass
                 time.sleep(3)
                 continue
 

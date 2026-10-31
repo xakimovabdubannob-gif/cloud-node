@@ -2072,7 +2072,23 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
         with FILE_LOCK:
             with open(ACCOUNTS_FILE, "a", encoding="utf-8") as f:
                 f.write(f"{full_name} | {class_name} | {student_email} | {student_password} | {PHONE_RAW}\n")
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except Exception:
+                    pass
         print(f"   [OK] Yangi akkount bazaga (akkountlar.txt) saqlandi: {student_email}")
+        try:
+            m_url = os.environ.get("CLUSTER_MASTER_URL", "").rstrip("/")
+            if m_url.startswith("http"):
+                import requests as _rq
+                _rq.post(
+                    f"{m_url}/cluster/register_account",
+                    json={"name": full_name, "class": class_name, "email": student_email, "password": student_password, "phone": PHONE_RAW},
+                    timeout=5,
+                )
+        except Exception:
+            pass
         if status_callback:
             status_callback(f"📧 Aileaders.uz profil ochildi ({student_email})! 1-xabar aktivatsiya qilinmoqda...")
 

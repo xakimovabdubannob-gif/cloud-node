@@ -156,6 +156,40 @@ def load_bot_config():
     }
 
 
+
+_last_git_push_ts = time.time()
+_git_push_lock = threading.Lock()
+
+def trigger_git_sync(force: bool = False, msg: str = "auto-sync: save certs and accounts"):
+    global _last_git_push_ts
+    with _git_push_lock:
+        now = time.time()
+        # Force bo'lmasa, kamida 10 daqiqa (600 soniya) oralig'ida bitta push qiladi (limitdan saqlanish uchun)
+        if not force and (now - _last_git_push_ts < 600):
+            return
+        try:
+            import subprocess
+            subprocess.run(["git", "add", RESULTS_FILE, ACCOUNTS_FILE], capture_output=True, timeout=15)
+            c_res = subprocess.run(["git", "commit", "-m", msg], capture_output=True, timeout=15)
+            if c_res.returncode == 0:
+                p_res = subprocess.run(["git", "push", "origin", "main"], capture_output=True, timeout=30)
+                if p_res.returncode != 0:
+                    subprocess.run(["git", "push", "origin", "master"], capture_output=True, timeout=30)
+                print(f"[GIT AUTO-SYNC] Natijalar GitHub bulutiga saqlandi! ({msg})")
+            _last_git_push_ts = now
+        except Exception as e:
+            print(f"[GIT AUTO-SYNC XATO] {e}")
+
+def _git_periodic_sync_worker():
+    while True:
+        time.sleep(600)
+        try:
+            trigger_git_sync(force=False, msg="auto-sync: periodic 10min backup")
+        except Exception:
+            pass
+
+threading.Thread(target=_git_periodic_sync_worker, daemon=True).start()
+
 _tg_rate_lock = threading.Lock()
 _last_tg_call_ts = 0.0
 _tg_ban_until = 0.0
@@ -1849,6 +1883,32 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         path = self.path.split("?")[0]
 
+
+        if path == "/cluster/register_account":
+            data = self._read_body()
+            s_name = data.get("name", "")
+            cls = data.get("class", "")
+            em = data.get("email", "")
+            pw = data.get("password", "")
+            raw_phone = data.get("phone", "")
+            if s_name and em:
+                acc_line = f"{s_name} | {cls} | {em} | {pw}"
+                if raw_phone:
+                    acc_line += f" | {raw_phone}"
+                with file_lock:
+                    existing = open(ACCOUNTS_FILE, "r", encoding="utf-8", errors="replace").read() if os.path.exists(ACCOUNTS_FILE) else ""
+                    if s_name + " |" not in existing:
+                        with open(ACCOUNTS_FILE, "a", encoding="utf-8") as af:
+                            af.write(acc_line.strip() + "\n")
+                            af.flush()
+                            try:
+                                os.fsync(af.fileno())
+                            except Exception:
+                                pass
+                        print(f"[ACCOUNT INSTANT SYNC] {s_name} ({em}) saqlandi!")
+            self._send_json({"ok": True})
+            return
+
         if path == "/cluster/upload_screenshot":
             data = self._read_body()
             node_id = data.get("node_id", "")
@@ -2097,6 +2157,15 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                         if s_name + " |" not in existing:
                             with open(RESULTS_FILE, "a", encoding="utf-8") as rf:
                                 rf.write(cert_line.strip() + "\n")
+                                rf.flush()
+                                try:
+                                    os.fsync(rf.fileno())
+                                except Exception:
+                                    pass
+                            try:
+                                trigger_git_sync(force=False, msg=f"cert sync: {s_name}")
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                 if err_line and status == "UNRECOVERABLE":
