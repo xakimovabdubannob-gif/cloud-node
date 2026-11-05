@@ -2156,7 +2156,6 @@ class TelegramBotServer:
         if self.admin_id and chat_id == self.admin_id:
             return {
                 "keyboard": [
-                    [{"text": "🎓 5 Million Prompter (Besh Million)"}],
                     [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
                     [{"text": "🤖 Robot Agentlar Dashboard"}, {"text": "🌐 Web Any (Brauzerda)"}],
                     [{"text": "🧹 Keshni tozalash (Yangi buyurtma)"}, {"text": "🖥 Klaster (Kompyuterlar holati)"}],
@@ -2171,7 +2170,6 @@ class TelegramBotServer:
             }
         return {
             "keyboard": [
-                [{"text": "🎓 5 Million Prompter"}],
                 [{"text": "📥 Excel Shablon olish"}, {"text": "📸 To'lov chekini yuborish"}],
                 [{"text": "💰 Narxlar va 50% Avans"}, {"text": "👨‍💼 Admin bilan aloqa"}],
             ],
@@ -3055,17 +3053,6 @@ class TelegramBotServer:
             print(f"[ADMIN SAQLANDI] Sizning Telegram ID: {chat_id}")
 
         # Admin AI Dasturchiga yozish tugmasini bosganda:
-        if text in ("🎓 5 Million Prompter (Besh Million)", "🎓 5 Million Prompter", "/5million", "5million", "5mln"):
-            admin_input_state[chat_id] = {"action": "5million_order"}
-            msg = (
-                "🎓 <b>BESH MILLION SUN'IY INTELLEKT YETAKCHILARI (5 Million Prompter)</b>\n\n"
-                "Ushbu tizim o'quvchilarni avtomatik ro'yxatdan o'tkazadi, 4 ta modul videolarini 100% yopadi, "
-                "barcha testlarni xatosiz yechadi va sertifikat havolalarini olib beradi!\n\n"
-                "📥 <b>Marhamat, o'quvchilar ro'yxati yozilgan Excel (.xlsx) faylingizni yuboring!</b>"
-            )
-            self.send_message(chat_id, msg, reply_markup=self.get_reply_keyboard(chat_id))
-            return
-
         if text in ("🛠 AI Dasturchiga yozish (Skrinshot / Taklif)", "/ai", "/dev"):
             admin_input_state[chat_id] = {"action": "ai_dev_note"}
             self.send_message(
