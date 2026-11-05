@@ -347,7 +347,7 @@ def parse_students_from_text(text: str):
 
     for raw_line in text.splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("#") or line.lower().startswith("f.i.") or "namuna" in line.lower():
+        if not line or line.startswith("#") or line.startswith("/") or line.lower().startswith("f.i.") or "namuna" in line.lower():
             continue
 
         # 14 xonali JSHSHIR larni olib tashlaymiz
@@ -405,7 +405,10 @@ def parse_students_from_text(text: str):
         name = re.sub(r"\s+", " ", name).strip()
         name_lat = cyrillic_to_latin_uz(name)
 
-        if len(name_lat) < 3 or "ALIYEV VALI" in name_lat or "KARIMOVA MALIKA" in name_lat:
+        if len(name_lat) < 3 or name_lat.startswith("/") or "ALIYEV VALI" in name_lat or "KARIMOVA MALIKA" in name_lat:
+            continue
+        # Kamida 2 ta so'z (Familiya Ism) yoki tug'ilgan sana / hujjat raqami bo'lishi shart:
+        if len(name_lat.split()) < 2 and not birth_date and not doc_number:
             continue
 
         doc_key = f"{doc_series}{doc_number}".replace(" ", "").replace("-", "").upper() if (doc_series and doc_number) else ""
@@ -3424,7 +3427,7 @@ class TelegramBotServer:
             return
 
         # /START BOSILGANDA (AVVAL MATN, KETIDAN AVTOMATIK VIDEO YUBORILADI):
-        if text.startswith("/start"):
+        if text.lower().startswith("/start"):
             self.card_info = load_config().get("card_info", self.card_info)
             users_db = load_users_db()
             total_members = get_total_users_count(chat_id)
@@ -3600,6 +3603,8 @@ class TelegramBotServer:
                 return
 
         if text:
+            if text.startswith("/"):
+                return
             students = parse_students_from_text(text)
             if students:
                 pref = "in_" if (len(students) == 1 and chat_id not in load_users_db().get("free_trial_used", [])) else "pending_"
