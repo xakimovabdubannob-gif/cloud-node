@@ -1882,7 +1882,8 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
 
     print(f"[REGISTRATSIYA] {full_name} bazada yo'q. Aileaders.uz orqali yangi profil ochilmoqda...")
     try:
-        mail_svc = TempMailAPI()
+        from gmail_automation import GmailMailboxService
+        mail_svc = GmailMailboxService()
         student_email = mail_svc.email
         student_password = generate_student_password(full_name)
         print(f"   Yangi unikal pochta (TempMail): {student_email} | Yangi parol: {student_password}")
@@ -2056,8 +2057,9 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                     for _al_try in range(5):
                         if "/auth/verify" in page.url:
                             break
-                        print(f"   [!] Pochta ({student_email}) allaqachon mavjud! Yangi unikal TempMail olinmoqda ({_al_try + 1}/5)...")
-                        mail_svc = TempMailAPI()
+                        print(f"   [!] Pochta ({student_email}) allaqachon mavjud! Yangi unikal pochta olinmoqda ({_al_try + 1}/5)...")
+                        from gmail_automation import GmailMailboxService
+                        mail_svc = GmailMailboxService()
                         student_email = mail_svc.email
                         fill_react_input(em_in, student_email)
                         page.wait_for_timeout(500)
