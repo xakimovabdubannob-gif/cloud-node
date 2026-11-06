@@ -349,6 +349,9 @@ def parse_students_from_text(text: str):
         line = raw_line.strip()
         if not line or line.startswith("#") or line.startswith("/") or line.lower().startswith("f.i.") or "namuna" in line.lower():
             continue
+        line_low = line.lower()
+        if any(h in line_low for h in ["f.i.sh", "familiya ism", "ism va familya", "ism va familiya", "tug'ilgan sana", "tugilgan sana", "guvohnoma seriyasi", "metrika seriyasi", "maktab o'quvchi", "maktab oquvchi", "o'quvchilar ro'yxati", "oquvchilar royxati"]):
+            continue
 
         # 14 xonali JSHSHIR larni olib tashlaymiz
         line = re.sub(r"\b\d{14}\b", "", line)
@@ -432,6 +435,101 @@ def parse_students_from_text(text: str):
     return students
 
 
+
+
+
+
+def extract_text_from_word_doc(file_path: str) -> str:
+    """Word (.docx va .doc) fayllaridan barcha jadvallar va matnlarni qatorlarga ajratib oladi."""
+    lines = []
+    fname = file_path.lower()
+
+    # 1. Agar DOCX bo'lsa:
+    if fname.endswith(".docx"):
+        # A) python-docx kutubxonasi orqali o'qish (eng aniq):
+        try:
+            import docx
+            doc = docx.Document(file_path)
+            for p in doc.paragraphs:
+                txt = p.text.strip()
+                if txt:
+                    lines.append(txt)
+            for table in doc.tables:
+                for row in table.rows:
+                    row_cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                    clean_cells = []
+                    for rc in row_cells:
+                        if not clean_cells or clean_cells[-1] != rc:
+                            clean_cells.append(rc)
+                    if clean_cells:
+                        lines.append(" | ".join(clean_cells))
+            if lines:
+                return "\n".join(lines)
+        except Exception:
+            pass
+
+        # B) Built-in zipfile fallback:
+        try:
+            import zipfile
+            import xml.etree.ElementTree as ET
+            with zipfile.ZipFile(file_path) as z:
+                xml_content = z.read("word/document.xml")
+            tree = ET.fromstring(xml_content)
+            ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            for tr in tree.iter(f"{{{ns}}}tr"):
+                cells = []
+                for tc in tr.iter(f"{{{ns}}}tc"):
+                    cell_text = "".join(t.text for t in tc.iter(f"{{{ns}}}t") if t.text)
+                    if cell_text.strip():
+                        cells.append(cell_text.strip())
+                if cells:
+                    lines.append(" | ".join(cells))
+            for p in tree.iter(f"{{{ns}}}p"):
+                p_text = "".join(t.text for t in p.iter(f"{{{ns}}}t") if t.text)
+                if p_text.strip():
+                    lines.append(p_text.strip())
+            if lines:
+                return "\n".join(lines)
+        except Exception:
+            pass
+
+    # 2. Agar eski .DOC (Word 97-2003) bo'lsa:
+    if fname.endswith(".doc") or not lines:
+        try:
+            with open(file_path, "rb") as f:
+                raw_bytes = f.read()
+            import re
+            u16_matches = re.findall(b"(?:[\x20-\x7E\x00-\xFF]\x00){4,}", raw_bytes)
+            for m in u16_matches:
+                try:
+                    decoded = m.decode("utf-16le", errors="ignore").strip()
+                    for sub in decoded.split("\r"):
+                        s = sub.strip()
+                        if len(s) > 3 and not s.startswith("<?") and not s.startswith("http"):
+                            lines.append(s)
+                except Exception:
+                    pass
+            if not lines:
+                ascii_matches = re.findall(b"[\x20-\x7E\x80-\xFF]{4,}", raw_bytes)
+                for m in ascii_matches:
+                    try:
+                        decoded = m.decode("utf-8", errors="ignore").strip()
+                        for sub in decoded.split("\r"):
+                            s = sub.strip()
+                            if len(s) > 3 and not s.startswith("<?") and not s.startswith("http"):
+                                lines.append(s)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    return "\n".join(lines)
+
+
+def parse_students_from_doc_or_docx(file_path: str):
+    """Word (.docx va .doc) fayllaridan o'quvchilar ro'yxatini ajratib oladi."""
+    txt = extract_text_from_word_doc(file_path)
+    return parse_students_from_text(txt)
 
 def parse_students_from_excel(file_path: str):
     """Excel (.xlsx) fayldan o'quvchilar ro'yxatini o'qiydi (sarlavha, '№' va namuna qatorlarni avtomatik tashlab ketadi)."""
@@ -3593,6 +3691,12 @@ class TelegramBotServer:
             if fname.endswith(".xlsx"):
                 local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}.xlsx"))
                 students = parse_students_from_excel(local_p)
+                self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
+                return
+            elif fname.endswith(".docx") or fname.endswith(".doc"):
+                ext = ".docx" if fname.endswith(".docx") else ".doc"
+                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}{ext}"))
+                students = parse_students_from_doc_or_docx(local_p)
                 self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
                 return
             elif fname.endswith(".txt") or fname.endswith(".csv"):
