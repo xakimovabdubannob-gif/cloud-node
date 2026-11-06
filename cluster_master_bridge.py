@@ -106,7 +106,7 @@ if "MASTER_PC" not in cluster_nodes:
     cluster_nodes["MASTER_PC"] = {
         "pc_name": f"1-Kompyuter [{socket.gethostname()}] (Asosiy Server)",
         "ram_gb": 16,
-        "workers": 4,
+        "workers": 1,
         "approved": True,
         "last_seen": time.time(),
         "status": "🟢 Faol ishlamoqda...",
@@ -2362,7 +2362,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     cluster_nodes[node_id] = {
                         "pc_name": f"1-Kompyuter [{socket.gethostname()}] (Asosiy Server)" if node_id == "MASTER_PC" else node_id,
                         "ram_gb": 16,
-                        "workers": 4,
+                        "workers": 1,
                         "approved": True,
                         "last_seen": now_st,
                         "status": status_text,

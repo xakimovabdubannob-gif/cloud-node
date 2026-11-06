@@ -1964,7 +1964,7 @@ class TelegramBotServer:
             dur_str = "1 soniya"
         else:
             update_step("🚀 Jarayon boshlanmoqda...")
-            is_headless = os.environ.get("HEADLESS", "1").strip().lower() in ("1", "true", "yes")
+            is_headless = os.environ.get("HEADLESS", "0").strip().lower() in ("1", "true", "yes")
             t_proc_start = time.time()
             result_status = process_student(st, status_callback=update_step, headless=is_headless, worker_id=worker_id)
             dur_sec = max(1, int(time.time() - t_proc_start))
