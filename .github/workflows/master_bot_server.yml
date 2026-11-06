@@ -1,6 +1,8 @@
 name: 24-7 Cloud Master Bot
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 */5 * * *'
 concurrency:
   group: master-bot-24-7-group
   cancel-in-progress: true
@@ -16,7 +18,7 @@ jobs:
       - name: Kutubxonalar va Cloudflared ornatish
         shell: cmd
         run: |
-          python -m pip install --quiet --disable-pip-version-check requests openpyxl playwright selenium undetected-chromedriver pillow setuptools cryptography
+          python -m pip install --quiet --disable-pip-version-check requests openpyxl python-docx playwright selenium undetected-chromedriver pillow setuptools cryptography
           python -m playwright install chromium
           curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -o cloudflared.exe
       - name: AnyDesk ornatish va sozlash
