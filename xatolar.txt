@@ -1,1 +1,2 @@
-# Xatolar tozalangan
+# Xatolar kesh tozalandi
+/START | 8-sinf | ILOJI_YOQ: akkountlar.txt da yo'q va ro'yxatdan o'tish uchun tug'ilgan sana/hujjat ma'lumotlari berilmagan
