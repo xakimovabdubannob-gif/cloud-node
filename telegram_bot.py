@@ -1449,6 +1449,8 @@ class TelegramBotServer:
                 with open("cluster_nodes_state.json", "r", encoding="utf-8") as nf:
                     st_nodes = json.load(nf)
                 for idx_pc, (nid, ninfo) in enumerate(st_nodes.items(), start=2):
+                    if nid == "MASTER_PC" or "Asosiy Server" in str(ninfo.get("pc_name", "")) or pc1_name.lower() in str(ninfo.get("pc_name", "")).lower():
+                        continue
                     if ninfo.get("approved"):
                         pc_n = ninfo.get("pc_name", nid)
                         w_cnt = int(ninfo.get("workers", 4))
@@ -2488,6 +2490,8 @@ class TelegramBotServer:
                 with open("cluster_nodes_state.json", "r", encoding="utf-8") as nf:
                     st_nodes = json.load(nf)
                 for idx_pc, (nid, ninfo) in enumerate(st_nodes.items(), start=2):
+                    if nid == "MASTER_PC" or "Asosiy Server" in str(ninfo.get("pc_name", "")) or pc1_name.lower() in str(ninfo.get("pc_name", "")).lower():
+                        continue
                     if ninfo.get("approved"):
                         pc_n = ninfo.get("pc_name", nid)
                         pc_w = int(ninfo.get("workers", 4))
@@ -2654,7 +2658,7 @@ class TelegramBotServer:
     def send_live_console_log(self, chat_id: int):
         import socket
         pc1_name = socket.gethostname()
-        pc_lines = [f"=== 💻 1-KOMPYUTER [{pc1_name}] (3 ta AI Agent) ==="]
+        pc_lines = [f"=== 💻 1-KOMPYUTER [{pc1_name}] (1 ta AI Agent) ==="]
         for wid, st_txt in sorted(self.active_worker_status.items()):
             if st_txt:
                 pc_lines.append(f"🤖 Agent #{wid}: {st_txt[:95]}")
@@ -2664,6 +2668,8 @@ class TelegramBotServer:
                 with open("cluster_nodes_state.json", "r", encoding="utf-8") as nf:
                     st_nodes = json.load(nf)
                 for idx_pc, (nid, ninfo) in enumerate(st_nodes.items(), start=2):
+                    if nid == "MASTER_PC" or "Asosiy Server" in str(ninfo.get("pc_name", "")) or pc1_name.lower() in str(ninfo.get("pc_name", "")).lower():
+                        continue
                     if ninfo.get("approved"):
                         pc_n = ninfo.get("pc_name", nid)
                         w_cnt = int(ninfo.get("workers", 4))
