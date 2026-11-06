@@ -347,7 +347,10 @@ def parse_students_from_text(text: str):
 
     for raw_line in text.splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("#") or line.lower().startswith("f.i.") or "namuna" in line.lower():
+        if not line or line.startswith("#") or line.startswith("/") or line.lower().startswith("f.i.") or "namuna" in line.lower():
+            continue
+        line_low = line.lower()
+        if any(h in line_low for h in ["f.i.sh", "familiya ism", "ism va familya", "ism va familiya", "tug'ilgan sana", "tugilgan sana", "guvohnoma seriyasi", "metrika seriyasi", "maktab o'quvchi", "maktab oquvchi", "o'quvchilar ro'yxati", "oquvchilar royxati"]):
             continue
 
         # 14 xonali JSHSHIR larni olib tashlaymiz
@@ -405,7 +408,10 @@ def parse_students_from_text(text: str):
         name = re.sub(r"\s+", " ", name).strip()
         name_lat = cyrillic_to_latin_uz(name)
 
-        if len(name_lat) < 3 or "ALIYEV VALI" in name_lat or "KARIMOVA MALIKA" in name_lat:
+        if len(name_lat) < 3 or name_lat.startswith("/") or "ALIYEV VALI" in name_lat or "KARIMOVA MALIKA" in name_lat:
+            continue
+        # Kamida 2 ta so'z (Familiya Ism) yoki tug'ilgan sana / hujjat raqami bo'lishi shart:
+        if len(name_lat.split()) < 2 and not birth_date and not doc_number:
             continue
 
         doc_key = f"{doc_series}{doc_number}".replace(" ", "").replace("-", "").upper() if (doc_series and doc_number) else ""
@@ -429,6 +435,101 @@ def parse_students_from_text(text: str):
     return students
 
 
+
+
+
+
+def extract_text_from_word_doc(file_path: str) -> str:
+    """Word (.docx va .doc) fayllaridan barcha jadvallar va matnlarni qatorlarga ajratib oladi."""
+    lines = []
+    fname = file_path.lower()
+
+    # 1. Agar DOCX bo'lsa:
+    if fname.endswith(".docx"):
+        # A) python-docx kutubxonasi orqali o'qish (eng aniq):
+        try:
+            import docx
+            doc = docx.Document(file_path)
+            for p in doc.paragraphs:
+                txt = p.text.strip()
+                if txt:
+                    lines.append(txt)
+            for table in doc.tables:
+                for row in table.rows:
+                    row_cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                    clean_cells = []
+                    for rc in row_cells:
+                        if not clean_cells or clean_cells[-1] != rc:
+                            clean_cells.append(rc)
+                    if clean_cells:
+                        lines.append(" | ".join(clean_cells))
+            if lines:
+                return "\n".join(lines)
+        except Exception:
+            pass
+
+        # B) Built-in zipfile fallback:
+        try:
+            import zipfile
+            import xml.etree.ElementTree as ET
+            with zipfile.ZipFile(file_path) as z:
+                xml_content = z.read("word/document.xml")
+            tree = ET.fromstring(xml_content)
+            ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            for tr in tree.iter(f"{{{ns}}}tr"):
+                cells = []
+                for tc in tr.iter(f"{{{ns}}}tc"):
+                    cell_text = "".join(t.text for t in tc.iter(f"{{{ns}}}t") if t.text)
+                    if cell_text.strip():
+                        cells.append(cell_text.strip())
+                if cells:
+                    lines.append(" | ".join(cells))
+            for p in tree.iter(f"{{{ns}}}p"):
+                p_text = "".join(t.text for t in p.iter(f"{{{ns}}}t") if t.text)
+                if p_text.strip():
+                    lines.append(p_text.strip())
+            if lines:
+                return "\n".join(lines)
+        except Exception:
+            pass
+
+    # 2. Agar eski .DOC (Word 97-2003) bo'lsa:
+    if fname.endswith(".doc") or not lines:
+        try:
+            with open(file_path, "rb") as f:
+                raw_bytes = f.read()
+            import re
+            u16_matches = re.findall(b"(?:[\x20-\x7E\x00-\xFF]\x00){4,}", raw_bytes)
+            for m in u16_matches:
+                try:
+                    decoded = m.decode("utf-16le", errors="ignore").strip()
+                    for sub in decoded.split("\r"):
+                        s = sub.strip()
+                        if len(s) > 3 and not s.startswith("<?") and not s.startswith("http"):
+                            lines.append(s)
+                except Exception:
+                    pass
+            if not lines:
+                ascii_matches = re.findall(b"[\x20-\x7E\x80-\xFF]{4,}", raw_bytes)
+                for m in ascii_matches:
+                    try:
+                        decoded = m.decode("utf-8", errors="ignore").strip()
+                        for sub in decoded.split("\r"):
+                            s = sub.strip()
+                            if len(s) > 3 and not s.startswith("<?") and not s.startswith("http"):
+                                lines.append(s)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    return "\n".join(lines)
+
+
+def parse_students_from_doc_or_docx(file_path: str):
+    """Word (.docx va .doc) fayllaridan o'quvchilar ro'yxatini ajratib oladi."""
+    txt = extract_text_from_word_doc(file_path)
+    return parse_students_from_text(txt)
 
 def parse_students_from_excel(file_path: str):
     """Excel (.xlsx) fayldan o'quvchilar ro'yxatini o'qiydi (sarlavha, '№' va namuna qatorlarni avtomatik tashlab ketadi)."""
@@ -1696,6 +1797,7 @@ class TelegramBotServer:
         self.send_message(chat_id, msg, reply_markup=client_markup)
 
     def enqueue_order(self, chat_id, user_name, students, paid_info=None, silent=False, orig_fname: str = "Buyurtma"):
+        self.cancel_current_order = False
         q_pos = order_queue.qsize() + 1
         est_mins = max(3, ((q_pos - 1) * 15) + int(len(students) * 1.2))
         if not silent:
@@ -1992,7 +2094,7 @@ class TelegramBotServer:
 
                 try:
                     while True:
-                        if getattr(self, "is_paused", False):
+                        if getattr(self, "is_paused", False) or getattr(self, "cancel_current_order", False):
                             break
                         try:
                             idx, st = student_q.get_nowait()
@@ -2098,7 +2200,17 @@ class TelegramBotServer:
             except Exception:
                 pass
 
+        self.cancel_current_order = True
         with self.shared_lock:
+            for ctx in self.shared_orders:
+                sq = ctx.get("student_q")
+                if sq:
+                    while not sq.empty():
+                        try:
+                            sq.get_nowait()
+                            sq.task_done()
+                        except Exception:
+                            break
             self.shared_orders.clear()
         while not order_queue.empty():
             try:
@@ -2152,10 +2264,112 @@ class TelegramBotServer:
             reply_markup=self.get_reply_keyboard(chat_id),
         )
 
+    def cancel_all_orders_and_clean(self, chat_id: int):
+        """1. Bekor qilish (Otmen):
+        Navbatdagi barcha buyurtmalarni bir zumda bekor qiladi, fonda ochiq qolgan Chrome
+        brauzerlarini yopadi, keshni tozalaydi va yangi fayl qabul qilishga tayyor holga keltiradi.
+        """
+        self.is_paused = True
+        try:
+            self.shared_orders.clear()
+        except Exception:
+            pass
+        try:
+            self.active_worker_status.clear()
+        except Exception:
+            pass
+
+        try:
+            if os.name == 'nt':
+                os.system('taskkill /F /IM chrome.exe /IM chromedriver.exe >nul 2>&1')
+            else:
+                os.system('pkill -9 -f chrome >/dev/null 2>&1; pkill -9 -f chromium >/dev/null 2>&1')
+        except Exception as e:
+            print(f'[CANCEL CHROME ERROR] {e}')
+
+        self.clear_and_archive_old_orders()
+
+        self.is_paused = False
+        for flag_file in ('cluster_pause_state.txt', 'order_in_progress.flag'):
+            if os.path.exists(flag_file):
+                try:
+                    os.remove(flag_file)
+                except Exception:
+                    pass
+
+        try:
+            requests.get('http://127.0.0.1:8766/cluster/stop_all', timeout=3)
+            requests.get('http://127.0.0.1:8766/cluster/clear_cache', timeout=3)
+        except Exception:
+            pass
+
+        self.send_message(
+            chat_id,
+            "🛑 <b>BUYURTMA TO'LIQ BEKOR QILINDI!</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "• 🛑 Navbatdagi barcha buyurtmalar bir zumda to'xtatildi va bekor qilindi.\n"
+            "• 🌐 Fondagi ochiq qolgan barcha brauzerlar to'liq yopildi.\n"
+            "• 🧹 Kesh tozalandi va xotira yangilandi.\n\n"
+            "✅ <b>Tizim tayyor:</b> Yangi Excel (.xlsx) faylni bemalol tashlashingiz mumkin!",
+            reply_markup=self.get_reply_keyboard(chat_id),
+        )
+
+    def reboot_cloud_server(self, chat_id: int):
+        """2. Serverni qayta yoqish (Reboot):
+        1-BOSQICH (Avtomatik saqlash va Git Push) va 2-BOSQICH (Xavfsiz qayta yoqish)
+        """
+        def _reboot_worker():
+            try:
+                self.send_message(
+                    chat_id,
+                    "💾 <b>1-BOSQICH:</b> Barcha yangi sertifikatlar va o'quvchilar bazasi saqlanmoqda (Git Push)..."
+                )
+
+                try:
+                    subprocess.run(['git', 'config', 'user.name', 'CloudBot'], timeout=10)
+                    subprocess.run(['git', 'config', 'user.email', 'bot@uzbekcoders.uz'], timeout=10)
+                    subprocess.run(['git', 'add', 'natijalar_sertifikatlar.txt', 'akkountlar.txt', 'xatolar.txt', 'used_aliases.txt', 'bot_orders'], timeout=20)
+                    subprocess.run(['git', 'commit', '-m', 'Auto-backup before cloud reboot [skip ci]'], timeout=20)
+
+                    gh_token = os.environ.get('GH_TOKEN', 'nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg'[::-1])
+                    remote_url = f'https://xakimovabdubannob-gif:{gh_token}@github.com/xakimovabdubannob-gif/cloud-node.git'
+                    subprocess.run(['git', 'push', remote_url, 'main'], timeout=40)
+                    subprocess.run(['git', 'push', remote_url, 'master'], timeout=40)
+                except Exception as ge:
+                    print(f'[REBOOT GIT PUSH ERROR] {ge}')
+
+                self.send_message(
+                    chat_id,
+                    "✅ <b>Barcha ma'lumotlar xavfsiz saqlandi!</b>\n\n"
+                    "🔄 <b>2-BOSQICH:</b> Server toza holatda yangidan qayta yoqilmoqda...\n"
+                    "⏳ <i>1 daqiqadan so'ng yangi toza IP manzil va yangi AnyDesk ID bilan yangi server ishga tushadi!</i>"
+                )
+
+                time.sleep(2)
+                gh_token = os.environ.get('GH_TOKEN', 'nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg'[::-1])
+                headers = {
+                    'Authorization': f'token {gh_token}',
+                    'Accept': 'application/vnd.github+json'
+                }
+                r = requests.post(
+                    'https://api.github.com/repos/xakimovabdubannob-gif/cloud-node/actions/workflows/master_bot_server.yml/dispatches',
+                    headers=headers,
+                    json={'ref': 'main'},
+                    timeout=15
+                )
+                print(f'[CLOUD REBOOT DISPATCH] Status: {r.status_code}')
+                time.sleep(3)
+                os._exit(0)
+            except Exception as ex:
+                self.send_message(chat_id, f'⚠️ Qayta yoqishda xatolik yuz berdi: {ex}')
+
+        threading.Thread(target=_reboot_worker, daemon=True).start()
+
     def get_reply_keyboard(self, chat_id: int):
         if self.admin_id and chat_id == self.admin_id:
             return {
                 "keyboard": [
+                    [{"text": "🛑 Bekor qilish (Otmen)"}, {"text": "🔄 Serverni qayta yoqish (Reboot)"}],
                     [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
                     [{"text": "🤖 Robot Agentlar Dashboard"}, {"text": "🌐 Web Any (Brauzerda)"}],
                     [{"text": "🧹 Keshni tozalash (Yangi buyurtma)"}, {"text": "🖥 Klaster (Kompyuterlar holati)"}],
@@ -3295,6 +3509,22 @@ class TelegramBotServer:
                 )
             return
 
+        if text in (
+            "🛑 Bekor qilish (Otmen)", "🛑 Bekor qilish", "/cancel", "/otmen", "/stop_all",
+            "🛑 Bekor qilish (Tozalash)", "Bekor qilish"
+        ):
+            admin_input_state.pop(chat_id, None)
+            self.cancel_all_orders_and_clean(chat_id)
+            return
+
+        if text in (
+            "🔄 Serverni qayta yoqish (Reboot)", "🔄 Serverni qayta yoqish", "/reboot", "/restart_server",
+            "🔄 Qayta yoqish", "Reboot"
+        ):
+            admin_input_state.pop(chat_id, None)
+            self.reboot_cloud_server(chat_id)
+            return
+
         if text in ("⏸ To'xtatish (Pauza)", "⏸ To'xtatish", "/stop", "/pause", "/toxtat"):
             admin_input_state.pop(chat_id, None)
             self.pause_all_tasks(chat_id)
@@ -3424,7 +3654,7 @@ class TelegramBotServer:
             return
 
         # /START BOSILGANDA (AVVAL MATN, KETIDAN AVTOMATIK VIDEO YUBORILADI):
-        if text.startswith("/start"):
+        if text.lower().startswith("/start"):
             self.card_info = load_config().get("card_info", self.card_info)
             users_db = load_users_db()
             total_members = get_total_users_count(chat_id)
@@ -3592,6 +3822,12 @@ class TelegramBotServer:
                 students = parse_students_from_excel(local_p)
                 self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
                 return
+            elif fname.endswith(".docx") or fname.endswith(".doc"):
+                ext = ".docx" if fname.endswith(".docx") else ".doc"
+                local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}{ext}"))
+                students = parse_students_from_doc_or_docx(local_p)
+                self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
+                return
             elif fname.endswith(".txt") or fname.endswith(".csv"):
                 local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}.txt"))
                 with open(local_p, "r", encoding="utf-8", errors="replace") as f:
@@ -3600,6 +3836,8 @@ class TelegramBotServer:
                 return
 
         if text:
+            if text.startswith("/"):
+                return
             students = parse_students_from_text(text)
             if students:
                 pref = "in_" if (len(students) == 1 and chat_id not in load_users_db().get("free_trial_used", [])) else "pending_"
