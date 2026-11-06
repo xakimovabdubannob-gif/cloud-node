@@ -1797,6 +1797,7 @@ class TelegramBotServer:
         self.send_message(chat_id, msg, reply_markup=client_markup)
 
     def enqueue_order(self, chat_id, user_name, students, paid_info=None, silent=False, orig_fname: str = "Buyurtma"):
+        self.cancel_current_order = False
         q_pos = order_queue.qsize() + 1
         est_mins = max(3, ((q_pos - 1) * 15) + int(len(students) * 1.2))
         if not silent:
@@ -2093,7 +2094,7 @@ class TelegramBotServer:
 
                 try:
                     while True:
-                        if getattr(self, "is_paused", False):
+                        if getattr(self, "is_paused", False) or getattr(self, "cancel_current_order", False):
                             break
                         try:
                             idx, st = student_q.get_nowait()
@@ -2199,7 +2200,17 @@ class TelegramBotServer:
             except Exception:
                 pass
 
+        self.cancel_current_order = True
         with self.shared_lock:
+            for ctx in self.shared_orders:
+                sq = ctx.get("student_q")
+                if sq:
+                    while not sq.empty():
+                        try:
+                            sq.get_nowait()
+                            sq.task_done()
+                        except Exception:
+                            break
             self.shared_orders.clear()
         while not order_queue.empty():
             try:
