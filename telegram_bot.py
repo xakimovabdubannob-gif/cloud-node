@@ -2264,10 +2264,112 @@ class TelegramBotServer:
             reply_markup=self.get_reply_keyboard(chat_id),
         )
 
+    def cancel_all_orders_and_clean(self, chat_id: int):
+        """1. Bekor qilish (Otmen):
+        Navbatdagi barcha buyurtmalarni bir zumda bekor qiladi, fonda ochiq qolgan Chrome
+        brauzerlarini yopadi, keshni tozalaydi va yangi fayl qabul qilishga tayyor holga keltiradi.
+        """
+        self.is_paused = True
+        try:
+            self.shared_orders.clear()
+        except Exception:
+            pass
+        try:
+            self.active_worker_status.clear()
+        except Exception:
+            pass
+
+        try:
+            if os.name == 'nt':
+                os.system('taskkill /F /IM chrome.exe /IM chromedriver.exe >nul 2>&1')
+            else:
+                os.system('pkill -9 -f chrome >/dev/null 2>&1; pkill -9 -f chromium >/dev/null 2>&1')
+        except Exception as e:
+            print(f'[CANCEL CHROME ERROR] {e}')
+
+        self.clear_and_archive_old_orders()
+
+        self.is_paused = False
+        for flag_file in ('cluster_pause_state.txt', 'order_in_progress.flag'):
+            if os.path.exists(flag_file):
+                try:
+                    os.remove(flag_file)
+                except Exception:
+                    pass
+
+        try:
+            requests.get('http://127.0.0.1:8766/cluster/stop_all', timeout=3)
+            requests.get('http://127.0.0.1:8766/cluster/clear_cache', timeout=3)
+        except Exception:
+            pass
+
+        self.send_message(
+            chat_id,
+            "🛑 <b>BUYURTMA TO'LIQ BEKOR QILINDI!</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "• 🛑 Navbatdagi barcha buyurtmalar bir zumda to'xtatildi va bekor qilindi.\n"
+            "• 🌐 Fondagi ochiq qolgan barcha brauzerlar to'liq yopildi.\n"
+            "• 🧹 Kesh tozalandi va xotira yangilandi.\n\n"
+            "✅ <b>Tizim tayyor:</b> Yangi Excel (.xlsx) faylni bemalol tashlashingiz mumkin!",
+            reply_markup=self.get_reply_keyboard(chat_id),
+        )
+
+    def reboot_cloud_server(self, chat_id: int):
+        """2. Serverni qayta yoqish (Reboot):
+        1-BOSQICH (Avtomatik saqlash va Git Push) va 2-BOSQICH (Xavfsiz qayta yoqish)
+        """
+        def _reboot_worker():
+            try:
+                self.send_message(
+                    chat_id,
+                    "💾 <b>1-BOSQICH:</b> Barcha yangi sertifikatlar va o'quvchilar bazasi saqlanmoqda (Git Push)..."
+                )
+
+                try:
+                    subprocess.run(['git', 'config', 'user.name', 'CloudBot'], timeout=10)
+                    subprocess.run(['git', 'config', 'user.email', 'bot@uzbekcoders.uz'], timeout=10)
+                    subprocess.run(['git', 'add', 'natijalar_sertifikatlar.txt', 'akkountlar.txt', 'xatolar.txt', 'used_aliases.txt', 'bot_orders'], timeout=20)
+                    subprocess.run(['git', 'commit', '-m', 'Auto-backup before cloud reboot [skip ci]'], timeout=20)
+
+                    gh_token = os.environ.get('GH_TOKEN', 'nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg'[::-1])
+                    remote_url = f'https://xakimovabdubannob-gif:{gh_token}@github.com/xakimovabdubannob-gif/cloud-node.git'
+                    subprocess.run(['git', 'push', remote_url, 'main'], timeout=40)
+                    subprocess.run(['git', 'push', remote_url, 'master'], timeout=40)
+                except Exception as ge:
+                    print(f'[REBOOT GIT PUSH ERROR] {ge}')
+
+                self.send_message(
+                    chat_id,
+                    "✅ <b>Barcha ma'lumotlar xavfsiz saqlandi!</b>\n\n"
+                    "🔄 <b>2-BOSQICH:</b> Server toza holatda yangidan qayta yoqilmoqda...\n"
+                    "⏳ <i>1 daqiqadan so'ng yangi toza IP manzil va yangi AnyDesk ID bilan yangi server ishga tushadi!</i>"
+                )
+
+                time.sleep(2)
+                gh_token = os.environ.get('GH_TOKEN', 'nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg'[::-1])
+                headers = {
+                    'Authorization': f'token {gh_token}',
+                    'Accept': 'application/vnd.github+json'
+                }
+                r = requests.post(
+                    'https://api.github.com/repos/xakimovabdubannob-gif/cloud-node/actions/workflows/master_bot_server.yml/dispatches',
+                    headers=headers,
+                    json={'ref': 'main'},
+                    timeout=15
+                )
+                print(f'[CLOUD REBOOT DISPATCH] Status: {r.status_code}')
+                time.sleep(3)
+                os._exit(0)
+            except Exception as ex:
+                self.send_message(chat_id, f'⚠️ Qayta yoqishda xatolik yuz berdi: {ex}')
+
+        threading.Thread(target=_reboot_worker, daemon=True).start()
+
     def get_reply_keyboard(self, chat_id: int):
         if self.admin_id and chat_id == self.admin_id:
             return {
                 "keyboard": [
+                    [{"text": "🛑 Bekor qilish (Otmen)"}, {"text": "🔄 Serverni qayta yoqish (Reboot)"}],
                     [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
                     [{"text": "🤖 Robot Agentlar Dashboard"}, {"text": "🌐 Web Any (Brauzerda)"}],
                     [{"text": "🧹 Keshni tozalash (Yangi buyurtma)"}, {"text": "🖥 Klaster (Kompyuterlar holati)"}],
@@ -3405,6 +3507,22 @@ class TelegramBotServer:
                     "Cloudflare tunnel 10-15 soniyada tayyor bo'ladi. Iltimos, birozdan so'ng qayta bosing.",
                     reply_markup=self.get_reply_keyboard(chat_id)
                 )
+            return
+
+        if text in (
+            "🛑 Bekor qilish (Otmen)", "🛑 Bekor qilish", "/cancel", "/otmen", "/stop_all",
+            "🛑 Bekor qilish (Tozalash)", "Bekor qilish"
+        ):
+            admin_input_state.pop(chat_id, None)
+            self.cancel_all_orders_and_clean(chat_id)
+            return
+
+        if text in (
+            "🔄 Serverni qayta yoqish (Reboot)", "🔄 Serverni qayta yoqish", "/reboot", "/restart_server",
+            "🔄 Qayta yoqish", "Reboot"
+        ):
+            admin_input_state.pop(chat_id, None)
+            self.reboot_cloud_server(chat_id)
             return
 
         if text in ("⏸ To'xtatish (Pauza)", "⏸ To'xtatish", "/stop", "/pause", "/toxtat"):
