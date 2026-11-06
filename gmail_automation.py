@@ -13,24 +13,9 @@ from email.header import decode_header
 GMAIL_USER = "parpievismoil208@gmail.com"
 GMAIL_APP_PWD = "urctpdhupszdjpct"
 BASE_USERNAME = "parpievismoil208"
-DOMAIN = "gmail.com"
+DOMAIN = "quizai.uz"
 ACCOUNTS_FILE = "akkountlar.txt"
 RESULTS_FILE = "natijalar_sertifikatlar.txt"
-
-def generate_dot_alias(index: int) -> str:
-    """
-    parpievismoil208 dan 32,768 ta noyob nuqtali pochta manzilini generatsiya qiladi.
-    """
-    s = BASE_USERNAME
-    n = len(s) - 1
-    res = []
-    for i in range(len(s)):
-        res.append(s[i])
-        if i < n and (index & (1 << i)):
-            res.append(".")
-    return "".join(res) + f"@{DOMAIN}"
-
-
 USED_ALIASES_FILE = "used_aliases.txt"
 
 def get_next_available_alias() -> str:
@@ -43,8 +28,10 @@ def get_next_available_alias() -> str:
             except Exception:
                 pass
 
-    for i in range(1, 32000):
-        alias = generate_dot_alias(i)
+    import random, string
+    for i in range(1, 50000):
+        rnd = ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
+        alias = f"student_{int(time.time())}_{rnd}@{DOMAIN}"
         if alias not in used_text:
             try:
                 with open(USED_ALIASES_FILE, "a", encoding="utf-8") as f:
@@ -52,7 +39,7 @@ def get_next_available_alias() -> str:
             except Exception:
                 pass
             return alias
-    return f"{BASE_USERNAME}@{DOMAIN}"
+    return f"student_{int(time.time())}@{DOMAIN}"
 
 
 def connect_gmail():
@@ -104,10 +91,11 @@ def wait_for_aileaders_activation(target_email: str, timeout_sec=90) -> str:
                         subj = (msg.get("Subject") or "")
                         body, links = get_clean_body_and_links(msg)
 
+                        headers_raw = str(msg).lower()
                         for l in links:
                             if "aileaders.uz/auth/activate" in l:
-                                # Havola aynan shu target_email uchun bo'lsa
-                                if clean_target in l.lower() or clean_target in to_addr:
+                                # Havola aynan shu target_email uchun bo'lsa (yoki yo'naltirilgan xat bo'lsa)
+                                if clean_target in l.lower() or clean_target in to_addr or clean_target in headers_raw or clean_target in body.lower():
                                     clean_link = l.replace("&amp;", "&")
                                     print(f"[GMAIL IMAP] Aileaders faollashtirish havolasi topildi ({clean_target}): {clean_link}")
                                     mail.logout()
@@ -170,8 +158,9 @@ def wait_for_coursera_invite(target_email: str, timeout_sec=90) -> str:
                         subj = (msg.get("Subject") or "")
                         body, links = get_clean_body_and_links(msg)
 
+                        headers_raw = str(msg).lower()
                         # Faqat aynan shu o'quvchining pochtasiga kelgan Coursera taklifnoma xatlarini tekshiramiz:
-                        if clean_target in to_addr or clean_target in body.lower():
+                        if clean_target in to_addr or clean_target in body.lower() or clean_target in headers_raw:
                             if "click the link to log in" in subj.lower() or "magic" in subj.lower():
                                 continue  # Magic login xatlarini taklifnoma deb adashtirmaymiz!
                             clean_l = extract_coursera_invite_link_from_msg(msg)
