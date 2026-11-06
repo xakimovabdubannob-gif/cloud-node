@@ -259,10 +259,9 @@ while time.time() - start_ts < 16200:
             wb.close()
         except Exception:
             target_st_cnt = 10
-        if target_st_cnt > 3:
-            should_dispatch = True
-        else:
-            print(f"[CLUSTER DISPATCH] {target_st_cnt} ta o'quvchi uchun 1-Kompyuter (3 ta Agent) yetarli, qo'shimcha kompyuter yoqilmadi.")
+        # Doimiy rejim: Faqat 1-Server (3 ta barqaror Agent) ishlaydi
+        should_dispatch = False
+        print(f"[CLUSTER DISPATCH] {target_st_cnt} ta o'quvchi uchun 1-Kompyuter (3 ta Agent) yetarli, qo'shimcha kompyuter yoqilmadi.")
     elif (time.time() - last_dispatch_ts > 180) and not is_paused_now and t_url.startswith("https://"):
         try:
             st_resp = requests.get("http://127.0.0.1:8766/cluster/tg_status", timeout=5).json()
@@ -270,8 +269,8 @@ while time.time() - start_ts < 16200:
             online = st_resp.get("online_nodes", 0)
             if rem > 3 and online == 0:
                 print(f"[FAILSAFE KLASTER] {rem} ta tugallanmagan o'quvchi bor (4+ ta), qo'shimcha kompyuter ishga tushirilmoqda...")
-                target_st_cnt = rem
-                should_dispatch = True
+                # Failsafe klaster o'chirildi - faqat Asosiy Server ishlaydi
+                should_dispatch = False
         except Exception:
             pass
 
