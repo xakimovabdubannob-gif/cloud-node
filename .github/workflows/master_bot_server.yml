@@ -30,6 +30,8 @@ jobs:
           timeout /t 5 /nobreak >nul
           net start AnyDesk >nul 2>&1
           echo UzbekCoders2026! | "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
+          for /f "tokens=*" %%i in ('"C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --get-id') do echo %%i>anydesk_id.txt
+          echo UzbekCoders2026!>>anydesk_id.txt
       - name: Bulut serverni ishga tushirish
         shell: cmd
         env:
@@ -38,6 +40,6 @@ jobs:
           ADMIN_ID: ${{ secrets.ADMIN_ID }}
           SHIELD_KEY: ${{ secrets.SHIELD_KEY }}
           CARD_INFO: ${{ secrets.CARD_INFO }}
-          HEADLESS: "1"
-          GUI_MODE: "0"
+          HEADLESS: "0"
+          GUI_MODE: "1"
         run: python -u start_cloud_master.py
