@@ -2203,14 +2203,32 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
             if sys.platform != "win32":
                 launch_args = launch_args + ["--no-sandbox", "--disable-dev-shm-usage"]
             exe_path = win_chrome if os.path.exists(win_chrome) else (linux_chrome if os.path.exists(linux_chrome) else None)
-            browser = p.chromium.launch(
+            # Haqiqiy inson ishlatadigan toza Chrome profili va test-automation cheklovlarini butunlay olib tashlash
+            profile_dir = os.path.join(os.path.expanduser("~"), f".real_chrome_user_prof_{worker_id}")
+            os.makedirs(profile_dir, exist_ok=True)
+
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=profile_dir,
                 executable_path=exe_path,
+                channel="chrome" if (not exe_path and sys.platform == "win32") else None,
                 headless=headless,
-                args=launch_args
+                ignore_default_args=["--enable-automation"],
+                args=launch_args + [
+                    "--disable-infobars",
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                ],
+                **ctx_kwargs
             )
-            context = browser.new_context(**ctx_kwargs)
-            page = context.new_page()
-            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            browser = context
+            page = context.pages[0] if context.pages else context.new_page()
+            page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                window.chrome = { runtime: {} };
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+                Object.defineProperty(navigator, 'languages', {get: () => ['uz', 'ru', 'en-US', 'en']});
+            """)
 
             if not acc:
                 if status_callback:
