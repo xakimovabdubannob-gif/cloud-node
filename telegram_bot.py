@@ -1836,7 +1836,8 @@ class TelegramBotServer:
             "start_time": time.time(),
         })
         try:
-            trigger_cluster_dispatch(len(students))
+            # trigger_cluster_dispatch(len(students)) # Doimiy 3 ta Agent rejimida klaster spam qilmaydi
+            pass
         except Exception as e:
             print(f"[DISPATCH CALL ERROR] {e}")
 
