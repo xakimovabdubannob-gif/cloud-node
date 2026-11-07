@@ -244,13 +244,14 @@ def dismiss_all_popups(page):
             // 2. Commitments & Welcome popups
             const labels = Array.from(document.querySelectorAll('label, span'));
             labels.forEach(l => {
-                const lt = (l.innerText || '').trim();
-                if (lt.includes('I commit to completing this course') || lt.includes('Я обязуюсь пройти этот курс')) {
+                const lt = (l.innerText || '').trim().toLowerCase();
+                if (lt.includes('commit to completing') || lt.includes('обязуюсь завершить') || lt.includes('обязуюсь пройти') || lt.includes('обязуюсь') || lt.includes('обязательство')) {
                     try { l.click(); } catch(e) {}
                 }
             });
             const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
-            if (document.body && document.body.innerText.includes('My commitment') && cbs.length > 0) {
+            const bTxtComm = (document.body ? document.body.innerText : '').toLowerCase();
+            if ((bTxtComm.includes('my commitment') || bTxtComm.includes('мое обязательство') || bTxtComm.includes('обязательство') || bTxtComm.includes('обязуюсь')) && cbs.length > 0) {
                 cbs.forEach(cb => {
                     try { if (!cb.checked) cb.click(); } catch(e) {}
                 });
@@ -259,11 +260,14 @@ def dismiss_all_popups(page):
             const btns = Array.from(document.querySelectorAll('button, a'));
             btns.forEach(b => {
                 const t = (b.innerText || '').trim();
+                const tl = t.toLowerCase();
                 const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-                if (t === 'Start the course' || t === 'Close' || t.startsWith('Close') ||
-                    t === 'Continue learning' || t === 'Next' || t === 'Got it' || t === 'Done' || t === 'Dismiss' ||
-                    t === 'Начать курс' || t === 'Закрыть' || t === 'Далее' || t === 'Понятно' || t === 'Готово' ||
-                    t.includes("Yes, I'm verified") || t.includes('verified') ||
+                if (tl === 'start the course' || tl === 'launch course' || tl === 'start course' || tl === 'go to course' ||
+                    tl === 'запустить курс' || tl === 'запустить' || tl === 'начать курс' || tl === 'начать обучение' || tl === 'перейти к курсу' ||
+                    tl === 'close' || tl.startsWith('close') || tl === 'закрыть' || tl.startsWith('закрыть') ||
+                    tl === 'continue learning' || tl === 'next' || tl === 'got it' || tl === 'done' || tl === 'dismiss' ||
+                    tl === 'продолжить обучение' || tl === 'продолжить' || tl === 'далее' || tl === 'понятно' || tl === 'готово' ||
+                    tl.includes("yes, i'm verified") || tl.includes('verified') ||
                     aria.includes('close') || aria.includes('закрыть')) {
                     try { b.click(); } catch(e) {}
                 }
@@ -296,15 +300,18 @@ def dismiss_all_popups(page):
     except Exception:
         pass
     try:
-        # Extra safeguard: Python-level click on commitment checkbox and Start the course
-        cb = page.locator("input[type='checkbox']").first
-        if cb.count() > 0 and cb.is_visible():
+        # Extra safeguard: Python-level click on commitment checkbox and Start the course (English + Russian)
+        # Checkbox for commitment
+        cbs = page.locator("label:has-text('обязуюсь') input[type='checkbox'], label:has-text('commit') input[type='checkbox'], input[type='checkbox']")
+        for ci in range(min(3, cbs.count())):
             try:
-                if not cb.is_checked():
-                    cb.click(force=True, timeout=500)
+                cb = cbs.nth(ci)
+                if cb.is_visible() and not cb.is_checked():
+                    cb.check(force=True, timeout=500)
             except Exception:
                 pass
-        st = page.locator("button:has-text('Start the course'), button:has-text('Go To Course')").first
+        # Start course / Launch course button in Russian and English
+        st = page.locator("button:visible:has-text('Запустить курс'), button:visible:has-text('Запустить'), button:visible:has-text('Start the course'), button:visible:has-text('Launch course'), button:visible:has-text('Start course'), button:visible:has-text('Go To Course'), button:visible:has-text('Начать курс'), button:visible:has-text('Начать обучение')").first
         if st.count() > 0 and st.is_visible():
             st.click(force=True, timeout=800)
     except Exception:
@@ -833,6 +840,24 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
             if q_url.split("?")[0].rstrip("/") not in page.url or "/attempt" in page.url:
                 safe_navigate(page, q_url, wait_sec=2.5 * mult)
 
+            # Agar "Мое обязательство" / "My commitment" / "Запустить курс" oynasi chiqsa, darhol galichkani belgilab "Запустить курс" tugmasini bosamiz!
+            page_body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+            if "обязательство" in page_body_txt.lower() or "commitment" in page_body_txt.lower() or "обязуюсь" in page_body_txt.lower() or "запустить курс" in page_body_txt.lower():
+                try:
+                    cbs = page.locator("input[type='checkbox']")
+                    for ci in range(cbs.count()):
+                        cb_item = cbs.nth(ci)
+                        if cb_item.is_visible() and not cb_item.is_checked():
+                            cb_item.check(force=True, timeout=800)
+                    time.sleep(0.3)
+                    start_course_btn = page.locator("button:visible:has-text('Запустить курс'), button:visible:has-text('Запустить'), button:visible:has-text('Start the course'), button:visible:has-text('Launch course'), button:visible:has-text('Start course'), button:visible:has-text('Начать курс')").first
+                    if start_course_btn.count() > 0 and start_course_btn.is_visible():
+                        print(f"[{q_name}] 'Мое обязательство' topildi -> 'Запустить курс' bosildi!")
+                        start_course_btn.click(force=True)
+                        time.sleep(2.0)
+                except Exception as ex_comm:
+                    print(f"[{q_name}] Commitment handle: {ex_comm}")
+
             # Agar URL ochilmasa yoki 404 bo'lsa (DEDC team manzili tekshiriladi)
             page_title_lower = (page.title() or "").lower()
             if "sorry" in page_title_lower or page.locator("text='looks like you found a page that does not exist'").count() > 0:
@@ -854,6 +879,8 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
 
             # Tugma ('Start assignment' / 'Resume' / 'Try again') yoki 'You passed!' chiqishini sabr bilan kutamiz!
             act_selector = (
+                "button:has-text('Запустить курс'), a:has-text('Запустить курс'), "
+                "button:has-text('Запустить'), a:has-text('Запустить'), "
                 "button:has-text('Resume assignment'), a:has-text('Resume assignment'), "
                 "button:has-text('Start assignment'), a:has-text('Start assignment'), "
                 "button:has-text('Try again'), a:has-text('Try again'), "
@@ -878,7 +905,9 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                         const t = (el.innerText || '').trim().toLowerCase();
                         return t === 'start assignment' || t === 'resume assignment' || t === 'try again' ||
                                t === 'retake' || t === 'resume' || t === 'start' ||
-                               t === 'начать' || t === 'возобновить' || t === 'пройти тест' || t === 'повторить';
+                               t === 'начать' || t === 'возобновить' || t === 'пройти тест' || t === 'повторить' ||
+                               t === 'запустить курс' || t === 'запустить' || t === 'launch course' || t === 'start course' ||
+                               t === 'начать курс' || t === 'перейти к курсу';
                     });
                 }""")
                 if has_start_btn or ("/attempt" in page.url and page.locator("input[type='radio']").count() >= 4):
@@ -897,7 +926,9 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                         const t = (el.innerText || '').trim().toLowerCase();
                         return t === 'start assignment' || t === 'resume assignment' || t === 'try again' ||
                                t === 'retake' || t === 'resume' || t === 'start' ||
-                               t === 'начать' || t === 'возобновить' || t === 'пройти тест' || t === 'повторить';
+                               t === 'начать' || t === 'возобновить' || t === 'пройти тест' || t === 'повторить' ||
+                               t === 'запустить курс' || t === 'запустить' || t === 'launch course' || t === 'start course' ||
+                               t === 'начать курс' || t === 'перейти к курсу';
                     });
                     if (target) {
                         target.scrollIntoView({block: 'center'});
