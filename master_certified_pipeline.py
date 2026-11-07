@@ -211,6 +211,11 @@ def save_certificate_result(full_name, class_name, cert_url, doc_key=None):
                 f.write(f"{full_name} | {class_name} | {cert_url} | {doc_key}\n")
             else:
                 f.write(f"{full_name} | {class_name} | {cert_url}\n")
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except Exception:
+                pass
 
 
 def dismiss_all_popups(page):
