@@ -318,7 +318,7 @@ def safe_navigate(page, url, max_retries=3, wait_sec=1.5):
 
 def login_via_magic_link(page, email):
     """Pochtaga 'Email me a login link' orqali kirish havolasi yuborib, 100% kirish kafolati!"""
-    if "gmail.com" in email.lower():
+    if "gmail.com" in email.lower() or "quizai.uz" in email.lower():
         print(f"   [GMAIL MAGIC LINK] {email} uchun login link so'ralmoqda...")
         try:
             page.goto("https://www.coursera.org/?authMode=login", wait_until="domcontentloaded", timeout=22000)
@@ -1882,10 +1882,11 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
 
     print(f"[REGISTRATSIYA] {full_name} bazada yo'q. Aileaders.uz orqali yangi profil ochilmoqda...")
     try:
-        mail_svc = TempMailAPI()
+        from gmail_automation import GmailMailboxService
+        mail_svc = GmailMailboxService()
         student_email = mail_svc.email
         student_password = generate_student_password(full_name)
-        print(f"   Yangi unikal pochta (TempMail): {student_email} | Yangi parol: {student_password}")
+        print(f"   Yangi unikal pochta (QuizAI): {student_email} | Yangi parol: {student_password}")
     except Exception as e:
         print(f"[!] TempMail yaratish xatosi: {e}")
         return "RETRY", None
@@ -2057,7 +2058,8 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                         if "/auth/verify" in page.url:
                             break
                         print(f"   [!] Pochta ({student_email}) allaqachon mavjud! Yangi unikal pochta olinmoqda ({_al_try + 1}/5)...")
-                        mail_svc = TempMailAPI()
+                        from gmail_automation import GmailMailboxService
+                        mail_svc = GmailMailboxService()
                         student_email = mail_svc.email
                         fill_react_input(em_in, student_email)
                         page.wait_for_timeout(500)
@@ -2279,7 +2281,7 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                     if status_callback:
                         status_callback(f"🔗 1-xabar tasdiqlandi! Coursera 2-xabar (Join now) ulanmoqda...")
                     try:
-                        if "gmail.com" in email.lower():
+                        if "gmail.com" in email.lower() or "quizai.uz" in email.lower():
                             from gmail_automation import GmailMailboxService
                             existing_mail = GmailMailboxService(existing_email=email)
                         else:
@@ -2329,7 +2331,7 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
 
                 # Har doim DEDC enterprise taklifnomasiga qo'shilganini tekshirib ochamiz:
                 try:
-                    if "gmail.com" in email.lower():
+                    if "gmail.com" in email.lower() or "quizai.uz" in email.lower():
                         from gmail_automation import GmailMailboxService
                         m_svc = GmailMailboxService(existing_email=email)
                     else:
