@@ -116,16 +116,20 @@ class ClusterWorkerNode:
         candidates = []
         if len(sys.argv) > 1 and sys.argv[1].startswith("http"):
             candidates.append(sys.argv[1].strip())
-        if os.path.exists("cluster_url.txt"):
-            try:
-                with open("cluster_url.txt", "r", encoding="utf-8") as f:
-                    for ln in f.read().splitlines():
-                        if ln.strip().startswith("http"):
-                            candidates.append(ln.strip())
-            except Exception:
-                pass
 
-        # 1. Eng birinchi va eng ishonchli: GitHub Repository'dagi live cluster_url.txt
+        # 1. Eng yangi va jonli manzil: Telegram Admin Chat Pinned xabari!
+        try:
+            r = requests.get(f"{self.api_url}/getChat", params={"chat_id": self.admin_id}, timeout=8).json()
+            pinned_txt = r.get("result", {}).get("pinned_message", {}).get("text", "")
+            for part in pinned_txt.split():
+                if part.startswith("http://") or part.startswith("https://"):
+                    u = part.strip().rstrip("|,;")
+                    if u not in candidates:
+                        candidates.append(u)
+        except Exception:
+            pass
+
+        # 2. GitHub Repository'dagi cluster_url.txt
         try:
             r_gh = requests.get(
                 "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt",
@@ -136,21 +140,19 @@ class ClusterWorkerNode:
                 u_gh = r_gh.text.strip().splitlines()[0].strip()
                 if u_gh.startswith("https://") and "init.trycloudflare" not in u_gh:
                     if u_gh not in candidates:
-                        candidates.insert(0, u_gh)
+                        candidates.append(u_gh)
         except Exception:
             pass
 
-        # Telegram Admin Chat Pinned xabaridan asosiy kompyuter manzilini o'qiymiz
-        try:
-            r = requests.get(f"{self.api_url}/getChat", params={"chat_id": self.admin_id}, timeout=10).json()
-            pinned_txt = r.get("result", {}).get("pinned_message", {}).get("text", "")
-            for part in pinned_txt.split():
-                if part.startswith("http://") or part.startswith("https://"):
-                    u = part.strip().rstrip("|,;")
-                    if u not in candidates:
-                        candidates.append(u)
-        except Exception:
-            pass
+        # 3. Lokal cluster_url.txt (zaxira)
+        if os.path.exists("cluster_url.txt"):
+            try:
+                with open("cluster_url.txt", "r", encoding="utf-8") as f:
+                    for ln in f.read().splitlines():
+                        if ln.strip().startswith("http"):
+                            candidates.append(ln.strip())
+            except Exception:
+                pass
 
         for url in candidates:
             try:
