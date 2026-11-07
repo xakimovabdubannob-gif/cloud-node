@@ -263,6 +263,19 @@ class ClusterWorkerNode:
                     with open(ACCOUNTS_FILE, "a", encoding="utf-8") as af:
                         af.write(acc_line_from_master.strip() + "\n")
 
+            try:
+                requests.post(
+                    f"{self.api_url}/sendMessage",
+                    data={
+                        "chat_id": chat_id or self.admin_id,
+                        "text": f"🚀 <b>[{idx}/{total}] {s_name}</b> boshlandi (🤖 Agent #{local_wid})",
+                        "parse_mode": "HTML",
+                    },
+                    timeout=8,
+                )
+            except Exception:
+                pass
+
             step_history = []
 
             def update_step(step_text, _i=idx, _t=total, _name=s_name, _hist=step_history, _w=local_wid):
@@ -466,6 +479,26 @@ class ClusterWorkerNode:
                 resp = r.json()
                 self.approved = bool(resp.get("approved", True))
                 self.target_workers = int(resp.get("workers", self.target_workers))
+
+                if not started_workers:
+                    try:
+                        requests.post(
+                            f"{self.api_url}/sendMessage",
+                            data={
+                                "chat_id": self.admin_id,
+                                "text": (
+                                    f"🟢 <b>KOMPYUTER BOTGA MUVAFFAQIYATLI ULANDI!</b>\n\n"
+                                    f"💻 <b>Kompyuter:</b> {self.pc_name} ({self.ram_gb} GB RAM)\n"
+                                    f"⚡ <b>Faol oqimlar:</b> {self.target_workers} ta parallel AI Agent\n"
+                                    f"🛡 <b>Rejim:</b> Orqa fonda sokin ishlamoqda\n\n"
+                                    f"🚀 <i>O'quvchilar navbati olinmoqda va har birining jarayoni botda ko'rinadi...</i>"
+                                ),
+                                "parse_mode": "HTML",
+                            },
+                            timeout=8,
+                        )
+                    except Exception:
+                        pass
 
                 if self.approved:
                     for wid in range(1, self.target_workers + 1):

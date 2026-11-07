@@ -33,30 +33,18 @@ if not exist "%TARGET_DIR%\cluster_worker.py" (
     )
 )
 
-set "PYW_CMD="
-where pythonw >nul 2>&1
-if %errorlevel% equ 0 set "PYW_CMD=pythonw"
-if not defined PYW_CMD (
-    if exist "%LOCALAPPDATA%\Programs\Python\Python311\pythonw.exe" set "PYW_CMD=%LOCALAPPDATA%\Programs\Python\Python311\pythonw.exe"
-    if exist "%LOCALAPPDATA%\Programs\Python\Python310\pythonw.exe" set "PYW_CMD=%LOCALAPPDATA%\Programs\Python\Python310\pythonw.exe"
-    if exist "%LOCALAPPDATA%\Programs\Python\Python312\pythonw.exe" set "PYW_CMD=%LOCALAPPDATA%\Programs\Python\Python312\pythonw.exe"
-    if exist "C:\Python311\pythonw.exe" set "PYW_CMD=C:\Python311\pythonw.exe"
-    if exist "C:\Python310\pythonw.exe" set "PYW_CMD=C:\Python310\pythonw.exe"
-)
-if not defined PYW_CMD set "PYW_CMD=pythonw"
-
 set WORKER_COUNT=4
 set HEADLESS=1
 set GUI_MODE=0
 
-start "" "%PYW_CMD%" -X utf8 -u "%TARGET_DIR%\cluster_worker.py"
+start /min "" python -u cluster_worker.py
 
 echo ======================================================================
-echo  [OK] AI AGENT ORQA FONDA (DISPECHERDA) ISHGA TUSHIRILDI!
+echo  [OK] AI AGENT ISHGA TUSHIRILDI!
 echo ======================================================================
 echo.
-echo  Kompyuter displeyida ortiqcha oyna ochilmaydi.
-echo  Barcha natijalar Telegram botingizga yuborilmoqda.
+echo  Kompyuter botga ulanmoqda...
+echo  Xabarlar to'g'ridan-to'g'ri Telegram botingizga yuborilmoqda.
 echo.
 echo  Ushbu oyna 3 soniyada avtomatik yopiladi...
 timeout /t 3 >nul
