@@ -1861,49 +1861,81 @@ def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, stu
         except Exception:
             pass
 
-        # 3-qadam: 'Generativ Sun'iy Intellektga Kirish' / 'Introduction to Generative AI' kartasini bosish
-        clicked_card = False
-        try:
-            clicked_card = page.evaluate("""() => {
-                const cards = Array.from(document.querySelectorAll('div, a, article, [role="button"], h3, p'));
-                const target = cards.find(c => {
-                    const t = (c.innerText || c.textContent || '').toLowerCase();
-                    return (t.includes('generativ') || t.includes('generative ai') || t.includes('introduction to generative')) &&
-                           (t.includes('kirish') || t.includes('google') || t.includes('coursera') || t.includes('kurs') || t.length < 120);
+        # 3-qadam: 'Kursni ochish' tugmasini (Generativ AI kartasi ichidagi o'q/tugmani) aniq bosish!
+        print("   'Generativ Sun\'iy Intellektga Kirish' kartasi ochilmoqda...")
+        opened_modal = False
+
+        # A) Karta ichidagi maxsus 'Kursni ochish' tugmasi (aria-label='Kursni ochish')
+        for sel_arrow in [
+            "button[aria-label='Kursni ochish']",
+            "a[aria-label='Kursni ochish']",
+            "button[aria-label*='ochish']",
+            "button[aria-label*='open']"
+        ]:
+            arrow = page.locator(sel_arrow).first
+            if arrow.count() > 0 and arrow.is_visible():
+                arrow.scroll_into_view_if_needed()
+                arrow.click(force=True)
+                opened_modal = True
+                print(f"   [+] '{sel_arrow}' bosildi!")
+                break
+
+        # B) JS orqali kartani va uning ichidagi buttonni qidirib bosish
+        if not opened_modal:
+            opened_modal = page.evaluate("""() => {
+                const btn = document.querySelector("button[aria-label='Kursni ochish'], [aria-label*='ochish']");
+                if (btn) { btn.scrollIntoView({block: 'center'}); btn.click(); return true; }
+
+                const cards = Array.from(document.querySelectorAll('div, a, article')).filter(el => {
+                    const t = (el.innerText || '').toLowerCase();
+                    return t.includes('generativ') && (t.includes('kirish') || t.includes('google'));
                 });
-                if (target) {
-                    target.scrollIntoView({block: 'center'});
-                    target.click();
-                    return true;
+                for (let c of cards) {
+                    const innerBtn = c.querySelector('button, a');
+                    if (innerBtn) { innerBtn.scrollIntoView({block: 'center'}); innerBtn.click(); return true; }
+                }
+                if (cards.length > 0) { cards[0].scrollIntoView({block: 'center'}); cards[0].click(); return true; }
+                return false;
+            }""")
+
+        time.sleep(2.5)
+
+        # 4-qadam: Ochilgan modal oynada 'TEKSHIRISH' / 'Kursga o'tish' tugmasini bosish!
+        print("   Ochilgan modal oynada 'TEKSHIRISH' tugmasi qidirilmoqda...")
+        tekshir_clicked = False
+        for tek_sel in [
+            "button:visible:has-text('TEKSHIRISH')",
+            "button:visible:has-text('Tekshirish')",
+            "button:visible:has-text('Kursga o\'tish')",
+            "button:visible:has-text('Boshlash')",
+            "button:visible:has-text('Kursga')"
+        ]:
+            tek_btn = page.locator(tek_sel).first
+            if tek_btn.count() > 0 and tek_btn.is_visible():
+                tek_btn.scroll_into_view_if_needed()
+                tek_btn.click(force=True)
+                tekshir_clicked = True
+                print(f"   >>> '{tek_sel}' muvaffaqiyatli bosildi!")
+                time.sleep(4.0)
+                break
+
+        if not tekshir_clicked:
+            # Agar locator topolmasa, modal dialog ichidagi tugmani JS bilan bosamiz
+            tekshir_clicked = page.evaluate("""() => {
+                const dialog = document.querySelector("div[role='dialog'], [data-state='open'], .modal, div[class*='fixed']");
+                if (dialog) {
+                    const btns = Array.from(dialog.querySelectorAll('button'));
+                    const target = btns.find(b => {
+                        const t = (b.innerText || '').toLowerCase();
+                        return t.includes('tekshir') || t.includes('kursga') || t.includes('boshlash') || t.includes('ariza');
+                    }) || btns[btns.length - 1];
+                    if (target) { target.click(); return (target.innerText || 'tugma').trim(); }
                 }
                 return false;
             }""")
-        except Exception:
-            pass
-
-        if not clicked_card:
-            card = page.locator("div, a, h3, p, article").filter(has_text=re.compile(r"Generativ Sun.iy Intellekt|Introduction to Generative AI|Generativ AI|Generativ", re.I)).first
-            if card.count() > 0 and card.is_visible():
-                card.scroll_into_view_if_needed()
-                card.click(force=True)
-        time.sleep(2.5)
-
-        # 4-qadam: Ochilgan modal oynada 'TEKSHIRISH' / 'Kursga o'tish' tugmasini bosish
-        tekshir_b = page.locator("button:visible:has-text('TEKSHIRISH'), button:visible:has-text('Tekshirish'), button:visible:has-text('Boshlash'), button:visible:has-text('Kursga o\'tish'), button:visible:has-text('Kursga')").first
-        if tekshir_b.count() > 0 and tekshir_b.is_visible():
-            print("   'TEKSHIRISH' bosildi!")
-            tekshir_b.click(force=True)
-            time.sleep(4.0)
-        else:
-            try:
-                modal_btn = page.locator("div[role='dialog'] button:visible, .modal button:visible").last
-                if modal_btn.count() > 0 and modal_btn.is_visible():
-                    b_txt = modal_btn.inner_text().strip()
-                    print(f"   Modal ichidagi '{b_txt}' tugmasi bosildi!")
-                    modal_btn.click(force=True)
-                    time.sleep(4.0)
-            except Exception:
-                pass
+            if tekshir_clicked:
+                print(f"   >>> JS orqali modal ichidagi '{tekshir_clicked}' bosildi!")
+                time.sleep(4.0)
     except Exception as e:
         print(f"   [!] Aileaders faollashtirishda ogohlantirish: {e}")
 
