@@ -2135,6 +2135,92 @@ def recover_existing_student_password(page, student, student_password="@Ak101095
 
     return None, False
 
+def delete_and_free_student_account(page, student, status_callback=None):
+    """
+    Agar o'quvchi eski notanish pochta (masalan yandex.ru yoki maktab pochtasi) bilan
+    ro'yxatdan o'tib qolgan bo'lsa va pochtaga kirish imkoni bo'lmasa:
+    https://aileaders.uz/auth/delete_account orqali eski tiqilib qolgan profilni
+    kod talab qilmasdan o'chirib tashlaydi, hujjatni bo'shatadi va botimizga
+    bizning pochtamiz bilan noldan 100% toza ro'yxatdan o'tish imkonini beradi!
+    """
+    full_name = student.get("name", "").strip()
+    doc_series = student.get("doc_series", "") or student.get("cert_series", "")
+    doc_number = student.get("doc_number", "") or student.get("cert_number", "")
+    birth_date = student.get("birth_date", "").strip()
+
+    ds_clean = str(doc_series).replace(" ", "").replace("-", "").upper()
+    num_pad7 = str(doc_number).zfill(7) if len(str(doc_number)) < 7 else str(doc_number)
+
+    doc_candidates = []
+    if any(k in ds_clean for k in ["I", "II", "III", "IV", "V", "FR", "TV", "NV", "T"]):
+        doc_candidates.append(("guvohnoma", ds_clean, num_pad7))
+        doc_candidates.append(("guvohnoma", f"I-{ds_clean.replace('I', '')}", num_pad7))
+        doc_candidates.append(("passport", ds_clean, doc_number))
+    else:
+        doc_candidates.append(("passport", ds_clean, doc_number))
+        doc_candidates.append(("guvohnoma", ds_clean, num_pad7))
+
+    birth_variants = [birth_date]
+    _sep = "." if "." in birth_date else ("/" if "/" in birth_date else ("-" if "-" in birth_date else None))
+    if _sep:
+        _bp = birth_date.split(_sep)
+        if len(_bp) == 3:
+            try:
+                p1, p2, p3 = int(_bp[0]), int(_bp[1]), _bp[2]
+                if p1 <= 12 and p2 <= 12 and p1 != p2:
+                    birth_variants.append(f"{p2}{_sep}{p1}{_sep}{p3}")
+            except Exception:
+                pass
+
+    print(f"   [TOZALASH] {full_name} ({doc_series} {doc_number}) uchun eski tiqilib qolgan profilni o'chirish boshlandi...")
+    if status_callback:
+        status_callback(f"♻️ {full_name}: Eski tiqilib qolgan profil Aileaders-dan o'chirilmoqda...")
+
+    for b_cand in birth_variants:
+        for doc_mode, s_val, n_val in doc_candidates:
+            try:
+                page.goto("https://aileaders.uz/auth/delete_account", wait_until="networkidle", timeout=20000)
+                page.wait_for_timeout(800)
+
+                if doc_mode == "guvohnoma":
+                    guv = page.locator("button:has-text('Guvohnoma')").first
+                    if guv.is_visible():
+                        guv.click(force=True)
+                        page.wait_for_timeout(300)
+                    s_in = page.locator("input[name='metrika_series'], input[placeholder*='Seriya']").first
+                    n_in = page.locator("input[name='metrika_number'], input[placeholder*='Raqam']").first
+                    s_in.click(force=True)
+                    s_in.fill("")
+                    page.keyboard.type(str(s_val).replace("-", ""))
+                    n_in.fill(str(n_val))
+                else:
+                    pass_b = page.locator("button:has-text('Passport')").first
+                    if pass_b.is_visible():
+                        pass_b.click(force=True)
+                        page.wait_for_timeout(300)
+                    n_in = page.locator("input[name='passport_number'], input[placeholder*='Seriya']").first
+                    n_in.fill(f"{s_val}{n_val}")
+
+                pick_date_aileaders(page, b_cand)
+                page.wait_for_timeout(500)
+
+                del_btn = page.locator("button:has-text(\"O'chirish\")").first
+                if del_btn.is_visible():
+                    del_btn.click(force=True)
+                    page.wait_for_timeout(3000)
+
+                body = page.evaluate("() => document.body ? document.body.innerText : ''")
+                if "deleted=true" in page.url or "muvaffaqiyatli ochirldi" in body.lower() or "muvaffaqiyatli o'chirildi" in body.lower():
+                    print(f"   [O'CHIRILDI!] {full_name} ning eski profili muvaffaqiyatli o'chirildi! Hujjat bo'shatildi.")
+                    if status_callback:
+                        status_callback(f"✨ Eski profil o'chirildi! Bizning pochta bilan noldan ochilmoqda...")
+                    return True
+            except Exception as e:
+                print(f"   [!] O'chirishda ogohlantirish: {e}")
+                continue
+
+    return False
+
 def register_new_student_and_enroll(context, page, student, status_callback=None):
     """Bazada (akkountlar.txt) yo'q o'quvchini Aileaders.uz + Coursera da ro'yxatdan o'tkazadi."""
     full_name = student["name"]
@@ -2259,13 +2345,41 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                         print(f"   [!] {err_step}")
                         if status_callback:
                             status_callback(err_step)
-                        rec_email, is_logged = recover_existing_student_password(page, student, student_password, status_callback=status_callback)
-                        if rec_email:
-                            student_email = rec_email
-                            reg_step2_ok = True
-                            is_recovered = True
-                            break
-                        continue
+                        # ESKI PROFILNI O'CHIRIB BIZNING POCHTAMIZGA BO'SHATISH:
+                        del_ok = delete_and_free_student_account(page, student, status_callback=status_callback)
+                        if del_ok:
+                            # 1-bosqichni toza ro'yxatdan o'tkazamiz
+                            safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.5)
+                            if doc_mode == "guvohnoma":
+                                guv_b = page.locator("button:has-text('Guvohnoma')").first
+                                if guv_b.is_visible():
+                                    guv_b.click(force=True)
+                                    page.wait_for_timeout(300)
+                                page.locator("input[placeholder*='Seriya'], input[name='metrika_series']").first.fill(s_val)
+                                page.locator("input[placeholder*='Raqam'], input[name='metrika_number']").first.fill(n_val)
+                            else:
+                                pass_b = page.locator("button").filter(has_text="Passport").first
+                                if pass_b.is_visible():
+                                    pass_b.click(force=True)
+                                    page.wait_for_timeout(300)
+                                page.locator("input[name='passport_number'], input[placeholder*='Seriya']").first.fill(f"{s_val}{n_val}")
+                            pick_date_aileaders(page, b_cand)
+                            cb = page.locator("button[role='combobox'], button[data-slot='select-trigger']").first
+                            if cb.is_visible():
+                                cb.click(force=True)
+                                page.wait_for_timeout(300)
+                                opt = page.locator("[role='option']").first
+                                if opt.is_visible():
+                                    opt.click(force=True)
+                            sub1 = page.locator("button[type='submit']").filter(has_text=re.compile(r"Ro.yxatdan o.tish", re.I)).first
+                            if sub1.is_visible():
+                                sub1.click(force=True)
+                                page.wait_for_timeout(3500)
+                            keyingi = page.locator("button:has-text('Keyingi')").first
+                            if keyingi.is_visible():
+                                print(f"   [YANGI RO'YXAT] O'chirishdan so'ng 1-bosqich muvaffaqiyatli o'tdi!")
+                        else:
+                            continue
 
                 print(f"   1-bosqich muvaffaqiyatli ({s_val} {n_val})! 'Keyingi' bosilmoqda...")
                 keyingi.click(force=True)
