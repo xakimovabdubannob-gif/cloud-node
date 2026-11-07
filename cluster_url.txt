@@ -1,1 +1,1 @@
-https://api.trycloudflare.com
+https://floyd-acdbentity-painting-amsterdam.trycloudflare.com
