@@ -816,14 +816,21 @@ def ensure_videos_and_reading_100(page, overview):
             page.evaluate("""() => {
                 const v = document.querySelector('video');
                 try { if (v && !v.ended && v.duration && Number.isFinite(v.duration)) { v.currentTime = v.duration; } } catch(e) {}
-                const btns = Array.from(document.querySelectorAll('button'));
-                const mark = btns.find(b => /mark as completed|отметить как/i.test(b.innerText || ''));
-                if (mark) mark.click();
+                const btns = Array.from(document.querySelectorAll('button, a'));
+                const mark = btns.find(b => {
+                    const t = (b.innerText || '').toLowerCase();
+                    return t.includes('mark as completed') || t.includes('отметить как') ||
+                           t.includes('пройденное') || t.includes('выполненное') || t.includes('завершенное') ||
+                           t === 'далее' || t === 'следующий материал' || t === 'продолжить';
+                });
+                if (mark) {
+                    try { mark.click(); } catch(e) {}
+                }
             }""")
             time.sleep(1.5)
         else:
-            mark_btn = page.locator("button:has-text('Mark as completed'), button:has-text('Отметить как пройденное'), button:has-text('Отметить как выполненное')").first
-            if mark_btn.is_visible():
+            mark_btn = page.locator("button:visible:has-text('Mark as completed'), button:visible:has-text('Отметить как пройденное'), button:visible:has-text('Отметить как выполненное'), button:visible:has-text('Отметить как завершенное'), button:visible:has-text('Далее'), button:visible:has-text('Следующий материал')").first
+            if mark_btn.count() > 0 and mark_btn.is_visible():
                 mark_btn.click(force=True)
                 time.sleep(1.0)
 
@@ -1064,19 +1071,29 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                 # Quiz 1: "...create new content, such as text, images, audio, and video."
                 select_radio_by_keywords_guaranteed([
                     ["text, images, audio, and video"],
-                    ["такой как текст, изображения, аудио и видео"],
+                    ["текст, изображения, аудио и видео"],
+                    ["текст, изображения, аудио"],
+                    ["изображения, аудио и видео"],
+                    ["создает новый контент"],
+                    ["создания нового контента"],
                     ["create new content", "video"]
-                ], must_not_contain_list=["only text"])
+                ], must_not_contain_list=["only text", "только текст"])
 
             elif q_num == 2:
-                # Quiz 2: "A generative AI model could be trained on a dataset of images of cats and then used to generate new images of cats. A discriminative AI model could be trained on a dataset of images of cats and dogs and then used to classify new images as either cats or dogs."
+                # Quiz 2: Generative (cats) vs Discriminative (cats and dogs)
                 select_radio_by_keywords_guaranteed([
                     ["used to generate new images of cats. a discriminative", "classify new images as either cats or dogs"],
                     ["generate new images of cats. a discriminative"],
-                    ["создания новых изображений кошек. дискримина", "классификации новых изображений"]
+                    ["создания новых изображений кошек", "дискримина"],
+                    ["создания новых изображений кошек", "классификац"],
+                    ["создавать новые изображения кошек"],
+                    ["генерации новых изображений кошек"],
+                    ["изображений кошек", "дискримина", "классификац"]
                 ], must_not_contain_list=[
                     "cluster images",
+                    "кластеризаци",
                     "used to classify new images of cats",
+                    "дискриминативная", "создания новых изображений",
                     "discriminative ai model could be trained on a dataset of images of cats and then used to generate",
                     "discriminative model could be trained on a dataset of images of cats and then used to generate"
                 ])
@@ -1085,15 +1102,19 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                 # Quiz 3: "...pre-trained on a vast quantity of data..."
                 select_radio_by_keywords_guaranteed([
                     ["vast quantity of data"],
-                    ["огромном количестве данных"]
+                    ["огромном количестве данных"],
+                    ["огромном объеме данных"],
+                    ["большом количестве данных"],
+                    ["большом объеме данных"],
+                    ["vast quantity"]
                 ])
 
             elif q_num == 4:
                 # Quiz 4, 1-savol: 3 ta to'g'ri checkboxni belgilash va 1 ta noto'g'risini o'chirish (Ingliz va Rus tillarida!)
                 for kw_group in [
-                    ["not trained on enough", "не обучена на достаточном", "недостаточном количестве данных"],
-                    ["not given enough context", "не предоставлено достаточно контекста", "недостаточно контекста"],
-                    ["noisy or dirty data", "зашумленных или грязных", "шумных или грязных"],
+                    ["not trained on enough", "не обучена на достаточном", "недостаточном количестве данных", "недостаточно данных", "обучена на недостаточном", "мало данных"],
+                    ["not given enough context", "не предоставлено достаточно контекста", "недостаточно контекста", "недостаточном контексте", "мало контекста"],
+                    ["noisy or dirty data", "зашумленных или грязных", "шумных или грязных", "зашумленных", "грязных данных", "некачественных данных"],
                 ]:
                     for correct_txt in kw_group:
                         lbl = page.locator(f"label:has-text('{correct_txt}')").first
@@ -1122,7 +1143,11 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                 # Quiz 4, 2-savol: "...given to the large language model as input..."
                 select_radio_by_keywords_guaranteed([
                     ["given to the large language model as input"],
-                    ["передается большой языковой модели"]
+                    ["передается большой языковой модели"],
+                    ["подается на вход"],
+                    ["в качестве входных данных"],
+                    ["входные данные для большой языковой"],
+                    ["входных данных для модели"]
                 ])
 
             time.sleep(0.4)
@@ -1146,7 +1171,7 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                     time.sleep(0.4)
 
             # Honor Code galichkasini (checkbox) barcha Quizlarda (1, 2, 3 va 4) belgilash!
-            honor_cb = page.locator("label:has-text('understand and agree') input[type='checkbox'], label:has-text('понимаю и соглашаюсь') input[type='checkbox'], input[type='checkbox']").last
+            honor_cb = page.locator("label:has-text('understand and agree') input[type='checkbox'], label:has-text('понимаю') input[type='checkbox'], label:has-text('соглашаюсь') input[type='checkbox'], label:has-text('кодекс чести') input[type='checkbox'], input[type='checkbox']").last
             try:
                 if honor_cb.count() > 0 and not honor_cb.is_checked():
                     box = honor_cb.bounding_box()
@@ -1190,11 +1215,11 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                         // 1) Ready to submit modalidagi Submit tugmasi (yonida Cancel bor)
                         const modalBtn = allBtns.find(b => {
                             const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-                            if (txt !== 'submit' && txt !== 'отправить') return false;
+                            if (txt !== 'submit' && txt !== 'отправить' && txt !== 'сдать' && txt !== 'отправить задание') return false;
                             const p = b.closest('div, section') || b.parentElement;
                             if (!p) return false;
                             const pt = (p.innerText || '').toLowerCase();
-                            return pt.includes('ready to submit') || pt.includes('cancel') || pt.includes('отмена');
+                            return pt.includes('ready to submit') || pt.includes('готовы отправить') || pt.includes('готовы сдать') || pt.includes('cancel') || pt.includes('отмена');
                         });
                         if (modalBtn) {
                             modalBtn.focus();
@@ -1204,7 +1229,7 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                         // 2) DOM dagi oxirgi Submit tugmasi (agar modal bo'lsa u oxirida joylashadi)
                         const subBtns = allBtns.filter(b => {
                             const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-                            return (txt === 'submit' || txt === 'отправить') && b.offsetParent !== null;
+                            return (txt === 'submit' || txt === 'отправить' || txt === 'сдать' || txt === 'отправить задание') && b.offsetParent !== null;
                         });
                         if (subBtns.length >= 2) {
                             const lastBtn = subBtns[subBtns.length - 1];

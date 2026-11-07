@@ -1676,7 +1676,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             with nodes_lock:
                 for nid in cluster_nodes:
                     cluster_nodes[nid]["approved"] = True
-                    cluster_nodes[nid]["workers"] = 6
+                    cluster_nodes[nid]["workers"] = 4
                     cluster_nodes[nid]["status"] = "🟢 Faol ishlamoqda..."
                 save_nodes_state(force=True)
             self._send_json({"ok": True, "action": "started_all"})
@@ -1960,7 +1960,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             node_id = data.get("node_id", "PC2")
             pc_name = data.get("pc_name", node_id)
             ram_gb = int(data.get("ram_gb", 16))
-            def_workers = int(os.environ.get("DEFAULT_WORKERS_PER_NODE", "6"))
+            def_workers = int(os.environ.get("DEFAULT_WORKERS_PER_NODE", "4"))
 
             notify_now = False
             force_prompt = bool(data.get("force_prompt", False))

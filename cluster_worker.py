@@ -103,7 +103,7 @@ class ClusterWorkerNode:
         self.pc_name = f"{socket.gethostname()}-{mac_tail}"
         self.node_id = self.pc_name.replace(" ", "_")[:28]
         self.ram_gb = get_ram_gb()
-        default_w = int(os.environ.get("WORKER_COUNT", "6"))
+        default_w = int(os.environ.get("WORKER_COUNT", "4"))
         self.target_workers = default_w
         self.approved = False
         self.master_url = ""
