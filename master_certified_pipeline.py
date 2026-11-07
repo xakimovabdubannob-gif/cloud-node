@@ -1346,18 +1346,32 @@ def verify_student_name_with_3_checks(page, student_name):
                 page.keyboard.type(last_name, delay=30)
                 time.sleep(0.4)
 
-            # 4. Galichka (Checkbox)
+            # 4. Galichka (Checkbox) - FAQAT qo'yilmagan bo'lsa qo'yamiz, qo'yilgan bo'lsa TEGILMAYDI!
+            page.evaluate("""() => {
+                const cb = document.querySelector("input[type='checkbox']");
+                if (cb && !cb.checked) {
+                    cb.click();
+                    if (!cb.checked) {
+                        cb.checked = true;
+                        cb.dispatchEvent(new Event('input', { bubbles: true }));
+                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }
+            }""")
+            time.sleep(0.5)
             cb = page.locator("input[type='checkbox']").first
-            if cb.count() > 0 and cb.is_visible():
-                box = cb.bounding_box()
-                if box:
-                    page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
-                    time.sleep(1)
-                if not cb.is_checked():
-                    lbl = page.locator("label:has-text('By checking this box'), label:has-text('Устанавливая этот флажок')").first
-                    if lbl.is_visible():
-                        lbl.click(force=True)
-                        time.sleep(1)
+            if cb.count() > 0:
+                try:
+                    if not cb.is_checked():
+                        cb.check(force=True)
+                except Exception:
+                    try:
+                        lbl = page.locator("label:has-text('By checking this box'), label:has-text('Устанавливая этот флажок')").first
+                        if lbl.is_visible() and not cb.is_checked():
+                            lbl.click(force=True)
+                    except Exception:
+                        pass
+            time.sleep(0.5)
 
             # 5. Submit ('Save' yozilmaydi, chunki 'Saved' tabiga bosilib ketmasligi kerak!)
             sub_v = page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
