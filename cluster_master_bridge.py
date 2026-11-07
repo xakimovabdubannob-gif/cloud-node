@@ -2420,6 +2420,11 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 cluster_nodes[node_id]["worker_statuses"][w_id] = status_text
                 save_nodes_state(force=False)
 
+            # Live qadamlarni Telegram adminga yuborish
+            if status_text and not status_text.startswith("🟡") and "Bo'sh" not in status_text and "Kutmoqda" not in status_text:
+                cid = load_bot_config().get("admin_id", 6580113791)
+                threading.Thread(target=send_tg, args=(cid, f"🤖 <b>Agent #{w_id}:</b> {status_text}"), daemon=True).start()
+
             w_key_status = f"{node_id}_{w_id}"
             if "Bo'sh" in status_text:
                 agent_task_start_times.pop(w_key_status, None)

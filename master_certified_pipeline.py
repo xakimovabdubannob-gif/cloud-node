@@ -2116,7 +2116,10 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                 if not keyingi.is_visible():
                     b_txt1 = page.evaluate("() => (document.body ? document.body.innerText : '')")
                     if "registratsiya qilingan" in b_txt1.lower():
-                        print(f"   [!] Aileaders.uz javobi: '{s_val} {n_val}' oldin registratsiya qilingan deyildi. Boshqa hujjat varianti tekshiriladi...")
+                        err_step = f"⚠️ Aileaders.uz: '{s_val} {n_val}' bilan oldin ro'yxatdan o'tgan!"
+                        print(f"   [!] {err_step}")
+                        if status_callback:
+                            status_callback(err_step)
                         continue
 
                 print(f"   1-bosqich muvaffaqiyatli ({s_val} {n_val})! 'Keyingi' bosilmoqda...")
@@ -2219,7 +2222,10 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                 break
 
         if not reg_step2_ok:
-            save_unrecoverable_student(full_name, class_name, f"Barcha hujjat variantlari ({doc_series} {doc_number}: T/TV/I-TV/I-FR/III-FR) tekshirildi, Aileaders ma'lumotni topmadi!")
+            reason_msg = f"Aileaders.uz: Ushbu ma'lumotlar bilan oldin registratsiya qilingan ({doc_series} {doc_number})" if "registratsiya qilingan" in b_txt1.lower() else f"Barcha hujjat variantlari ({doc_series} {doc_number}) tekshirildi, Aileaders ma'lumotni topmadi!"
+            if status_callback:
+                status_callback(f"❌ {reason_msg}")
+            save_unrecoverable_student(full_name, class_name, reason_msg)
             return "UNRECOVERABLE", None
 
         with FILE_LOCK:
