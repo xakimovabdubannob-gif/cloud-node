@@ -263,22 +263,24 @@ class ClusterWorkerNode:
                     with open(ACCOUNTS_FILE, "a", encoding="utf-8") as af:
                         af.write(acc_line_from_master.strip() + "\n")
 
+            tg_target_chat = chat_id or self.admin_id
+            pc_agent_tag = f"💻 {self.pc_name} | 🤖 Agent #{local_wid}"
+            init_msg = f"⏳ <b>[{idx}/{total}] {s_name}</b>\n└ {pc_agent_tag}\n└ 🚀 Jarayon boshlanmoqda..."
+            msg_id = None
             try:
-                requests.post(
+                r_send = requests.post(
                     f"{self.api_url}/sendMessage",
-                    data={
-                        "chat_id": chat_id or self.admin_id,
-                        "text": f"🚀 <b>[{idx}/{total}] {s_name}</b> boshlandi (🤖 Agent #{local_wid})",
-                        "parse_mode": "HTML",
-                    },
+                    data={"chat_id": tg_target_chat, "text": init_msg, "parse_mode": "HTML"},
                     timeout=8,
                 )
+                if r_send.status_code == 200:
+                    msg_id = r_send.json().get("result", {}).get("message_id")
             except Exception:
                 pass
 
             step_history = []
 
-            def update_step(step_text, _i=idx, _t=total, _name=s_name, _hist=step_history, _w=local_wid):
+            def update_step(step_text, _i=idx, _t=total, _name=s_name, _hist=step_history, _w=local_wid, _mid=msg_id, _cid=tg_target_chat, _ptag=pc_agent_tag):
                 if not _hist or _hist[-1] != step_text:
                     _hist.append(step_text)
                 try:
@@ -289,6 +291,12 @@ class ClusterWorkerNode:
                     )
                 except Exception:
                     pass
+                if _mid:
+                    lines_txt = [f"⏳ <b>[{_i}/{_t}] {_name}</b>\n└ {_ptag}"]
+                    for s_idx, h_line in enumerate(_hist):
+                        pref = "✅" if s_idx < len(_hist) - 1 else "⏳"
+                        lines_txt.append(f"  {pref} {h_line}")
+                    self.edit_tg_message(_cid, _mid, "\n".join(lines_txt))
 
             status = "INCOMPLETE"
             t_work_start = time.time()
@@ -305,6 +313,12 @@ class ClusterWorkerNode:
                 print(f"[CLUSTER WORKER #{local_wid} XATO] {e}")
 
             dur_sec = max(1, int(time.time() - t_work_start))
+            if msg_id:
+                if status == "COMPLETED":
+                    self.edit_tg_message(tg_target_chat, msg_id, f"🎉 <b>[{idx}/{total}] {s_name} — 100% TAYYOR!</b>\n└ {pc_agent_tag}\n└ 🏅 Sertifikat olindi va bazaga saqlandi!")
+                elif status == "UNRECOVERABLE":
+                    err_txt = self.get_student_err_line(s_name) or "Aileaders: Oldin ro'yxatdan o'tgan yoki hujjat xatosi"
+                    self.edit_tg_message(tg_target_chat, msg_id, f"⚠️ <b>[{idx}/{total}] {s_name} — O'TKAZIB YUBORILDI!</b>\n└ {pc_agent_tag}\n└ ❌ Sababi: {err_txt}")
 
             payload = {
                 "task_id": task_id,
