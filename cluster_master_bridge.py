@@ -306,6 +306,9 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         for nid in dead_nodes:
             cluster_nodes.pop(nid, None)
 
+        if node_id == "MASTER_PC":
+            return {"has_task": False, "reason": "master_pc_is_pure_coordinator"}
+
         if node_id and node_id != "MASTER_PC":
             node_info = cluster_nodes.get(node_id, {})
             if node_info and not node_info.get("approved", True):
