@@ -288,7 +288,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
             parts = fn.split("_")
             chat_id = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else load_bot_config().get("admin_id", 6580113791)
             students = parse_excel_students(full_p)
-            if students and any(s["name"] not in done_set and s["name"] not in unrec_set and s["name"] != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI" for s in students):
+            if students and any(s["name"] not in done_set  and s["name"] != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI" for s in students):
                 parsed_orders.append((chat_id, students))
         _state_mem_cache["done"] = done_set
         _state_mem_cache["unrec"] = unrec_set
@@ -1396,7 +1396,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                             if sn and sn not in seen_names:
                                 seen_names.add(sn)
                                 total_s_count += 1
-                                if sn not in done_s and sn not in unrec_s and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
+                                if sn not in done_s  and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
                                     rem_s_count += 1
 
             if recent_completed_records:
@@ -1795,7 +1795,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     sts = parse_excel_students(fpath)
                     for i_s, s_obj in enumerate(sts, 1):
                         sn = s_obj.get("name", "")
-                        if sn and sn not in done_s and sn not in unrec_s and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI" and sn not in seen_rem:
+                        if sn and sn not in done_s  and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI" and sn not in seen_rem:
                             seen_rem.add(sn)
                             rem_list.append(f"[{i_s}/{len(sts)}] {sn} ({accs_s.get(sn, {}).get('email', 'yangi')})")
             self._send_json({
@@ -1861,7 +1861,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     sts = parse_excel_students(c_files[0][1])
                     for i_s, s_obj in enumerate(sts, 1):
                         sn = s_obj["name"]
-                        if sn not in done_s and sn not in unrec_s and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
+                        if sn not in done_s  and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
                             rem_cnt += 1
                             em_s = accs_s.get(sn, {}).get("email", "yangi")
                             rem_rows += f"<div style='padding:5px 10px;border-bottom:1px solid #334155;font-size:13px;'>⏳ <b>[{i_s}/{len(sts)}] {sn}</b> ({s_obj.get('class_name', '')}) — Pochta: <code>{em_s}</code></div>"

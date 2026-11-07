@@ -2233,10 +2233,7 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
         print(f"{tag}[CHECK] {full_name} ({doc_key}) allaqachon sertifikat olgan. Keyingi o'quvchiga o'tiladi.")
         return "COMPLETED"
 
-    unrec_set = get_unrecoverable_students()
-    if (doc_key and doc_key in unrec_set) or any(v in unrec_set for v in fn_variants):
-        print(f"{tag}[SKIP - ILOJI YO'Q] {full_name} oldin ro'yxatdan o'tgan va bazada paroli yo'q (yoki kirib bo'lmaydi). Qayta urinilmaydi!")
-        return "UNRECOVERABLE"
+    # Faqat sertifikat olganlar tekshiriladi. Xatolar keshiga qarab o'quvchi o'tkazib yuborilmaydi (har doim noldan uriniladi!)
 
     if student.get("email") and student.get("password"):
         acc = {"email": student["email"].strip(), "password": student["password"].strip()}

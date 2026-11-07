@@ -1885,16 +1885,7 @@ class TelegramBotServer:
             s_name.replace("'", "`") in accs
         )
 
-        if not has_acc and s_name in get_unrecoverable_students():
-            if pass_num == 1 and not ctx.get("silent"):
-                errs = get_error_reason_map()
-                self.send_message(
-                    chat_id,
-                    f"⚠️ <b>[{idx}/{total}] {s_name} — O'TKAZIB YUBORILDI!</b>\n"
-                    f"Sababi: <i>{errs.get(s_name, 'Oldin roʻyxatdan oʻtgan va bazada login-paroli yoʻq')}</i>\n"
-                    f"❗️ Bu o'quvchini tuzatib bo'lmagani uchun oxirida qayta urinilmaydi.",
-                )
-            return
+        # Har doim noldan uriniladi (avvalgi xatolar keshiga qarab o'tkazib yuborilmaydi!)
 
         # Cluster ko'prigi bilan sinxronizatsiya: Agar bu o'quvchi boshqa klaster kompyuterida ishlanayotgan bo'lsa, ustiga kirmaymiz!
         try:
