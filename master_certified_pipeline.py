@@ -257,20 +257,29 @@ def dismiss_all_popups(page):
                 });
             }
 
-            const btns = Array.from(document.querySelectorAll('button, a'));
+            const isAssignmentPage = window.location.href.includes('assignment') || window.location.href.includes('quiz') || window.location.href.includes('exam');
+            const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
             btns.forEach(b => {
-                const t = (b.innerText || '').trim();
+                const t = (b.innerText || b.textContent || '').trim();
                 const tl = t.toLowerCase();
                 const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-                if (tl === 'start the course' || tl === 'launch course' || tl === 'start course' || tl === 'go to course' ||
-                    tl === 'kursni boshlash' || tl === 'kursga o\'tish' || tl === 'boshlash' ||
-                    tl === 'запустить курс' || tl === 'запустить' || tl === 'начать курс' || tl === 'начать обучение' || tl === 'перейти к курсу' ||
-                    tl === 'close' || tl.startsWith('close') || tl === 'yopish' || tl.startsWith('yopish') || tl === 'закрыть' || tl.startsWith('закрыть') ||
+
+                // DO NOT click page-level close/закрыть in the header of assignment/quiz pages!
+                const isCloseBtn = (tl === 'close' || tl.startsWith('close') || tl === 'yopish' || tl.startsWith('yopish') || tl === 'закрыть' || tl.startsWith('закрыть') || aria.includes('close') || aria.includes('закрыть') || aria.includes('yopish'));
+                if (isCloseBtn) {
+                    if (!isAssignmentPage && b.closest("div[role='dialog'], .cds-Modal-container, .cds-Modal-dialog, [data-testid='modal'], .rc-Modal")) {
+                        try { b.click(); } catch(e) {}
+                    }
+                    return;
+                }
+
+                if (tl.includes('start the course') || tl.includes('launch course') || tl.includes('start course') || tl.includes('go to course') ||
+                    tl.includes('kursni boshlash') || tl.includes('kursga o\'tish') || tl === 'boshlash' ||
+                    tl.includes('запустить курс') || tl === 'запустить' || tl.includes('начать курс') || tl.includes('начать обучение') || tl.includes('перейти к курсу') ||
                     tl === 'continue learning' || tl === 'next' || tl === 'got it' || tl === 'done' || tl === 'dismiss' ||
                     tl === 'davom etish' || tl === 'keyingisi' || tl === 'tushunarli' ||
                     tl === 'продолжить обучение' || tl === 'продолжить' || tl === 'далее' || tl === 'понятно' || tl === 'готово' ||
-                    tl.includes("yes, i'm verified") || tl.includes('verified') ||
-                    aria.includes('close') || aria.includes('закрыть') || aria.includes('yopish')) {
+                    tl.includes("yes, i'm verified") || tl.includes('verified')) {
                     try { b.click(); } catch(e) {}
                 }
             });
@@ -312,10 +321,10 @@ def dismiss_all_popups(page):
                     cb.check(force=True, timeout=500)
             except Exception:
                 pass
-        # Start course / Launch course button in English, Uzbek, and Russian
-        st = page.locator("button:visible:has-text('Start the course'), button:visible:has-text('Launch course'), button:visible:has-text('Start course'), button:visible:has-text('Go To Course'), button:visible:has-text('Kursni boshlash'), button:visible:has-text('Kursga o\'tish'), button:visible:has-text('Запустить курс'), button:visible:has-text('Запустить'), button:visible:has-text('Начать курс'), button:visible:has-text('Начать обучение')").first
+        # Start course / Launch course button in English, Uzbek, and Russian (prioritize Запустить курс)
+        st = page.locator("button:visible:has-text('Запустить курс'), button:visible:has-text('Launch course'), button:visible:has-text('Start the course'), button:visible:has-text('Start course'), button:visible:has-text('Go To Course'), button:visible:has-text('Kursni boshlash'), button:visible:has-text('Kursga o\'tish'), button:visible:has-text('Запустить'), button:visible:has-text('Начать курс'), button:visible:has-text('Начать обучение')").first
         if st.count() > 0 and st.is_visible():
-            st.click(force=True, timeout=800)
+            st.click(force=True, timeout=1200)
     except Exception:
         pass
 
@@ -851,14 +860,27 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
 
             # Agar "Мое обязательство" / "My commitment" / "Запустить курс" oynasi chiqsa, darhol galichkani belgilab "Запустить курс" tugmasini bosamiz!
             page_body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-            if "обязательство" in page_body_txt.lower() or "commitment" in page_body_txt.lower() or "обязуюсь" in page_body_txt.lower() or "запустить курс" in page_body_txt.lower():
+            if any(k in page_body_txt.lower() for k in ["обязательство", "commitment", "обязуюсь", "запустить курс", "launch course", "majburiyat"]):
                 try:
+                    # 1. Galichka belgilash
                     cbs = page.locator("input[type='checkbox']")
                     for ci in range(cbs.count()):
                         cb_item = cbs.nth(ci)
                         if cb_item.is_visible() and not cb_item.is_checked():
                             cb_item.check(force=True, timeout=800)
                     time.sleep(0.3)
+                    # 2. JS darajasida ham, Playwright darajasida ham Запустить курс tugmasini aniq bosish!
+                    page.evaluate('''() => {
+                        const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+                        for (const b of btns) {
+                            const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+                            if (t.includes('запустить курс') || t === 'запустить' || t.includes('launch course') || t.includes('start the course') || t.includes('начать курс') || t.includes('kursni boshlash')) {
+                                b.scrollIntoView({block: 'center'});
+                                b.click();
+                                break;
+                            }
+                        }
+                    }''')
                     start_course_btn = page.locator("button:visible:has-text('Запустить курс'), button:visible:has-text('Запустить'), button:visible:has-text('Start the course'), button:visible:has-text('Launch course'), button:visible:has-text('Start course'), button:visible:has-text('Начать курс')").first
                     if start_course_btn.count() > 0 and start_course_btn.is_visible():
                         print(f"[{q_name}] 'Мое обязательство' topildi -> 'Запустить курс' bosildi!")
