@@ -245,13 +245,13 @@ def dismiss_all_popups(page):
             const labels = Array.from(document.querySelectorAll('label, span'));
             labels.forEach(l => {
                 const lt = (l.innerText || '').trim().toLowerCase();
-                if (lt.includes('commit to completing') || lt.includes('обязуюсь завершить') || lt.includes('обязуюсь пройти') || lt.includes('обязуюсь') || lt.includes('обязательство')) {
+                if (lt.includes('commit to completing') || lt.includes('обязуюсь') || lt.includes('обязательство') || lt.includes('majburiyat')) {
                     try { l.click(); } catch(e) {}
                 }
             });
             const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
             const bTxtComm = (document.body ? document.body.innerText : '').toLowerCase();
-            if ((bTxtComm.includes('my commitment') || bTxtComm.includes('мое обязательство') || bTxtComm.includes('обязательство') || bTxtComm.includes('обязуюсь')) && cbs.length > 0) {
+            if ((bTxtComm.includes('my commitment') || bTxtComm.includes('мое обязательство') || bTxtComm.includes('обязательство') || bTxtComm.includes('обязуюсь') || bTxtComm.includes('majburiyat')) && cbs.length > 0) {
                 cbs.forEach(cb => {
                     try { if (!cb.checked) cb.click(); } catch(e) {}
                 });
@@ -263,12 +263,14 @@ def dismiss_all_popups(page):
                 const tl = t.toLowerCase();
                 const aria = (b.getAttribute('aria-label') || '').toLowerCase();
                 if (tl === 'start the course' || tl === 'launch course' || tl === 'start course' || tl === 'go to course' ||
+                    tl === 'kursni boshlash' || tl === 'kursga o\'tish' || tl === 'boshlash' ||
                     tl === 'запустить курс' || tl === 'запустить' || tl === 'начать курс' || tl === 'начать обучение' || tl === 'перейти к курсу' ||
-                    tl === 'close' || tl.startsWith('close') || tl === 'закрыть' || tl.startsWith('закрыть') ||
+                    tl === 'close' || tl.startsWith('close') || tl === 'yopish' || tl.startsWith('yopish') || tl === 'закрыть' || tl.startsWith('закрыть') ||
                     tl === 'continue learning' || tl === 'next' || tl === 'got it' || tl === 'done' || tl === 'dismiss' ||
+                    tl === 'davom etish' || tl === 'keyingisi' || tl === 'tushunarli' ||
                     tl === 'продолжить обучение' || tl === 'продолжить' || tl === 'далее' || tl === 'понятно' || tl === 'готово' ||
                     tl.includes("yes, i'm verified") || tl.includes('verified') ||
-                    aria.includes('close') || aria.includes('закрыть')) {
+                    aria.includes('close') || aria.includes('закрыть') || aria.includes('yopish')) {
                     try { b.click(); } catch(e) {}
                 }
             });
@@ -310,8 +312,8 @@ def dismiss_all_popups(page):
                     cb.check(force=True, timeout=500)
             except Exception:
                 pass
-        # Start course / Launch course button in Russian and English
-        st = page.locator("button:visible:has-text('Запустить курс'), button:visible:has-text('Запустить'), button:visible:has-text('Start the course'), button:visible:has-text('Launch course'), button:visible:has-text('Start course'), button:visible:has-text('Go To Course'), button:visible:has-text('Начать курс'), button:visible:has-text('Начать обучение')").first
+        # Start course / Launch course button in English, Uzbek, and Russian
+        st = page.locator("button:visible:has-text('Start the course'), button:visible:has-text('Launch course'), button:visible:has-text('Start course'), button:visible:has-text('Go To Course'), button:visible:has-text('Kursni boshlash'), button:visible:has-text('Kursga o\'tish'), button:visible:has-text('Запустить курс'), button:visible:has-text('Запустить'), button:visible:has-text('Начать курс'), button:visible:has-text('Начать обучение')").first
         if st.count() > 0 and st.is_visible():
             st.click(force=True, timeout=800)
     except Exception:
@@ -2062,10 +2064,8 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                 if not keyingi.is_visible():
                     b_txt1 = page.evaluate("() => (document.body ? document.body.innerText : '')")
                     if "registratsiya qilingan" in b_txt1.lower():
-                        print(f"   [!] Aileaders.uz javobi: '{s_val} {n_val}' ushbu ma'lumotlar bilan oldin registratsiya qilingan!")
-                        save_unrecoverable_student(full_name, class_name, f"Aileaders.uz: Ushbu ma'lumotlar bilan oldin registratsiya qilingan ({s_val} {n_val})")
-                        return "UNRECOVERABLE", None
-                    continue
+                        print(f"   [!] Aileaders.uz javobi: '{s_val} {n_val}' oldin registratsiya qilingan deyildi. Boshqa hujjat varianti tekshiriladi...")
+                        continue
 
                 print(f"   1-bosqich muvaffaqiyatli ({s_val} {n_val})! 'Keyingi' bosilmoqda...")
                 keyingi.click(force=True)
@@ -2262,10 +2262,14 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
         "--disable-background-timer-throttling",
         "--disable-backgrounding-occluded-windows",
         "--disable-renderer-backgrounding",
+        "--lang=en-US",
     ]
+    extra_headers = {"Accept-Language": "en-US,en;q=0.9"}
     if headless:
         launch_args = common_media_args + ["--window-size=1920,1080"]
         ctx_kwargs = {
+            "locale": "en-US",
+            "extra_http_headers": extra_headers,
             "viewport": {"width": 1920, "height": 1080},
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
         }
@@ -2280,11 +2284,15 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
             launch_args = common_media_args + ["--start-maximized"]
         if worker_id == 99:
             ctx_kwargs = {
+                "locale": "en-US",
+                "extra_http_headers": extra_headers,
                 "viewport": {"width": 1920, "height": 1080},
                 "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
             }
         else:
             ctx_kwargs = {
+                "locale": "en-US",
+                "extra_http_headers": extra_headers,
                 "no_viewport": True,
                 "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
             }

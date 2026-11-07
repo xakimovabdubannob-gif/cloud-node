@@ -1725,10 +1725,35 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": True, "action": "cleared_all_cache", "remaining_orders": 0})
             return
 
+        if path == "/cluster/clear_errors":
+            with nodes_lock:
+                _state_mem_cache["ts"] = 0.0
+                _state_mem_cache["unrec"] = set()
+                _excel_cache.clear()
+                in_progress_students.clear()
+                tried_cluster_set.clear()
+                if os.path.exists(ERRORS_FILE):
+                    try:
+                        with open(ERRORS_FILE, "w", encoding="utf-8") as ef:
+                            ef.write("# Xatolar kesh tozalandi\n")
+                    except Exception:
+                        pass
+            self._send_json({"ok": True, "action": "cleared_errors"})
+            return
+
         if path == "/cluster/rebalance":
             with nodes_lock:
                 _state_mem_cache["ts"] = 0.0
+                _state_mem_cache["unrec"] = set()
                 _excel_cache.clear()
+                in_progress_students.clear()
+                tried_cluster_set.clear()
+                if os.path.exists(ERRORS_FILE):
+                    try:
+                        with open(ERRORS_FILE, "w", encoding="utf-8") as ef:
+                            ef.write("# Xatolar kesh tozalandi\n")
+                    except Exception:
+                        pass
                 master_busy = {v for k, v in _worker_assigned.items() if k[0] == "MASTER_PC"}
                 for k in list(in_progress_students.keys()):
                     if k not in master_busy:
