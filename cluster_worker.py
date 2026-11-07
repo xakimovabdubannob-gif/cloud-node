@@ -477,6 +477,18 @@ class ClusterWorkerNode:
             time.sleep(5)
 
 
+def _auto_git_pull_worker():
+    while True:
+        time.sleep(300)
+        try:
+            r = subprocess.run(["git", "pull", "origin", "master"], capture_output=True, text=True, timeout=25)
+            if r.stdout and "Already up to date" not in r.stdout:
+                print(f"\n[AUTO-UPDATE] Yangi kod yuklab olindi va jonli yangilandi: {r.stdout.strip()}\n")
+        except Exception:
+            pass
+
+threading.Thread(target=_auto_git_pull_worker, daemon=True).start()
+
 if __name__ == "__main__":
     node = ClusterWorkerNode()
     is_cloud = bool(os.environ.get("GITHUB_ACTIONS") or os.environ.get("TUNNEL_URL"))
