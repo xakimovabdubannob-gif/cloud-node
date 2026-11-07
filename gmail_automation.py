@@ -13,10 +13,21 @@ from email.header import decode_header
 GMAIL_USER = "parpievismoil208@gmail.com"
 GMAIL_APP_PWD = "urctpdhupszdjpct"
 BASE_USERNAME = "parpievismoil208"
-DOMAIN = "quizai.uz"
+DOMAIN = "gmail.com"
 ACCOUNTS_FILE = "akkountlar.txt"
 RESULTS_FILE = "natijalar_sertifikatlar.txt"
 USED_ALIASES_FILE = "used_aliases.txt"
+
+def generate_dot_alias(index: int) -> str:
+    """parpievismoil208 dan 32,768 ta nuqtali unikal manzil yaratadi (Gmail hammasini 1 ta inboxga qabul qiladi)."""
+    s = BASE_USERNAME
+    n = len(s) - 1
+    res = []
+    for i in range(len(s)):
+        res.append(s[i])
+        if i < n and (index & (1 << i)):
+            res.append(".")
+    return "".join(res) + f"@{DOMAIN}"
 
 def get_next_available_alias() -> str:
     used_text = ""
@@ -28,10 +39,8 @@ def get_next_available_alias() -> str:
             except Exception:
                 pass
 
-    import random, string
-    for i in range(1, 50000):
-        rnd = ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
-        alias = f"student_{int(time.time())}_{rnd}@{DOMAIN}"
+    for i in range(1, 32700):
+        alias = generate_dot_alias(i)
         if alias not in used_text:
             try:
                 with open(USED_ALIASES_FILE, "a", encoding="utf-8") as f:
@@ -39,7 +48,7 @@ def get_next_available_alias() -> str:
             except Exception:
                 pass
             return alias
-    return f"student_{int(time.time())}@{DOMAIN}"
+    return f"{BASE_USERNAME}@{DOMAIN}"
 
 
 def connect_gmail():
