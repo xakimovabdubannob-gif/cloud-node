@@ -3383,11 +3383,15 @@ class TelegramBotServer:
             if os.path.exists("cluster_nodes_state.json"):
                 try:
                     st_nodes = json.load(open("cluster_nodes_state.json", "r", encoding="utf-8"))
-                    for idx_pc, (nid, ninfo) in enumerate(st_nodes.items(), start=2):
+                    idx_pc = 2
+                    for nid, ninfo in st_nodes.items():
+                        if nid == "MASTER_PC":
+                            continue
                         pc_n = ninfo.get("pc_name", nid)
                         ago_s = max(0, int(time.time() - float(ninfo.get("last_seen", 0))))
                         badge = "🟢" if ago_s < 180 else "🔴"
                         rows.append([{"text": f"📸 {idx_pc}-Kompyuter [{pc_n}] ({badge})", "callback_data": f"cl_scr|{nid}"}])
+                        idx_pc += 1
                 except Exception:
                     pass
             self.send_message(
