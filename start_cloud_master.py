@@ -89,21 +89,9 @@ for fn in ("akkountlar.txt", "natijalar_sertifikatlar.txt", "xatolar.txt"):
 os.makedirs("bot_orders", exist_ok=True)
 arch_dir = os.path.join("bot_orders", "archived")
 os.makedirs(arch_dir, exist_ok=True)
-# Eski buyurtmalar butunlay tozalanadi, bot faqat yangi kelgan buyurtmalar bilan toza boshlanadi
-for fn in os.listdir("bot_orders"):
-    if fn.startswith("in_") and fn.endswith(".xlsx"):
-        try:
-            os.remove(os.path.join("bot_orders", fn))
-        except Exception:
-            pass
-if os.path.exists(arch_dir):
-    for fn in os.listdir(arch_dir):
-        if fn.endswith(".xlsx"):
-            try:
-                os.remove(os.path.join(arch_dir, fn))
-            except Exception:
-                pass
-print("[ORDERS] Buyurtmalar navbati toza boshlandi (eski chala navbatlar butunlay yo'q qilindi).")
+# Faol buyurtmalar (in_*.xlsx) to'liq saqlanadi, server qayta yoqilganda qolgan joyidan davom etadi!
+active_cnt = len([f for f in os.listdir("bot_orders") if f.startswith("in_") and f.endswith(".xlsx")])
+print(f"[ORDERS] Mavjud faol buyurtmalar: {active_cnt} ta. Server yangilanganda hech narsa yo'qolmaydi va qolgan joyidan davom etadi!")
 
 
 existing_vid = ""
