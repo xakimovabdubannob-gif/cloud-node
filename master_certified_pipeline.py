@@ -2039,7 +2039,6 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                 sub2 = page.locator("div[role='dialog'] button, form button").filter(has_text=re.compile(r"Keyingi|Ro.yxatdan|Yuborish", re.I)).last
                 print(f"   [2-bosqich] Ro'yxatdan o'tish yuborildi. Server javobi kutilmoqda...")
                 sub2.click(force=True)
-
                 # Server javobini 20 soniyagacha kutamiz
                 for wait_sec in range(1, 21):
                     page.wait_for_timeout(1000)
@@ -2048,26 +2047,45 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                     if "/auth/verify" in cur_url or "Pochtangizni tekshiring" in body_txt or "Verifikatsiya havolasi" in body_txt:
                         print(f"   [JAVOB KELDI ({wait_sec}s)] Muvaffaqiyatli! Aileaders verifikatsiya sahifasi ochildi.")
                         break
-                    if "allaqachon ro'yxatdan o'tgan" in body_txt.lower():
+                    if "allaqachon" in body_txt.lower() or "tekshirishda xatolik" in body_txt.lower():
                         break
 
                 body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
-                # Agar pochta allaqachon mavjud deb xato bersagina yangi pochta olinadi
-                if "/auth/verify" not in page.url and "allaqachon" in body_txt.lower():
+                # Agar pochta allaqachon mavjud yoki xatolik bersa darhol yangi unikal pochta olinadi
+                if "/auth/verify" not in page.url and ("allaqachon" in body_txt.lower() or "tekshirishda xatolik" in body_txt.lower()):
                     for _al_try in range(5):
-                        if "/auth/verify" in page.url:
+                        if "/auth/verify" in page.url or "Pochtangizni tekshiring" in page.evaluate("() => (document.body ? document.body.innerText : '')"):
                             break
-                        print(f"   [!] Pochta ({student_email}) allaqachon mavjud! Yangi unikal pochta olinmoqda ({_al_try + 1}/5)...")
+                        print(f"   [!] Pochta ({student_email}) qabul qilinmadi! Yangi unikal alias olinmoqda ({_al_try + 1}/5)...")
+                        try:
+                            from gmail_automation import USED_ALIASES_FILE
+                            with open(USED_ALIASES_FILE, "a", encoding="utf-8") as _uf:
+                                _uf.write(f"{student_email}\n")
+                        except Exception:
+                            pass
                         from gmail_automation import GmailMailboxService
                         mail_svc = GmailMailboxService()
                         student_email = mail_svc.email
-                        fill_react_input(em_in, student_email)
-                        page.wait_for_timeout(500)
+                        em_in.evaluate("""(el, val) => {
+                            el.focus();
+                            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                            setter.call(el, val);
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                        }""", student_email)
+                        page.wait_for_timeout(600)
                         sub2.click(force=True)
-                        page.wait_for_timeout(4000)
+                        for _w in range(10):
+                            page.wait_for_timeout(1000)
+                            _bt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+                            if "/auth/verify" in page.url or "Pochtangizni tekshiring" in _bt or "Verifikatsiya" in _bt:
+                                break
+                            if "allaqachon" in _bt.lower() or "tekshirishda xatolik" in _bt.lower():
+                                break
 
-                if "Serverda ichki xatolik" in body_txt or ("/auth/register" in page.url and em_in.is_visible() and "xatolik" in body_txt.lower()):
-                    print(f"   [!] '{s_val} {n_val}' da Aileaders server xatosi berdi, keyingi variant sinab ko'riladi...")
+                body_txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+                if "/auth/verify" not in page.url and "Pochtangizni tekshiring" not in body_txt and "Verifikatsiya havolasi" not in body_txt:
+                    print(f"   [!] '{s_val} {n_val}' da Aileaders ro'yxatdan o'tish tasdiqlanmadi, keyingi variant sinab ko'riladi...")
                     continue
 
                 reg_step2_ok = True
@@ -2218,6 +2236,9 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                     "--disable-blink-features=AutomationControlled",
                     "--no-first-run",
                     "--no-default-browser-check",
+                    "--disable-save-password-bubble",
+                    "--password-store=basic",
+                    "--disable-features=AutofillServerCommunication,PasswordManagerUI,SavePasswordBubble",
                 ],
                 **ctx_kwargs
             )

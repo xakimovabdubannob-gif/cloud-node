@@ -39,7 +39,7 @@ def get_next_available_alias() -> str:
             except Exception:
                 pass
 
-    for i in range(1, 32700):
+    for i in range(2500, 32700):
         alias = generate_dot_alias(i)
         if alias not in used_text:
             try:
