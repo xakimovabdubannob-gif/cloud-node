@@ -2096,22 +2096,34 @@ class TelegramBotServer:
                     self.shared_orders.append(ctx)
 
                 try:
-                    while True:
-                        if getattr(self, "is_paused", False) or getattr(self, "cancel_current_order", False):
-                            break
-                        try:
-                            idx, st = student_q.get_nowait()
-                        except queue.Empty:
-                            break
-                        try:
-                            self._process_order_student(ctx, idx, st, worker_id)
-                        except Exception as e:
-                            print(f"[OQIM #{worker_id} XATO] {e}")
-                        finally:
-                            self.active_worker_status[worker_id] = ""
-                            student_q.task_done()
+                    if MAX_PARALLEL_WORKERS == 0:
+                        print("[CLOUD MASTER] MAX_WORKERS=0: Mahalliy brauzer ishlatilmaydi. Vazifalar faqat O'zbekiston klaster kompyuterlariga topshirildi.")
+                        while True:
+                            if getattr(self, "is_paused", False) or getattr(self, "cancel_current_order", False):
+                                break
+                            done_set = get_completed_students()
+                            unrec_set = get_unrecoverable_students()
+                            rem_now = [s for s in students if s["name"] not in done_set and s["name"] not in unrec_set]
+                            if not rem_now:
+                                break
+                            time.sleep(5)
+                    else:
+                        while True:
+                            if getattr(self, "is_paused", False) or getattr(self, "cancel_current_order", False):
+                                break
+                            try:
+                                idx, st = student_q.get_nowait()
+                            except queue.Empty:
+                                break
+                            try:
+                                self._process_order_student(ctx, idx, st, worker_id)
+                            except Exception as e:
+                                print(f"[OQIM #{worker_id} XATO] {e}")
+                            finally:
+                                self.active_worker_status[worker_id] = ""
+                                student_q.task_done()
 
-                    student_q.join()
+                        student_q.join()
                 finally:
                     with self.shared_lock:
                         if ctx in self.shared_orders:
