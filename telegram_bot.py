@@ -2765,6 +2765,21 @@ class TelegramBotServer:
         print("Telegramdan botga /start yoki /tahlil deb yozishingiz mumkin!")
         print("=" * 70)
 
+        if self.admin_id:
+            try:
+                import socket
+                pc_name = socket.gethostname()
+                self.send_message(
+                    self.admin_id,
+                    f"🚀 <b>SERVER ISHGA TUSHDI!</b>\n\n"
+                    f"💻 Kompyuter: <b>{pc_name}</b>\n"
+                    f"⚡ Quvvat: <b>{MAX_PARALLEL_WORKERS} ta AI Agent</b> (Orqa fonda)\n"
+                    f"🌐 Internet: O'zbekiston Milliy IP\n\n"
+                    f"✅ <i>Tizim buyurtmalarni qabul qilishga to'liq tayyor! Menga Excel faylingizni yuborishingiz mumkin.</i>"
+                )
+            except Exception as _e:
+                print(f"[STARTUP NOTIFY ERR] {_e}")
+
         try:
             requests.post(f"{self.api_url}/deleteWebhook", params={"drop_pending_updates": False}, timeout=10)
         except Exception:
