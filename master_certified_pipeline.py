@@ -1820,36 +1820,90 @@ def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, stu
             l_sub.click(force=True)
             page.wait_for_timeout(3200)
 
-        # Coursera kursini tanlash va "TEKSHIRISH" bosish
+        # Coursera kursini tanlash va "TEKSHIRISH" bosish (O'zbek va Ingliz tillarida 100% kafolatli)
         print("   Coursera 'Generativ AI' kursi biriktirilmoqda...")
-        safe_goto_commit(page, "https://aileaders.uz/courses?platform=coursera", wait_sec=2.8)
-        for _ in range(2):
+        safe_goto_commit(page, "https://aileaders.uz/courses", wait_sec=2.5)
+        for _ in range(3):
             try:
                 page.keyboard.press("Escape")
                 page.evaluate("""() => {
-                    const b = document.querySelector('button[aria-label="Yopish"], button[aria-label="Close"]');
+                    const b = document.querySelector('button[aria-label="Yopish"], button[aria-label="Close"], div[role="dialog"] button');
                     if (b) b.click();
                 }""")
             except Exception:
                 pass
-            time.sleep(0.25)
+            time.sleep(0.2)
 
-        c_tab = page.locator("button:has-text('Coursera')").first
-        if c_tab.count() > 0 and c_tab.is_visible():
-            c_tab.click(force=True)
-            time.sleep(1.5)
+        # 1-qadam: Coursera filtr tugmasini (pill) bosish
+        try:
+            page.evaluate("""() => {
+                const els = Array.from(document.querySelectorAll('button, div, span, a, [role="tab"]'));
+                const cTab = els.find(e => {
+                    const t = (e.innerText || e.textContent || '').trim().toLowerCase();
+                    return t.startsWith('coursera') || (t.includes('coursera') && t.length < 20);
+                });
+                if (cTab) {
+                    cTab.scrollIntoView({block: 'center'});
+                    cTab.click();
+                }
+            }""")
+            time.sleep(1.2)
+        except Exception:
+            pass
 
-        card = page.locator("div, a, h3, p").filter(has_text=re.compile(r"Generativ Sun.iy Intellekt|Introduction to Generative AI", re.I)).first
-        if card.count() > 0 and card.is_visible():
-            card.scroll_into_view_if_needed()
-            card.click(force=True)
-            time.sleep(2.5)
+        # 2-qadam: Qidiruv maydoniga 'Generativ' kiritish
+        try:
+            search_inps = page.locator("input[placeholder*='qidir'], input[placeholder*='Kurs'], input[type='search'], input[type='text']")
+            if search_inps.count() > 0 and search_inps.first.is_visible():
+                search_inps.first.fill("Generativ")
+                page.keyboard.press("Enter")
+                time.sleep(1.2)
+        except Exception:
+            pass
 
-        tekshir_b = page.locator("button:has-text('TEKSHIRISH'), button:has-text('Tekshirish')").first
+        # 3-qadam: 'Generativ Sun'iy Intellektga Kirish' / 'Introduction to Generative AI' kartasini bosish
+        clicked_card = False
+        try:
+            clicked_card = page.evaluate("""() => {
+                const cards = Array.from(document.querySelectorAll('div, a, article, [role="button"], h3, p'));
+                const target = cards.find(c => {
+                    const t = (c.innerText || c.textContent || '').toLowerCase();
+                    return (t.includes('generativ') || t.includes('generative ai') || t.includes('introduction to generative')) &&
+                           (t.includes('kirish') || t.includes('google') || t.includes('coursera') || t.includes('kurs') || t.length < 120);
+                });
+                if (target) {
+                    target.scrollIntoView({block: 'center'});
+                    target.click();
+                    return true;
+                }
+                return false;
+            }""")
+        except Exception:
+            pass
+
+        if not clicked_card:
+            card = page.locator("div, a, h3, p, article").filter(has_text=re.compile(r"Generativ Sun.iy Intellekt|Introduction to Generative AI|Generativ AI|Generativ", re.I)).first
+            if card.count() > 0 and card.is_visible():
+                card.scroll_into_view_if_needed()
+                card.click(force=True)
+        time.sleep(2.5)
+
+        # 4-qadam: Ochilgan modal oynada 'TEKSHIRISH' / 'Kursga o'tish' tugmasini bosish
+        tekshir_b = page.locator("button:visible:has-text('TEKSHIRISH'), button:visible:has-text('Tekshirish'), button:visible:has-text('Boshlash'), button:visible:has-text('Kursga o\'tish'), button:visible:has-text('Kursga')").first
         if tekshir_b.count() > 0 and tekshir_b.is_visible():
             print("   'TEKSHIRISH' bosildi!")
             tekshir_b.click(force=True)
             time.sleep(4.0)
+        else:
+            try:
+                modal_btn = page.locator("div[role='dialog'] button:visible, .modal button:visible").last
+                if modal_btn.count() > 0 and modal_btn.is_visible():
+                    b_txt = modal_btn.inner_text().strip()
+                    print(f"   Modal ichidagi '{b_txt}' tugmasi bosildi!")
+                    modal_btn.click(force=True)
+                    time.sleep(4.0)
+            except Exception:
+                pass
     except Exception as e:
         print(f"   [!] Aileaders faollashtirishda ogohlantirish: {e}")
 

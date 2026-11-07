@@ -306,8 +306,15 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         for nid in dead_nodes:
             cluster_nodes.pop(nid, None)
 
-        if node_id == "MASTER_PC":
-            return {"has_task": False, "reason": "master_pc_is_pure_coordinator"}
+        is_cloud_runner = (
+            node_id == "MASTER_PC"
+            or "runner" in str(node_id).lower()
+            or "github" in str(node_id).lower()
+            or "actions" in str(node_id).lower()
+            or "virtual" in str(node_id).lower()
+        )
+        if is_cloud_runner:
+            return {"has_task": False, "reason": "cloud_runner_is_pure_coordinator"}
 
         if node_id and node_id != "MASTER_PC":
             node_info = cluster_nodes.get(node_id, {})
@@ -2104,6 +2111,16 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                 data = self._read_body()
                 node_id = data.get("node_id", "")
                 worker_id = str(data.get("worker_id", "1"))
+                is_cloud_runner = (
+                    node_id == "MASTER_PC"
+                    or "runner" in str(node_id).lower()
+                    or "github" in str(node_id).lower()
+                    or "actions" in str(node_id).lower()
+                    or "virtual" in str(node_id).lower()
+                )
+                if is_cloud_runner:
+                    self._send_json({"has_task": False, "reason": "cloud_runner_is_pure_coordinator"})
+                    return
                 with nodes_lock:
                     node_info = cluster_nodes.get(node_id, {})
                     if node_id in cluster_nodes:
