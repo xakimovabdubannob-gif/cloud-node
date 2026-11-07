@@ -1762,65 +1762,9 @@ def safe_goto_commit(page, url, wait_sec=3.0):
             time.sleep(2.0)
     return False
 
-def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, student_password):
-    """1-XABAR: Aileaders.uz pochtadan 1-faollashtirish havolasini ochadi (kelmasa 'Qayta yuborish' bosadi),
-    so'ng Aileaders-ga kirib 'Generativ AI' kursida 'TEKSHIRISH' tugmasini bosadi."""
+def select_coursera_course_and_tekshir(page):
+    """Coursera kursini tanlash va 'TEKSHIRISH' bosish (Asl kodimiz to'liq saqlangan holda)."""
     try:
-        print("   [1-XABAR: Aileaders Tasdiqlash] Pochtaga aktivatsiya havolasi kutilmoqda...")
-        act_link = mail_svc.wait_for_activation(timeout=50)
-        if not act_link:
-            print("   [1-XABAR: Aileaders Tasdiqlash] Xat kechikdi, Aileaders.uz orqali 'Qayta yuborish' bosilmoqda...")
-            safe_goto_commit(page, "https://aileaders.uz/auth/login", wait_sec=2.0)
-            l_em = page.locator("input[type='email'], input[name='email']").first
-            if l_em.count() > 0 and l_em.is_visible():
-                l_em.fill(student_email)
-            l_pwd = page.locator("input[type='password'], input[name='password']").first
-            if l_pwd.count() > 0 and l_pwd.is_visible():
-                l_pwd.fill(student_password)
-            l_sub = page.locator("button[type='submit'], button:has-text('Kirish')").first
-            if l_sub.count() > 0 and l_sub.is_visible():
-                l_sub.click(force=True)
-
-            for _ in range(8):
-                page.wait_for_timeout(500)
-                try:
-                    clicked_resend = page.evaluate("""(em) => {
-                        const el = Array.from(document.querySelectorAll('button, span, a, div')).find(e => (e.innerText || '').trim() === 'Qayta yuborish');
-                        if (el) { el.click(); return true; }
-                        return false;
-                    }""", student_email)
-                    if clicked_resend:
-                        print("   [+] 'Qayta yuborish' tugmasi bosildi!")
-                        break
-                except Exception:
-                    pass
-
-            try:
-                page.evaluate("""(em) => {
-                    fetch('/api/profile/verify-email?email=' + encodeURIComponent(em)).catch(() => {});
-                }""", student_email)
-            except Exception:
-                pass
-            act_link = mail_svc.wait_for_activation(timeout=40)
-
-        if act_link:
-            print(f"   [1-XABAR: Aileaders Tasdiqlash] Aktivatsiya havolasi ochilmoqda...")
-            safe_goto_commit(page, act_link, wait_sec=3.0)
-
-        # Aileaders ga kirish (Login)
-        safe_goto_commit(page, "https://aileaders.uz/auth/login", wait_sec=2.0)
-        l_em = page.locator("input[type='email'], input[name='email']").first
-        if l_em.count() > 0 and l_em.is_visible():
-            l_em.fill(student_email)
-        l_pwd = page.locator("input[type='password'], input[name='password']").first
-        if l_pwd.count() > 0 and l_pwd.is_visible():
-            l_pwd.fill(student_password)
-        l_sub = page.locator("button[type='submit'], button:has-text('Kirish')").first
-        if l_sub.count() > 0 and l_sub.is_visible():
-            l_sub.click(force=True)
-            page.wait_for_timeout(3200)
-
-        # Coursera kursini tanlash va "TEKSHIRISH" bosish (Asl kodimiz to'liq saqlangan holda yoniga qo'shildi)
         print("   Coursera 'Generativ AI' kursi biriktirilmoqda...")
         safe_goto_commit(page, "https://aileaders.uz/courses?platform=coursera", wait_sec=2.8)
         for _ in range(2):
@@ -1880,6 +1824,68 @@ def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, stu
                     time.sleep(4.0)
             except Exception:
                 pass
+    except Exception as e:
+        print(f"   [!] Coursera kursi tanlashda ogohlantirish: {e}")
+
+def ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, student_password):
+    """1-XABAR: Aileaders.uz pochtadan 1-faollashtirish havolasini ochadi (kelmasa 'Qayta yuborish' bosadi),
+    so'ng Aileaders-ga kirib 'Generativ AI' kursida 'TEKSHIRISH' tugmasini bosadi."""
+    try:
+        print("   [1-XABAR: Aileaders Tasdiqlash] Pochtaga aktivatsiya havolasi kutilmoqda...")
+        act_link = mail_svc.wait_for_activation(timeout=50)
+        if not act_link:
+            print("   [1-XABAR: Aileaders Tasdiqlash] Xat kechikdi, Aileaders.uz orqali 'Qayta yuborish' bosilmoqda...")
+            safe_goto_commit(page, "https://aileaders.uz/auth/login", wait_sec=2.0)
+            l_em = page.locator("input[type='email'], input[name='email']").first
+            if l_em.count() > 0 and l_em.is_visible():
+                l_em.fill(student_email)
+            l_pwd = page.locator("input[type='password'], input[name='password']").first
+            if l_pwd.count() > 0 and l_pwd.is_visible():
+                l_pwd.fill(student_password)
+            l_sub = page.locator("button[type='submit'], button:has-text('Kirish')").first
+            if l_sub.count() > 0 and l_sub.is_visible():
+                l_sub.click(force=True)
+
+            for _ in range(8):
+                page.wait_for_timeout(500)
+                try:
+                    clicked_resend = page.evaluate("""(em) => {
+                        const el = Array.from(document.querySelectorAll('button, span, a, div')).find(e => (e.innerText || '').trim() === 'Qayta yuborish');
+                        if (el) { el.click(); return true; }
+                        return false;
+                    }""", student_email)
+                    if clicked_resend:
+                        print("   [+] 'Qayta yuborish' tugmasi bosildi!")
+                        break
+                except Exception:
+                    pass
+
+            try:
+                page.evaluate("""(em) => {
+                    fetch('/api/profile/verify-email?email=' + encodeURIComponent(em)).catch(() => {});
+                }""", student_email)
+            except Exception:
+                pass
+            act_link = mail_svc.wait_for_activation(timeout=40)
+
+        if act_link:
+            print(f"   [1-XABAR: Aileaders Tasdiqlash] Aktivatsiya havolasi ochilmoqda...")
+            safe_goto_commit(page, act_link, wait_sec=3.0)
+
+        # Aileaders ga kirish (Login)
+        safe_goto_commit(page, "https://aileaders.uz/auth/login", wait_sec=2.0)
+        l_em = page.locator("input[type='email'], input[name='email']").first
+        if l_em.count() > 0 and l_em.is_visible():
+            l_em.fill(student_email)
+        l_pwd = page.locator("input[type='password'], input[name='password']").first
+        if l_pwd.count() > 0 and l_pwd.is_visible():
+            l_pwd.fill(student_password)
+        l_sub = page.locator("button[type='submit'], button:has-text('Kirish')").first
+        if l_sub.count() > 0 and l_sub.is_visible():
+            l_sub.click(force=True)
+            page.wait_for_timeout(3200)
+
+        select_coursera_course_and_tekshir(page)
     except Exception as e:
         print(f"   [!] Aileaders faollashtirishda ogohlantirish: {e}")
 
@@ -1997,6 +2003,138 @@ def complete_coursera_join_and_enroll(page, mail_svc, student_password, full_nam
     ensure_enrolled_on_coursera(page)
     return True
 
+def recover_existing_student_password(page, student, student_password="@Ak101095", status_callback=None):
+    """
+    Foydalanuvchi kashfiyoti bo'yicha profil tiklash:
+    Agar Aileaders 'Ushbu ma'lumotlar bilan oldin registratsiya qilingan' desa:
+    https://aileaders.uz/auth/reset_password sahifasiga kirib, guvohnoma/pasport va tug'ilgan sana orqali
+    eski elektron pochtani o'qib oladi, yangi parolni o'rnatadi va tizimga kiradi!
+    """
+    full_name = student.get("name", "").strip()
+    class_name = student.get("class", "").strip()
+    doc_series = student.get("doc_series", "") or student.get("cert_series", "")
+    doc_number = student.get("doc_number", "") or student.get("cert_number", "")
+    birth_date = student.get("birth_date", "").strip()
+
+    ds_clean = str(doc_series).replace(" ", "").replace("-", "").upper()
+    num_pad7 = str(doc_number).zfill(7) if len(str(doc_number)) < 7 else str(doc_number)
+
+    doc_candidates = []
+    if any(k in ds_clean for k in ["I", "II", "III", "IV", "V", "FR", "TV", "NV", "T"]):
+        doc_candidates.append(("guvohnoma", ds_clean, num_pad7))
+        doc_candidates.append(("guvohnoma", f"I-{ds_clean.replace('I', '')}", num_pad7))
+        doc_candidates.append(("passport", ds_clean, doc_number))
+    else:
+        doc_candidates.append(("passport", ds_clean, doc_number))
+        doc_candidates.append(("guvohnoma", ds_clean, num_pad7))
+
+    birth_variants = [birth_date]
+    _sep = "." if "." in birth_date else ("/" if "/" in birth_date else ("-" if "-" in birth_date else None))
+    if _sep:
+        _bp = birth_date.split(_sep)
+        if len(_bp) == 3:
+            try:
+                p1, p2, p3 = int(_bp[0]), int(_bp[1]), _bp[2]
+                if p1 <= 12 and p2 <= 12 and p1 != p2:
+                    birth_variants.append(f"{p2}{_sep}{p1}{_sep}{p3}")
+            except Exception:
+                pass
+
+    print(f"   [TIKLASH] {full_name} ({doc_series} {doc_number}) uchun parol tiklash orqali pochtani qidirish boshlandi...")
+    if status_callback:
+        status_callback(f"🔍 {full_name}: Oldingi profil pochtasi qidirilmoqda...")
+
+    for b_cand in birth_variants:
+        for doc_mode, s_val, n_val in doc_candidates:
+            try:
+                page.goto("https://aileaders.uz/auth/reset_password", wait_until="networkidle", timeout=20000)
+                page.wait_for_timeout(800)
+
+                if doc_mode == "guvohnoma":
+                    guv = page.locator("button:has-text('Guvohnoma')").first
+                    if guv.is_visible():
+                        guv.click(force=True)
+                        page.wait_for_timeout(300)
+                    s_in = page.locator("input[name='metrika_series'], input[placeholder*='Seriya']").first
+                    n_in = page.locator("input[name='metrika_number'], input[placeholder*='Raqam']").first
+                    s_in.click(force=True)
+                    s_in.fill("")
+                    page.keyboard.type(str(s_val).replace("-", ""))
+                    n_in.fill(str(n_val))
+                else:
+                    pass_b = page.locator("button:has-text('Passport')").first
+                    if pass_b.is_visible():
+                        pass_b.click(force=True)
+                        page.wait_for_timeout(300)
+                    n_in = page.locator("input[name='passport_number'], input[placeholder*='Seriya']").first
+                    n_in.fill(f"{s_val}{n_val}")
+
+                pick_date_aileaders(page, b_cand)
+                page.wait_for_timeout(500)
+
+                search_btn = page.locator("button:has-text('Qidirish')").first
+                search_btn.click(force=True)
+                page.wait_for_timeout(3000)
+
+                body = page.evaluate("() => document.body ? document.body.innerText : ''")
+                if "Yangi parol o'rnatish" in body:
+                    em_in = page.locator("input[type='email']").first
+                    recovered_email = em_in.input_value() if em_in.is_visible() else ""
+                    if not recovered_email:
+                        continue
+
+                    print(f"   [TOPILDI!] Profil pochtasi topildi: {recovered_email}")
+                    if status_callback:
+                        status_callback(f"🔑 Profil pochtasi topildi: {recovered_email}! Yangi parol o'rnatilmoqda...")
+
+                    p1 = page.locator("input[name='password1']").first
+                    p2 = page.locator("input[name='password2']").first
+                    fill_react_input(p1, student_password)
+                    page.wait_for_timeout(300)
+                    fill_react_input(p2, student_password)
+                    page.wait_for_timeout(300)
+
+                    reset_btn = page.locator("button:has-text('Parolni tiklash')").first
+                    reset_btn.click(force=True)
+                    page.wait_for_timeout(3000)
+
+                    # Yangi tiklangan akkountni bazaga saqlaymiz
+                    with FILE_LOCK:
+                        with open(ACCOUNTS_FILE, "a", encoding="utf-8") as f:
+                            f.write(f"{full_name} | {class_name} | {recovered_email} | {student_password} | {PHONE_RAW}\n")
+                            f.flush()
+                            try:
+                                os.fsync(f.fileno())
+                            except Exception:
+                                pass
+
+                    # Tizimga kirish
+                    page.goto("https://aileaders.uz/auth/login", wait_until="networkidle", timeout=20000)
+                    page.wait_for_timeout(1000)
+                    login_em = page.locator("input[type='email'], input[placeholder*='pochta'], input[name='email']").first
+                    login_pw = page.locator("input[type='password'], input[name='password']").first
+                    login_btn = page.locator("button:has-text('Tizimga kirish')").first
+                    fill_react_input(login_em, recovered_email)
+                    page.wait_for_timeout(300)
+                    fill_react_input(login_pw, student_password)
+                    page.wait_for_timeout(300)
+                    login_btn.click(force=True)
+                    page.wait_for_timeout(4000)
+
+                    # Tekshiramiz: kurslar sahifasidami yoki verify
+                    if "verify" not in page.url and ("courses" in page.url or page.url.rstrip("/") == "https://aileaders.uz"):
+                        if status_callback:
+                            status_callback(f"✅ Profil tiklandi va tizimga kirildi ({recovered_email})!")
+                        return recovered_email, True
+                    else:
+                        print(f"   [!] Profil tiklandi lekin verify holatida ({page.url})")
+                        return recovered_email, False
+            except Exception as ex:
+                print(f"   [!] Parol tiklash xatoligi ({s_val} {n_val}): {ex}")
+                continue
+
+    return None, False
+
 def register_new_student_and_enroll(context, page, student, status_callback=None):
     """Bazada (akkountlar.txt) yo'q o'quvchini Aileaders.uz + Coursera da ro'yxatdan o'tkazadi."""
     full_name = student["name"]
@@ -2070,6 +2208,7 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
 
     try:
         reg_step2_ok = False
+        is_recovered = False
         for b_cand in birth_variants:
             if reg_step2_ok:
                 break
@@ -2120,6 +2259,12 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                         print(f"   [!] {err_step}")
                         if status_callback:
                             status_callback(err_step)
+                        rec_email, is_logged = recover_existing_student_password(page, student, student_password, status_callback=status_callback)
+                        if rec_email:
+                            student_email = rec_email
+                            reg_step2_ok = True
+                            is_recovered = True
+                            break
                         continue
 
                 print(f"   1-bosqich muvaffaqiyatli ({s_val} {n_val})! 'Keyingi' bosilmoqda...")
@@ -2222,11 +2367,17 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                 break
 
         if not reg_step2_ok:
-            reason_msg = f"Aileaders.uz: Ushbu ma'lumotlar bilan oldin registratsiya qilingan ({doc_series} {doc_number})" if "registratsiya qilingan" in b_txt1.lower() else f"Barcha hujjat variantlari ({doc_series} {doc_number}) tekshirildi, Aileaders ma'lumotni topmadi!"
-            if status_callback:
-                status_callback(f"❌ {reason_msg}")
-            save_unrecoverable_student(full_name, class_name, reason_msg)
-            return "UNRECOVERABLE", None
+            rec_email, is_logged = recover_existing_student_password(page, student, student_password, status_callback=status_callback)
+            if rec_email:
+                student_email = rec_email
+                reg_step2_ok = True
+                is_recovered = True
+            else:
+                reason_msg = f"Aileaders.uz: Ushbu ma'lumotlar bilan oldin registratsiya qilingan ({doc_series} {doc_number})" if "registratsiya qilingan" in b_txt1.lower() else f"Barcha hujjat variantlari ({doc_series} {doc_number}) tekshirildi, Aileaders ma'lumotni topmadi!"
+                if status_callback:
+                    status_callback(f"❌ {reason_msg}")
+                save_unrecoverable_student(full_name, class_name, reason_msg)
+                return "UNRECOVERABLE", None
 
         with FILE_LOCK:
             with open(ACCOUNTS_FILE, "a", encoding="utf-8") as f:
@@ -2250,6 +2401,19 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
             pass
         if status_callback:
             status_callback(f"📧 Aileaders.uz profil ochildi ({student_email})! 1-xabar aktivatsiya qilinmoqda...")
+
+        if is_recovered:
+            print(f"   [TIKLANGAN PROFIL] {student_email} Aileaders orqali kursga biriktirilmoqda...")
+            if status_callback:
+                status_callback(f"🎯 Profil tiklandi ({student_email})! Coursera kursi ochilmoqda...")
+            select_coursera_course_and_tekshir(page)
+            if status_callback:
+                status_callback(f"🔐 Coursera tizimiga kirilmoqda ({student_email})...")
+            logged_ok, was_signup = login_coursera(page, student_email, student_password, full_name=full_name)
+            ensure_enrolled_on_coursera(page)
+            if status_callback:
+                status_callback(f"✅ Coursera kursiga muvaffaqiyatli ulandi!")
+            return "OK", {"email": student_email, "password": student_password}
 
         # 1-XABAR: Aileaders Tasdiqlash + TEKSHIRISH
         ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, student_password)
