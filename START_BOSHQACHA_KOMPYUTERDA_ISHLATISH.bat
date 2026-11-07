@@ -12,26 +12,39 @@ set "TARGET_DIR=%USERPROFILE%\uzbekcodersbot"
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
 cd /d "%TARGET_DIR%"
 
-echo [1/3] Kodlar GitHub'dan avtomatik yuklab olinmoqda...
-curl.exe -L "https://github.com/xakimovabdubannob-gif/cloud-node/archive/refs/heads/master.zip" -o "%TEMP%\master.zip" --progress-bar
-if exist "%TEMP%\master.zip" (
-    tar.exe -xf "%TEMP%\master.zip" -C "%TEMP%"
-    xcopy /E /Y /Q "%TEMP%\cloud-node-master\*" "%TARGET_DIR%\" >nul
-    del /f /q "%TEMP%\master.zip" >nul 2>&1
-    rd /s /q "%TEMP%\cloud-node-master" >nul 2>&1
+echo [1/3] Kodlar GitHub'dan avtomatik yuklanmoqda...
+where curl.exe >nul 2>&1
+if %errorlevel% equ 0 (
+    curl.exe -L "https://github.com/xakimovabdubannob-gif/cloud-node/archive/refs/heads/master.zip" -o "%TEMP%\master.zip" --progress-bar
 ) else (
-    echo [!] curl ishlamadi, PowerShell orqali yuklanmoqda...
-    powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('https://github.com/xakimovabdubannob-gif/cloud-node/archive/refs/heads/master.zip', '%TEMP%\master.zip'); Expand-Archive -Path '%TEMP%\master.zip' -DestinationPath '%TEMP%\extracted' -Force; Copy-Item -Path '%TEMP%\extracted\cloud-node-master\*' -Destination '%TARGET_DIR%' -Recurse -Force; Remove-Item '%TEMP%\master.zip', '%TEMP%\extracted' -Recurse -Force -ErrorAction SilentlyContinue"
+    powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('https://github.com/xakimovabdubannob-gif/cloud-node/archive/refs/heads/master.zip', '%TEMP%\master.zip')"
+)
+
+if exist "%TEMP%\master.zip" (
+    where tar.exe >nul 2>&1
+    if %errorlevel% equ 0 (
+        tar.exe -xf "%TEMP%\master.zip" -C "%TEMP%"
+    ) else (
+        powershell -NoProfile -Command "Expand-Archive -Path '%TEMP%\master.zip' -DestinationPath '%TEMP%' -Force"
+    )
+    if exist "%TEMP%\cloud-node-master" (
+        xcopy /E /Y /Q "%TEMP%\cloud-node-master\*" "%TARGET_DIR%\" >nul 2>&1
+        rd /s /q "%TEMP%\cloud-node-master" >nul 2>&1
+    )
+    del /f /q "%TEMP%\master.zip" >nul 2>&1
+    echo [OK] Kodlar muvaffaqiyatli yangilandi!
+) else (
+    echo [DIQQAT] Internetdan yangi kod olinmadi, mavjud fayllar bilan davom etiladi...
 )
 
 echo.
-echo [2/3] Kutubxonalar tekshirilmoqda...
-python -c "import requests, playwright" >nul 2>&1
+echo [2/3] Kerakli kutubxonalar tekshirilmoqda...
+python -c "import requests, openpyxl, playwright" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [!] Python kutubxonalari o'rnatilmoqda (requests, playwright)...
-    python -m pip install --quiet requests openpyxl playwright
-    python -m playwright install chromium
+    echo [!] Kerakli kutubxonalar o'rnatilmoqda (requests, openpyxl, playwright)...
+    call python -m pip install requests openpyxl playwright --no-warn-script-location
 )
+echo [OK] Kutubxonalar tayyor!
 
 echo.
 echo [3/3] Agent ishga tushirilmoqda va GitHub Master Serverga ulanmoqda...
@@ -39,7 +52,10 @@ echo ======================================================================
 set WORKER_COUNT=6
 set HEADLESS=1
 set GUI_MODE=0
-python -u cluster_worker.py
+call python -u cluster_worker.py
+
 echo.
-echo Jarayon to'xtadi. Qayta ishga tushirish uchun istalgan tugmani bosing...
+echo ======================================================================
+echo Jarayon to'xtadi yoki tugadi. Oynani yopish uchun istalgan tugmani bosing...
+echo ======================================================================
 pause
