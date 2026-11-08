@@ -272,18 +272,21 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         done_set = get_completed_students()
         unrec_set = get_unrecoverable_students()
         accs = get_existing_accounts()
-        candidates_files = []
-        if os.path.exists(ORDERS_DIR):
-            for fn in os.listdir(ORDERS_DIR):
-                if fn.startswith("in_") and fn.endswith(".xlsx"):
-                    full_p = os.path.join(ORDERS_DIR, fn)
-                    mt = os.path.getmtime(full_p)
-                    if mt > 0:
-                        candidates_files.append((mt, fn, full_p))
-        # Qat'iy qoida: Eski buyurtmalar skaner qilinmasin! Faqat eng oxirgi faol buyurtma olinadi!
-        candidates_files.sort(key=lambda x: x[0], reverse=True)
-        if candidates_files:
-            candidates_files = [candidates_files[0]]
+        try:
+            import order_queue_manager
+            candidates_files = order_queue_manager.get_candidates_for_cluster(node_id=node_id)
+        except Exception as q_err:
+            candidates_files = []
+            if os.path.exists(ORDERS_DIR):
+                for fn in os.listdir(ORDERS_DIR):
+                    if fn.startswith("in_") and fn.endswith(".xlsx"):
+                        full_p = os.path.join(ORDERS_DIR, fn)
+                        mt = os.path.getmtime(full_p)
+                        if mt > 0:
+                            candidates_files.append((mt, fn, full_p))
+            candidates_files.sort(key=lambda x: x[0], reverse=True)
+            if candidates_files:
+                candidates_files = [candidates_files[0]]
         parsed_orders = []
         for _, fn, full_p in candidates_files:
             parts = fn.split("_")
@@ -2858,18 +2861,23 @@ def cluster_assist_loop(assist_slot: int = 1):
                 time.sleep(6)
                 continue
 
-            # Eng yangi buyurtmani olamiz
-            candidates_files = []
-            if os.path.exists(ORDERS_DIR):
-                for fn in os.listdir(ORDERS_DIR):
-                    if fn.startswith("in_") and fn.endswith(".xlsx"):
-                        full_p = os.path.join(ORDERS_DIR, fn)
-                        candidates_files.append((os.path.getmtime(full_p), fn, full_p))
+            # Eng yuqori navbatdagi faol buyurtmani olamiz
+            try:
+                import order_queue_manager
+                candidates_files = order_queue_manager.get_candidates_for_cluster(node_id="MASTER_PC")
+            except Exception:
+                candidates_files = []
+                if os.path.exists(ORDERS_DIR):
+                    for fn in os.listdir(ORDERS_DIR):
+                        if fn.startswith("in_") and fn.endswith(".xlsx"):
+                            full_p = os.path.join(ORDERS_DIR, fn)
+                            candidates_files.append((os.path.getmtime(full_p), fn, full_p))
+                if candidates_files:
+                    candidates_files.sort(reverse=True)
+                    candidates_files = [candidates_files[0]]
             if not candidates_files:
                 time.sleep(6)
                 continue
-
-            candidates_files.sort(reverse=True)
             _, fn, full_p = candidates_files[0]
             parts = fn.split("_")
             chat_id = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else load_bot_config().get("admin_id", 6580113791)

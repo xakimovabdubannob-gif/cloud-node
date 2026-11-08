@@ -2371,10 +2371,93 @@ class TelegramBotServer:
 
         threading.Thread(target=_reboot_worker, daemon=True).start()
 
+    def render_queue_management_message(self, chat_id: int, message_id: int = None):
+        import order_queue_manager
+        queue = order_queue_manager.sync_and_get_queue()
+        parallel = order_queue_manager.is_parallel_mode()
+
+        lines = ["📋 <b>NAVBATDAGI BUYURTMALAR BOSHQARUVI:</b>\n"]
+        if not queue:
+            lines.append("<i>Hozirda faol buyurtmalar mavjud emas. Yangi Excel fayl yuboring!</i>\n")
+        else:
+            for idx, it in enumerate(queue, 1):
+                status_icon = "🟢 [Hozir ishlanmoqda]" if (idx == 1 and it.get("status") == "active") else ("⏳ [Navbatda]" if it.get("status") == "active" else "⏸ [Muzlatilgan]")
+                tot = it.get("total", 0)
+                done = it.get("done", 0)
+                rem = it.get("remaining", 0)
+                pct = int((done / tot) * 100) if tot > 0 else 0
+                prog_bar = "■" * (pct // 10) + "□" * (10 - (pct // 10)) if tot > 0 else ""
+                d_name = it.get("display_name", it.get("filename"))
+                lines.append(f"<b>{idx}️⃣ {d_name}</b> {status_icon}")
+                if tot > 0:
+                    lines.append(f"   ├ Progress: [{prog_bar}] {pct}%")
+                lines.append(f"   ├ Jami: <b>{tot}</b> ta | Tayyor: <b>{done} ta ✅</b>")
+                lines.append(f"   └ Qolgan o'quvchilar: <b>{rem} ta ⏳</b>\n")
+
+        mode_text = "👥 <b>Rejim:</b> Parallel (Har kompyuter alohida sinf)" if parallel else "⚡ <b>Rejim:</b> Ketma-ket (Barcha kompyuterlar 1-o'rindagi sinfda)"
+        lines.append(mode_text)
+
+        buttons = []
+        for idx, it in enumerate(queue, 1):
+            row_actions = []
+            if it.get("status") == "active":
+                if idx > 1:
+                    row_actions.append({"text": f"⚡ 1-qilish (#{idx})", "callback_data": f"q_top|{idx}"})
+                if idx > 1:
+                    row_actions.append({"text": "⬆️", "callback_data": f"q_up|{idx}"})
+                if idx < len(queue):
+                    row_actions.append({"text": "⬇️", "callback_data": f"q_down|{idx}"})
+                row_actions.append({"text": "⏸ Muzlatish", "callback_data": f"q_pause|{idx}"})
+                row_actions.append({"text": "🗑 O'chirish", "callback_data": f"q_del|{idx}"})
+            else:
+                row_actions.append({"text": f"▶️ Faollashtirish (#{idx})", "callback_data": f"q_pause|{idx}"})
+                row_actions.append({"text": "🗑 O'chirish", "callback_data": f"q_del|{idx}"})
+            buttons.append(row_actions)
+
+        par_label = "👥 Parallel: YOQILGAN 🟢" if parallel else "👥 Parallel: O'CHIQLIGICHA ⚪"
+        buttons.append([
+            {"text": "🔄 Yangilash", "callback_data": "q_refresh"},
+            {"text": par_label, "callback_data": "q_toggle_par"},
+        ])
+        buttons.append([
+            {"text": "📁 Arxivlangan fayllar", "callback_data": "q_archived"},
+        ])
+
+        msg_text = "\n".join(lines)
+        markup = {"inline_keyboard": buttons}
+
+        if message_id:
+            self.edit_message(chat_id, message_id, msg_text, reply_markup=markup)
+        else:
+            self.send_message(chat_id, msg_text, reply_markup=markup)
+
+    def render_archived_orders_message(self, chat_id: int, message_id: int = None):
+        import order_queue_manager
+        archived = order_queue_manager.list_archived_orders()
+        lines = ["📁 <b>ARXIVLANGAN BUYURTMALAR:</b>\n"]
+        if not archived:
+            lines.append("<i>Hozirda arxivlangan fayllar yo'q.</i>\n")
+        else:
+            for idx, fn in enumerate(archived, 1):
+                lines.append(f"<b>{idx}️⃣</b> <code>{fn}</code>")
+
+        buttons = []
+        for idx, fn in enumerate(archived, 1):
+            buttons.append([{"text": f"↩️ Tiklash: #{idx} ({fn[:20]}...)", "callback_data": f"q_restore|{idx}"}])
+        buttons.append([{"text": "⬅️ Navbatga qaytish", "callback_data": "q_refresh"}])
+
+        msg_text = "\n".join(lines)
+        markup = {"inline_keyboard": buttons}
+        if message_id:
+            self.edit_message(chat_id, message_id, msg_text, reply_markup=markup)
+        else:
+            self.send_message(chat_id, msg_text, reply_markup=markup)
+
     def get_reply_keyboard(self, chat_id: int):
         if self.admin_id and chat_id == self.admin_id:
             return {
                 "keyboard": [
+                    [{"text": "📑 Navbatni Boshqarish"}, {"text": "📊 Tahlil va Jarayon"}],
                     [{"text": "🛑 Bekor qilish (Otmen)"}, {"text": "🔄 Serverni qayta yoqish (Reboot)"}],
                     [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
                     [{"text": "🤖 Robot Agentlar Dashboard"}, {"text": "🌐 Web Any (Brauzerda)"}],
@@ -2891,6 +2974,58 @@ class TelegramBotServer:
             cb = upd["callback_query"]
             data = cb.get("data", "")
             from_id = cb["from"]["id"]
+
+            if data.startswith("q_"):
+                import order_queue_manager
+                msg_id = cb.get("message", {}).get("message_id")
+                alert_text = ""
+                if data.startswith("q_top|"):
+                    idx = int(data.split("|")[1])
+                    ok = order_queue_manager.move_order_to_top_by_index(idx)
+                    alert_text = "⚡ 1-o'ringa chiqarildi! Kompyuterlar darhol bunga o'tmoqda." if ok else "Xatolik!"
+                elif data.startswith("q_up|"):
+                    idx = int(data.split("|")[1])
+                    ok = order_queue_manager.swap_order_by_index(idx, "up")
+                    alert_text = "⬆️ 1 pog'ona oldinga surildi!" if ok else "Surib bo'lmadi!"
+                elif data.startswith("q_down|"):
+                    idx = int(data.split("|")[1])
+                    ok = order_queue_manager.swap_order_by_index(idx, "down")
+                    alert_text = "⬇️ 1 pog'ona orqaga surildi!" if ok else "Surib bo'lmadi!"
+                elif data.startswith("q_pause|"):
+                    idx = int(data.split("|")[1])
+                    new_st = order_queue_manager.toggle_order_pause_by_index(idx)
+                    alert_text = "⏸ Buyurtma muzlatildi!" if new_st == "paused" else "▶️ Buyurtma faollashtirildi!"
+                elif data.startswith("q_del|"):
+                    idx = int(data.split("|")[1])
+                    ok = order_queue_manager.archive_order_by_index(idx)
+                    alert_text = "🗑 Navbatdan olindi va arxivga saqlandi!" if ok else "O'chirib bo'lmadi!"
+                elif data == "q_toggle_par":
+                    is_par = order_queue_manager.toggle_parallel_mode()
+                    alert_text = "👥 Parallel rejim yoqildi!" if is_par else "⚡ Ketma-ket rejim yoqildi!"
+                elif data == "q_refresh":
+                    alert_text = "🔄 Navbat yangilandi!"
+                elif data == "q_archived":
+                    try:
+                        requests.post(f"{self.api_url}/answerCallbackQuery", data={"callback_query_id": cb["id"]}, timeout=5)
+                    except Exception:
+                        pass
+                    self.render_archived_orders_message(from_id, message_id=msg_id)
+                    return
+                elif data.startswith("q_restore|"):
+                    idx = int(data.split("|")[1])
+                    ok = order_queue_manager.restore_order_by_archive_index(idx)
+                    alert_text = "↩️ Buyurtma arxivdan navbatga tiklandi!" if ok else "Tiklab bo'lmadi!"
+
+                try:
+                    requests.post(
+                        f"{self.api_url}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": alert_text, "show_alert": False},
+                        timeout=5,
+                    )
+                except Exception:
+                    pass
+                self.render_queue_management_message(from_id, message_id=msg_id)
+                return
 
             if data.startswith("cl_scr|"):
                 try:
@@ -3553,6 +3688,11 @@ class TelegramBotServer:
         ):
             admin_input_state.pop(chat_id, None)
             self.reboot_cloud_server(chat_id)
+            return
+
+        if text in ("📑 Navbatni Boshqarish", "📑 Navbat", "/queue", "/navbat", "/orders"):
+            admin_input_state.pop(chat_id, None)
+            self.render_queue_management_message(chat_id)
             return
 
         if text in ("⏸ To'xtatish (Pauza)", "⏸ To'xtatish", "/stop", "/pause", "/toxtat"):
