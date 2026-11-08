@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title UZBEK CODERS - 4 TA AGENT (KO'RINMAS / ORQA FONDA REJIM)
+title UZBEK CODERS - 4 TA AGENT (KO'RINMAS / ORQA FONDA TEZKOR REJIM)
 color 0A
 
 :: 1. Papkani avtomatik aniqlash (Har qanday kompyuterda ishlaydi!)
@@ -30,8 +30,18 @@ if not exist "cluster_worker.py" (
     echo.
 )
 
-echo  [1/2] GitHub Master Serverga ulanmoqda...
-echo  [2/2] 4 ta AI Agent orqa fonda (ko'rinmas rejimda) ishga tushmoqda...
+:: 3. Agar shu kompyuterda master bridge hali ishlamayotgan bo'lsa, o'zi avtomat fon rejimida yoqadi
+if exist "cluster_master_bridge.py" (
+    powershell -NoProfile -Command "try { $r = [System.Net.WebRequest]::Create('http://127.0.0.1:8766/cluster/ping').GetResponse(); exit 0 } catch { exit 1 }" >nul 2>&1
+    if errorlevel 1 (
+        echo  [1/3] Master Server fonda ishga tushirilmoqda...
+        start "" /min python cluster_master_bridge.py
+        timeout /t 3 /nobreak >nul
+    )
+)
+
+echo  [2/3] Master Server tekshirilmoqda...
+echo  [3/3] 4 ta AI Agent orqa fonda (ko'rinmas rejimda) ishga tushmoqda...
 echo.
 echo  Brauzer oynalari kompyuterni band qilmaydi,
 echo  orqa fonda 4 barobar tezlikda buyurtmalar bajariladi!
@@ -42,5 +52,5 @@ set HEADLESS=1
 set GUI_MODE=0
 set WORKER_COUNT=4
 
-python -u cluster_worker.py https://med-infringement-steven-responsible.trycloudflare.com
+python -u cluster_worker.py
 pause

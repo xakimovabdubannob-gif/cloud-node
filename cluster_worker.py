@@ -114,12 +114,18 @@ class ClusterWorkerNode:
 
     def discover_master_url(self) -> str:
         candidates = []
+        # 0. Eng birinchi: Agar shu kompyuterda master server ishlayotgan bo'lsa (Lokal rejim)
+        candidates.append("http://127.0.0.1:8766")
+        candidates.append("http://localhost:8766")
+
         if len(sys.argv) > 1 and sys.argv[1].startswith("http"):
-            candidates.append(sys.argv[1].strip())
+            arg_u = sys.argv[1].strip()
+            if arg_u not in candidates:
+                candidates.append(arg_u)
 
         # 1. Eng yangi va jonli manzil: Telegram Admin Chat Pinned xabari!
         try:
-            r = requests.get(f"{self.api_url}/getChat", params={"chat_id": self.admin_id}, timeout=8).json()
+            r = requests.get(f"{self.api_url}/getChat", params={"chat_id": self.admin_id}, timeout=6).json()
             pinned_txt = r.get("result", {}).get("pinned_message", {}).get("text", "")
             for part in pinned_txt.split():
                 if part.startswith("http://") or part.startswith("https://"):
@@ -134,7 +140,7 @@ class ClusterWorkerNode:
             r_gh = requests.get(
                 "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt",
                 headers={"Cache-Control": "no-cache"},
-                timeout=5,
+                timeout=4,
             )
             if r_gh.status_code == 200:
                 u_gh = r_gh.text.strip().splitlines()[0].strip()
@@ -149,14 +155,14 @@ class ClusterWorkerNode:
             try:
                 with open("cluster_url.txt", "r", encoding="utf-8") as f:
                     for ln in f.read().splitlines():
-                        if ln.strip().startswith("http"):
+                        if ln.strip().startswith("http") and ln.strip() not in candidates:
                             candidates.append(ln.strip())
             except Exception:
                 pass
 
         for url in candidates:
             try:
-                res = requests.get(f"{url}/cluster/ping", timeout=5)
+                res = requests.get(f"{url}/cluster/ping", timeout=3)
                 if res.status_code == 200 and res.text.strip() == "OK":
                     return url
             except Exception:
@@ -465,11 +471,21 @@ class ClusterWorkerNode:
 
         first_reg = True
         started_workers = set()
+        discover_attempts = 0
         while True:
             if not self.master_url:
                 self.master_url = self.discover_master_url()
                 if not self.master_url:
-                    time.sleep(4)
+                    discover_attempts += 1
+                    if discover_attempts >= 2 and os.path.exists("cluster_master_bridge.py"):
+                        print("[AUTO-START] Asosiy master bridge shu kompyuterda avtomatik ishga tushirilmoqda...")
+                        try:
+                            subprocess.Popen([sys.executable, "-u", "cluster_master_bridge.py"], creationflags=0x08000000 if os.name == "nt" else 0)
+                            time.sleep(3)
+                            continue
+                        except Exception as e:
+                            print(f"[AUTO-START XATO] {e}")
+                    time.sleep(3)
                     continue
 
             try:
