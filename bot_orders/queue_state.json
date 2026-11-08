@@ -1,0 +1,19 @@
+{
+  "queue": [
+    {
+      "id": "bb1a2549",
+      "filename": "in_6580113791_1794096272_7-D_sinf_35_ta_oquvchi (2).xlsx",
+      "display_name": "7-D_sinf_35_ta_oquvchi (2)",
+      "chat_id": 6580113791,
+      "status": "active",
+      "total": 36,
+      "done": 16,
+      "remaining": 20,
+      "mtime": 1794096927.9667583,
+      "added_ts": 1794167594,
+      "priority": 1
+    }
+  ],
+  "deleted": [],
+  "parallel_mode": false
+}
