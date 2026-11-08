@@ -218,6 +218,33 @@ def save_certificate_result(full_name, class_name, cert_url, doc_key=None):
                 pass
 
 
+def wipe_browser_session_completely(context, page):
+    """Har bir yangi o'quvchi boshlanishidan oldin brauzerni 100% tozalaydi.
+    Oldingi o'quvchining akkaunti (masalan Muhammadumar) butunlay chiqib ketadi!"""
+    if context:
+        try:
+            context.clear_cookies()
+        except Exception:
+            pass
+        if page:
+            try:
+                client = context.new_cdp_session(page)
+                client.send("Storage.clearDataForOrigin", {"origin": "https://aileaders.uz", "storageTypes": "all"})
+                client.send("Storage.clearDataForOrigin", {"origin": "https://www.coursera.org", "storageTypes": "all"})
+                client.send("Network.clearBrowserCookies")
+                client.send("Network.clearBrowserCache")
+            except Exception:
+                pass
+    if page:
+        try:
+            page.evaluate("""() => {
+                try { localStorage.clear(); } catch(e){}
+                try { sessionStorage.clear(); } catch(e){}
+            }""")
+        except Exception:
+            pass
+
+
 def dismiss_all_popups(page):
     try:
         page.evaluate("""() => {
@@ -2312,10 +2339,7 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
         return "UNRECOVERABLE", None
 
     print(f"[REGISTRATSIYA] {full_name} bazada yo'q. Aileaders.uz orqali yangi profil ochilmoqda...")
-    try:
-        context.clear_cookies()
-    except Exception:
-        pass
+    wipe_browser_session_completely(context, page)
     try:
         from gmail_automation import GmailMailboxService
         mail_svc = GmailMailboxService()
@@ -2783,6 +2807,7 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
             """)
 
             if not acc:
+                wipe_browser_session_completely(context, page)
                 if status_callback:
                     status_callback(f"📝 Yangi profil ro'yxatdan o'tkazilmoqda...")
                 reg_status, new_acc = register_new_student_and_enroll(context, page, student, status_callback=status_callback)

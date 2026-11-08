@@ -503,7 +503,11 @@ class ClusterWorkerNode:
                 first_reg = False
                 resp = r.json()
                 self.approved = bool(resp.get("approved", True))
-                self.target_workers = int(resp.get("workers", self.target_workers))
+                env_workers = os.environ.get("WORKER_COUNT")
+                if env_workers and env_workers.strip().isdigit():
+                    self.target_workers = int(env_workers.strip())
+                else:
+                    self.target_workers = int(resp.get("workers", self.target_workers))
 
                 if not started_workers:
                     try:
