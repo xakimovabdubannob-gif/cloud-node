@@ -2408,10 +2408,26 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                 if cand_idx > 0 or len(birth_variants) > 1:
                     print(f"   [HUJJAT VARIANTI] {doc_mode.upper()} '{s_val} {n_val}' | Sana: {b_cand} tekshirilmoqda...")
                 safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.0)
+                # Agar avvalgi sessiyadan profil (Muhammadumar yoki boshqasi) ochiq qolgan bo'lsa, to'liq Chiqish (Logout) bosish va tozalash:
                 try:
-                    page.evaluate("() => { try { localStorage.clear(); sessionStorage.clear(); } catch(e){} }")
-                    if "/courses" in page.url or "/profile" in page.url:
-                        context.clear_cookies()
+                    if "/courses" in page.url or "/profile" in page.url or "O'quv kurslar" in (page.content() or ""):
+                        print("   [!] Aileaders: Eski profil ochiq qolgani aniqlandi. Chiqish (Logout) amalga oshirilmoqda...")
+                        try:
+                            # Avatarni bosish
+                            for sel in ["button:has(div[class*='avatar'])", "button:has([data-slot='avatar'])", "[data-slot='avatar']", "header button"]:
+                                loc = page.locator(sel).first
+                                if loc.is_visible():
+                                    loc.click(force=True)
+                                    page.wait_for_timeout(300)
+                                    break
+                            # Chiqish tugmasini bosish
+                            exit_b = page.locator("button:has-text('Chiqish'), a:has-text('Chiqish'), [role='menuitem']:has-text('Chiqish')").first
+                            if exit_b.is_visible():
+                                exit_b.click(force=True)
+                                page.wait_for_timeout(500)
+                        except Exception:
+                            pass
+                        wipe_browser_session_completely(context, page)
                         safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.0)
                 except Exception:
                     pass
@@ -2776,8 +2792,13 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
             if sys.platform != "win32":
                 launch_args = launch_args + ["--no-sandbox", "--disable-dev-shm-usage"]
             exe_path = win_chrome if os.path.exists(win_chrome) else (linux_chrome if os.path.exists(linux_chrome) else None)
-            # Haqiqiy inson ishlatadigan toza Chrome profili va test-automation cheklovlarini butunlay olib tashlash
-            profile_dir = os.path.join(os.path.expanduser("~"), f".real_chrome_user_prof_{worker_id}")
+            # Har bir o'quvchi uchun 100% toza Chrome profili - eski profillar (Muhammadumar va b.) butunlay yo'q qilinadi!
+            profile_dir = os.path.join(tempfile.gettempdir(), f"clean_chrome_prof_w{worker_id}")
+            if os.path.exists(profile_dir):
+                try:
+                    shutil.rmtree(profile_dir, ignore_errors=True)
+                except Exception:
+                    pass
             os.makedirs(profile_dir, exist_ok=True)
 
             context = p.chromium.launch_persistent_context(

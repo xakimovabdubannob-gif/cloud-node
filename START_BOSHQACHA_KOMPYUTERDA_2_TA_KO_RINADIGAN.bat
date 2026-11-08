@@ -19,7 +19,17 @@ echo.
 echo  Papka: %TARGET_DIR%
 echo.
 
-:: 2. Python bor-yo'qligini tekshirish
+:: 2. Eski qotib qolgan profillarni tozalash (Muhammadumar va b. butunlay o'chadi)
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_1" >nul 2>&1
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_2" >nul 2>&1
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_3" >nul 2>&1
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_4" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w1" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w2" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w3" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w4" >nul 2>&1
+
+:: 3. Python bor-yo'qligini tekshirish
 where python >nul 2>&1
 if errorlevel 1 (
     echo [XATOLIK] Ushbu kompyuterda Python topilmadi!
@@ -30,7 +40,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: 3. Eng so'nggi 100%% xatosiz kodlarni GitHub'dan yangilab olish
+:: 4. Eng so'nggi 100%% xatosiz kodlarni GitHub'dan yangilab olish
 echo  [YANGILANMOQDA] Eng so'nggi xatosiz kodlar GitHub'dan olinmoqda...
 curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_worker.py" -o "cluster_worker.py"
 curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/master_certified_pipeline.py" -o "master_certified_pipeline.py"
@@ -39,7 +49,7 @@ curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node
 echo  [OK] Barcha kodlar eng so'nggi holatga yangilandi!
 echo.
 
-:: 4. Kutubxonalar tekshiruvi
+:: 5. Kutubxonalar tekshiruvi
 python -c "import requests, openpyxl, playwright" >nul 2>&1
 if errorlevel 1 (
     echo  [O'RNATILMOQDA] Bir martalik kerakli kutubxonalar o'rnatilmoqda...
