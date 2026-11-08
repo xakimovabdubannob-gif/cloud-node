@@ -1993,7 +1993,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
             node_id = data.get("node_id", "PC2")
             pc_name = data.get("pc_name", node_id)
             ram_gb = int(data.get("ram_gb", 16))
-            def_workers = int(os.environ.get("DEFAULT_WORKERS_PER_NODE", "4"))
+            def_workers = int(data.get("default_workers") or os.environ.get("DEFAULT_WORKERS_PER_NODE", "4"))
 
             notify_now = False
             force_prompt = bool(data.get("force_prompt", False))
