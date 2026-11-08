@@ -19,11 +19,15 @@ echo.
 echo  Papka: %TARGET_DIR%
 echo.
 
-:: 2. Eski qotib qolgan profillarni tozalash (Muhammadumar va b. butunlay o'chadi)
-for /L %%i in (1,1,4) do (
-    rd /s /q "%USERPROFILE%\.real_chrome_user_prof_%%i" >nul 2>&1
-    rd /s /q "%TEMP%\clean_chrome_prof_w%%i" >nul 2>&1
-)
+:: 2. Eski qotib qolgan profillarni tozalash (1 dan 4 gacha)
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_1" >nul 2>&1
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_2" >nul 2>&1
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_3" >nul 2>&1
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_4" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w1" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w2" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w3" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w4" >nul 2>&1
 
 :: 3. Python bor-yo'qligini tekshirish
 where python >nul 2>&1

@@ -28,6 +28,14 @@ rd /s /q "%TEMP%\clean_chrome_prof_w1" >nul 2>&1
 rd /s /q "%TEMP%\clean_chrome_prof_w2" >nul 2>&1
 rd /s /q "%TEMP%\clean_chrome_prof_w3" >nul 2>&1
 rd /s /q "%TEMP%\clean_chrome_prof_w4" >nul 2>&1
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_5" >nul 2>&1
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_6" >nul 2>&1
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_7" >nul 2>&1
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_8" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w5" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w6" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w7" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w8" >nul 2>&1
 
 :: 3. Python bor-yo'qligini tekshirish
 where python >nul 2>&1

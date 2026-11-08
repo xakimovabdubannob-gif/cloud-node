@@ -226,6 +226,7 @@ class ClusterWorkerNode:
         return ""
 
     def worker_thread_fn(self, local_wid: int):
+        last_idle_log = 0
         while True:
 
             if not self.approved or local_wid > self.target_workers or not self.master_url:
@@ -254,6 +255,9 @@ class ClusterWorkerNode:
                 continue
 
             if not data.get("has_task"):
+                if local_wid == 1 and time.time() - last_idle_log > 20:
+                    last_idle_log = time.time()
+                    print(f"🟢 [AGENTLAR TAYYOR] Serverga ulandi. Yangi o'quvchi yoki buyurtma kutilmoqda...")
                 time.sleep(2)
                 continue
 
@@ -263,6 +267,7 @@ class ClusterWorkerNode:
             total = data["total"]
             st = data["student"]
             s_name = st["name"]
+            print(f"\n⚡ [VAZIFA OLINDI] Agent #{local_wid}: [{idx}/{total}] {s_name} boshlanmoqda...")
             acc_line_from_master = data.get("account_line", "")
             assigned_email = data.get("assigned_email", "").strip()
             if assigned_email:
@@ -496,6 +501,9 @@ class ClusterWorkerNode:
                             print(f"[AUTO-START XATO] {e}")
                     time.sleep(3)
                     continue
+                else:
+                    print(f"✅ [MUVAFFAQIYATLI ULANDI] Asosiy Bot Server: {self.master_url}")
+                    print(f"⚡ {self.target_workers} ta parallel AI Agent tayyor holatga keltirildi.\n")
 
             try:
                 r = requests.post(
