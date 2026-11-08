@@ -249,15 +249,34 @@ def wipe_browser_session_completely(context, page):
 
 def dismiss_all_popups(page):
     try:
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
+    try:
         page.evaluate("""() => {
-            // 0. Remove Pendo walkthroughs and transparent click-blocking backdrops
+            // 0. Remove Pendo walkthroughs, backdrops, and modal overlays
             const pendos = Array.from(document.querySelectorAll('[id^="pendo"], [class*="pendo"], .cds-Modal-backdrop, div[data-testid="overlay"]'));
             pendos.forEach(p => { try { p.remove(); } catch(e) {} });
 
+            // 0.1 Remove promotional modals ("Your homepage got simpler", "Great job! We're impressed", "Protect your accomplishments")
+            const promoModals = Array.from(document.querySelectorAll("div[role='dialog'], .cds-Modal-container, .cds-Modal-dialog, [data-testid='modal'], div[aria-modal='true']"));
+            promoModals.forEach(m => {
+                const t = (m.innerText || '').toLowerCase();
+                const hasNameInput = m.querySelector("input[type='text'], input:not([type])");
+                if (!hasNameInput && (t.includes('simpler') || t.includes('update') || t.includes('impressed') || t.includes('great job') || t.includes('protect your accomplishments') || t.includes('защитите свои достижения'))) {
+                    const nextB = Array.from(m.querySelectorAll('button')).find(b => {
+                        const bt = (b.innerText || '').trim().toLowerCase();
+                        return bt === 'next' || bt === 'got it' || bt === 'close' || bt === 'x' || bt === 'далее' || bt === 'понятно';
+                    });
+                    if (nextB) { try { nextB.click(); } catch(e) {} }
+                    try { m.remove(); } catch(e) {}
+                }
+            });
+
             // 1. Coursera Cookie & Privacy Banner removal
             const acceptBtn = Array.from(document.querySelectorAll('button, a')).find(b => {
-                const t = (b.innerText || '').trim();
-                return t === 'Accept' || t === 'Accept all' || t === 'Принять все' || t === 'Принять';
+                const t = (b.innerText || '').trim().toLowerCase();
+                return t === 'accept' || t === 'accept all' || t === 'принять все' || t === 'принять';
             });
             if (acceptBtn) {
                 try { acceptBtn.click(); } catch(e) {}
@@ -293,7 +312,7 @@ def dismiss_all_popups(page):
                 const tl = t.toLowerCase();
                 const aria = (b.getAttribute('aria-label') || '').toLowerCase();
 
-                // DO NOT click page-level close/закрыть in the header of assignment/quiz pages!
+                // DO NOT click page-level close in the header of assignment/quiz pages!
                 const isCloseBtn = (tl === 'close' || tl.startsWith('close') || tl === 'yopish' || tl.startsWith('yopish') || tl === 'закрыть' || tl.startsWith('закрыть') || aria.includes('close') || aria.includes('закрыть') || aria.includes('yopish'));
                 if (isCloseBtn) {
                     if (!isAssignmentPage && b.closest("div[role='dialog'], .cds-Modal-container, .cds-Modal-dialog, [data-testid='modal'], .rc-Modal")) {
@@ -339,6 +358,7 @@ def dismiss_all_popups(page):
             acc.click(force=True, timeout=800)
     except Exception:
         pass
+    
     try:
         # Extra safeguard: Python-level click on commitment checkbox and Start the course (English + Russian)
         # Checkbox for commitment
@@ -1382,44 +1402,119 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
     return False
 
 def verify_student_name_with_3_checks(page, student_name):
-    """Verify My Name sahifasida ismni kiritib, galichka qo'yib, Submit bosadi (1x, 2x, 3x kutish bilan)."""
+    """Verify My Name sahifasida ismni kiritib, galichka qo'yib, Submit bosadi (1x, 2x, 3x kutish bilan).
+    Har qanday to'siq, popap va modallarni avtomat tozalab, ismni 100% tasdiqlaydi."""
     clean_name = (student_name or "").replace("`", "'").strip()
     print(f"\n[ISMNI TASDIQLASH] {clean_name}...")
     for v_try in range(1, 4):
         try:
             mult = v_try
+            try:
+                page.keyboard.press("Escape")
+            except Exception:
+                pass
+
             safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=CERTIFICATES")
-            time.sleep(3.0 * mult)
+            time.sleep(2.5 * mult)
+            try:
+                page.keyboard.press("Escape")
+            except Exception:
+                pass
+
+            # 1. Barcha to'siq modallarni (Your homepage got simpler, Great job va h.k.) butunlay yo'q qilamiz:
+            page.evaluate("""() => {
+                document.querySelectorAll("div[role='dialog'], .cds-Modal-container, .cds-Modal-dialog, [data-testid='modal'], div[aria-modal='true']").forEach(m => {
+                    const t = (m.innerText || '').toLowerCase();
+                    const hasNameInput = m.querySelector("input[type='text'], input:not([type])");
+                    if (!hasNameInput || t.includes('simpler') || t.includes('update') || t.includes('great job')) {
+                        const b = Array.from(m.querySelectorAll('button')).find(btn => {
+                            const bt = (btn.innerText || '').trim().toLowerCase();
+                            return bt === 'next' || bt === 'got it' || bt === 'close' || bt === 'x' || bt === 'далее';
+                        });
+                        if (b) { try { b.click(); } catch(e){} }
+                        try { m.remove(); } catch(e){}
+                    }
+                });
+                document.querySelectorAll('.cds-Modal-backdrop, div[data-testid="overlay"], [class*="pendo"]').forEach(b => {
+                    try { b.remove(); } catch(e){}
+                });
+            }""")
             time.sleep(1.0)
 
-            v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
-            if not v_btn.is_visible():
-                safe_navigate(page, "https://www.coursera.org/organizations/dedc")
-                time.sleep(3.0 * mult)
-                time.sleep(1.0)
+            # 2. 'Verify My Name' tugmasini qidirish va bosish (JS + Playwright)
+            clicked_verify_btn = page.evaluate("""() => {
+                const all = Array.from(document.querySelectorAll('button, a'));
+                const target = all.find(el => {
+                    const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                    return t.includes('verify my name') || t.includes('проверить мое имя') || t.includes('verify name');
+                });
+                if (target) {
+                    target.scrollIntoView({ block: 'center' });
+                    target.click();
+                    return true;
+                }
+                return false;
+            }""")
+
+            if not clicked_verify_btn:
                 v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
+                if v_btn.count() > 0:
+                    try:
+                        v_btn.click(force=True, timeout=3000)
+                        clicked_verify_btn = True
+                    except Exception:
+                        pass
 
-            if not v_btn.is_visible():
-                print("[ISMNI TASDIQLASH] 'Verify My Name' tugmasi yo'q (ism allaqachon tasdiqlangan!).")
-                return True
-
-            print(f"[ISMNI TASDIQLASH] 'Verify My Name' bosilmoqda (urinish #{v_try}/3 | {mult}x)...")
-            try:
-                v_btn.click(force=True)
-            except Exception:
+            if not clicked_verify_btn:
+                # DEDC bosh sahifasida ham tekshirib ko'ramiz
+                safe_navigate(page, "https://www.coursera.org/organizations/dedc")
+                time.sleep(2.5 * mult)
+                try:
+                    page.keyboard.press("Escape")
+                except Exception:
+                    pass
                 page.evaluate("""() => {
-                    const btns = Array.from(document.querySelectorAll('a, button'));
-                    const target = btns.find(b => {
-                        const t = (b.innerText || '').toLowerCase();
-                        return t.includes('verify my name') || t.includes('проверить мое имя');
+                    document.querySelectorAll("div[role='dialog'], .cds-Modal-container, .cds-Modal-dialog, [data-testid='modal']").forEach(m => {
+                        const t = (m.innerText || '').toLowerCase();
+                        if (t.includes('simpler') || t.includes('update') || t.includes('great job')) {
+                            const b = m.querySelector('button');
+                            if (b) { try { b.click(); } catch(e){} }
+                            try { m.remove(); } catch(e){}
+                        }
                     });
-                    if (target) target.click();
                 }""")
-            time.sleep(2.5 * mult)
+                clicked_verify_btn = page.evaluate("""() => {
+                    const all = Array.from(document.querySelectorAll('button, a'));
+                    const target = all.find(el => {
+                        const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                        return t.includes('verify my name') || t.includes('проверить мое имя') || t.includes('verify name');
+                    });
+                    if (target) {
+                        target.scrollIntoView({ block: 'center' });
+                        target.click();
+                        return true;
+                    }
+                    return false;
+                }""")
+                if not clicked_verify_btn:
+                    v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
+                    if v_btn.count() > 0:
+                        try:
+                            v_btn.click(force=True, timeout=3000)
+                            clicked_verify_btn = True
+                        except Exception:
+                            pass
 
-            # Modal dialog locatorini topamiz
-            dialog = page.locator("div[role='dialog'], .cds-Modal-container, .rc-Modal, div[aria-modal='true']").first
+            if not clicked_verify_btn:
+                b_txt = page.evaluate("() => document.body ? document.body.innerText.toLowerCase() : ''")
+                if "verify my name" not in b_txt and "проверить мое имя" not in b_txt:
+                    print("[ISMNI TASDIQLASH] 'Verify My Name' tugmasi yo'q (ism allaqachon tasdiqlangan!).")
+                    return True
 
+            print(f"[ISMNI TASDIQLASH] 'Verify My Name' bosildi! Ism to'ldirish formasi kutilmoqda ({v_try}/3)...")
+            time.sleep(2.0 * mult)
+
+            # 3. Aniq Ism kiritish MODALINI topish (faqat inputlari bor dialog tanlanadi!)
             parts = [p for p in clean_name.split() if p]
             if len(parts) >= 3:
                 first_name = parts[0]
@@ -1434,7 +1529,10 @@ def verify_student_name_with_3_checks(page, student_name):
                 middle_name = ""
                 last_name = ""
 
-            # 1. PLAYWRIGHT DIRECT LOCATOR FILL (Fokus o'g'irlashidan 100% himoyalangan)
+            dialog = page.locator("div[role='dialog']:has(input[type='text']), .cds-Modal-container:has(input[type='text']), div[aria-modal='true']:has(input[type='text']), form:has(input[type='text'])").first
+            if dialog.count() == 0:
+                dialog = page.locator("div[role='dialog'], .cds-Modal-container, div[aria-modal='true']").first
+
             inps = dialog.locator("input[type='text'], input:not([type])").all() if dialog.count() > 0 else []
             if not inps:
                 inps = page.locator("div[role='dialog'] input[type='text'], input[type='text']:visible").all()
@@ -1454,13 +1552,15 @@ def verify_student_name_with_3_checks(page, student_name):
             elif len(clean_inps) == 1:
                 clean_inps[0].fill(clean_name)
 
-            # 2. JAVASCRIPT REACT VALUE DISPATCH (React form validatsiyasini 100% uyg'otish)
+            # React dispatch orqali ham qiymat kiritish
             js_fn = first_name.replace("'", "\\'")
             js_mn = middle_name.replace("'", "\\'")
             js_ln = last_name.replace("'", "\\'")
             js_full = clean_name.replace("'", "\\'")
             page.evaluate(f"""() => {{
-                const modal = document.querySelector("div[role='dialog'], .cds-Modal-container, .rc-Modal") || document;
+                const modal = Array.from(document.querySelectorAll("div[role='dialog'], .cds-Modal-container, .rc-Modal, form")).find(m => {{
+                    return m.querySelector("input[type='text'], input:not([type])");
+                }}) || document;
                 const inps = Array.from(modal.querySelectorAll("input[type='text'], input:not([type])")).filter(i => {{
                     const p = (i.placeholder || '').toLowerCase();
                     return !p.includes('search') && !p.includes('поиск');
@@ -1487,9 +1587,11 @@ def verify_student_name_with_3_checks(page, student_name):
             }}""")
             time.sleep(0.5)
 
-            # 3. GALICHKA (CHECKBOX) - PLAYWRIGHT VA JS IKKALASI BILAN BELGILASH
+            # 4. GALICHKA (CHECKBOX)
             page.evaluate("""() => {
-                const modal = document.querySelector("div[role='dialog'], .cds-Modal-container, .rc-Modal") || document;
+                const modal = Array.from(document.querySelectorAll("div[role='dialog'], .cds-Modal-container, .rc-Modal, form")).find(m => {
+                    return m.querySelector("input[type='text'], input:not([type])");
+                }) || document;
                 const cbs = Array.from(modal.querySelectorAll("input[type='checkbox']"));
                 cbs.forEach(cb => {
                     if (!cb.checked) {
@@ -1510,14 +1612,16 @@ def verify_student_name_with_3_checks(page, student_name):
                     pass
             time.sleep(0.5)
 
-            # 4. SUBMIT TUGMASI (DISABLED BO'LSA HAM OCHIB BOSAMIZ)
+            # 5. SUBMIT TUGMASI
             clicked_sub = page.evaluate("""() => {
-                const modal = document.querySelector("div[role='dialog'], .cds-Modal-container, .rc-Modal") || document;
+                const modal = Array.from(document.querySelectorAll("div[role='dialog'], .cds-Modal-container, .rc-Modal, form")).find(m => {
+                    return m.querySelector("input[type='text'], input:not([type])");
+                }) || document;
                 const btns = Array.from(modal.querySelectorAll("button"));
                 const sub = btns.find(b => {
                     const t = (b.innerText || b.textContent || '').trim().toLowerCase();
                     return t === 'submit' || t === 'отправить' || t === 'save' || t === 'сохранить';
-                }) || btns.find(b => b.type === 'submit') || btns.find(b => b.className.includes('primary'));
+                }) || btns.find(b => b.type === 'submit') || btns.find(b => b.className && b.className.includes('primary'));
                 if (sub) {
                     sub.removeAttribute('disabled');
                     sub.disabled = false;
@@ -1537,7 +1641,7 @@ def verify_student_name_with_3_checks(page, student_name):
 
             if clicked_sub:
                 print("[ISMNI TASDIQLASH] Tasdiqlash muvaffaqiyatli yuborildi!")
-                time.sleep(4.0 * mult)
+                time.sleep(3.5 * mult)
                 return True
             else:
                 print(f"[!] Verify My Name Submit tugmasi topilmadi, qayta tekshirilmoqda ({v_try}/3)...")
@@ -1546,6 +1650,7 @@ def verify_student_name_with_3_checks(page, student_name):
             time.sleep(2)
 
     return False
+
 
 def extract_certificate_with_3_checks(page, student_name=""):
     """Sertifikat havolasini 3 martagacha (1x, 2x, 3x kutish bilan) tekshirib oladi. Agar kurs hali IN_PROGRESS bo'lsa, o'sha yerdagi kamchilikni (Quiz yoki Video) darhol topib bajaradi!"""
@@ -2794,7 +2899,7 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
             if sys.platform != "win32":
                 launch_args = launch_args + ["--no-sandbox", "--disable-dev-shm-usage"]
             exe_path = win_chrome if os.path.exists(win_chrome) else (linux_chrome if os.path.exists(linux_chrome) else None)
-            # Har bir o'quvchi uchun 100% toza Chrome profili - eski profillar (Muhammadumar va b.) butunlay yo'q qilinadi!
+                        # Har bir o'quvchi uchun 100% toza Chrome profili - eski profillar butunlay yo'q qilinadi!
             profile_dir = os.path.join(tempfile.gettempdir(), f"clean_chrome_prof_w{worker_id}")
             if os.path.exists(profile_dir):
                 try:
@@ -2802,6 +2907,28 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                 except Exception:
                     pass
             os.makedirs(profile_dir, exist_ok=True)
+
+            # Native Chrome popuplarini (Save password va Restore pages) butunlay yo'q qilish
+            try:
+                default_dir = os.path.join(profile_dir, "Default")
+                os.makedirs(default_dir, exist_ok=True)
+                pref_file = os.path.join(default_dir, "Preferences")
+                prefs_data = {
+                    "credentials_enable_service": False,
+                    "profile": {
+                        "password_manager_enabled": False,
+                        "exit_type": "Normal",
+                        "exited_cleanly": True
+                    },
+                    "autofill": {
+                        "profile_enabled": False,
+                        "credit_card_enabled": False
+                    }
+                }
+                with open(pref_file, "w", encoding="utf-8") as pf:
+                    json.dump(prefs_data, pf)
+            except Exception:
+                pass
 
             context = p.chromium.launch_persistent_context(
                 user_data_dir=profile_dir,
