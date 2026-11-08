@@ -3077,8 +3077,28 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                 ensure_enrolled_on_coursera(page)
 
             cert_url = None
-            # Sertifikat chiqmasa, xatoni topib to'g'rilash uchun 3 marta to'liq tekshirib harakat qiladi!
+
+            # 0. TEZKOR FAST-TRACK (Agar kurs allaqachon tugagan yoki faqat Verify qolib ketgan bo'lsa):
+            # Qaytadan kurs darslarini tekshirib o'tirmasdan, 10-15 soniyada darhol sertifikatni oladi!
+            try:
+                if status_callback:
+                    status_callback(f"⚡️ {full_name}: Tayyor natija yoki Verify holati tekshirilmoqda...")
+                print(f"{tag}[TEZKOR FAST-TRACK] {full_name}: Sertifikat yoki Verify holati tekshirilmoqda...")
+                fast_cert = extract_certificate_with_3_checks(page, full_name)
+                if not fast_cert:
+                    # Agar kurs testlari yechilganu, faqat Verify My Name qolgan bo'lsa:
+                    verify_student_name_with_3_checks(page, full_name)
+                    fast_cert = extract_certificate_with_3_checks(page, full_name)
+
+                if fast_cert:
+                    print(f"{tag}[YASHIN TEZLIK] {full_name} sertifikati 10 soniyada olindi: {fast_cert}")
+                    cert_url = fast_cert
+            except Exception as _fe:
+                print(f"{tag}[!] Fast-track tekshiruvida ogohlantirish: {_fe}")
+
             for full_try in range(1, 4):
+                if cert_url:
+                    break
                 try:
                     if full_try > 1:
                         print(f"\n{tag}[QAYTA TEKSHIRUV #{full_try}/3] {full_name}: Sertifikat chiqmagani sababli xatoni (test/video/verify) topib to'g'rilanmoqda...")
