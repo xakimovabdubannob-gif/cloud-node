@@ -18,6 +18,8 @@ Qoidalar:
 import sys
 import os
 import re
+import tempfile
+import shutil
 import time
 import json
 import ssl
