@@ -120,6 +120,7 @@ agent_cert_counts = {}
 agent_task_start_times = {}
 agent_last_durations = {}
 recent_completed_records = []
+student_try_counts = {}
 
 
 def save_tried_cluster():
@@ -440,6 +441,8 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                     continue
                 s_norm = normalize_student_key(s_name)
                 if s_norm in done_norm:
+                    continue
+                if s_norm in unrec_norm or student_try_counts.get(s_norm, 0) >= 3:
                     continue
                 if s_norm == normalize_student_key("MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"):
                     continue
@@ -2244,17 +2247,35 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     elif status == "UNRECOVERABLE":
                         _state_mem_cache["unrec"].add(s_name)
                 else:
-                    sticky = _sticky_workers.get(w_key)
-                    if sticky and sticky.get("student", {}).get("name") == s_name and sticky.get("tries", 1) < 2:
-                        sticky["tries"] = sticky.get("tries", 1) + 1
-                        if acc_line:
-                            sticky["account_line"] = acc_line.strip()
-                        in_progress_students[s_name] = time.time()
-                    else:
+                    s_norm_chk = normalize_student_key(s_name)
+                    student_try_counts[s_norm_chk] = student_try_counts.get(s_norm_chk, 0) + 1
+                    cur_cnt = student_try_counts[s_norm_chk]
+                    print(f"[URINISH #] {s_name}: {cur_cnt}/3-urinish yakunlandi.")
+                    if cur_cnt >= 3:
+                        fail_reason = "3 marta urinishda ham sertifikat chiqmadi (Verify/xatolik)"
+                        print(f"[LIMIT YETDI] {s_name} 3 marta urinildi, navbatdan chiqarildi! Sabab: {fail_reason}")
+                        _state_mem_cache["unrec"].add(s_name)
+                        try:
+                            with open(ERRORS_FILE, "a", encoding="utf-8") as ef:
+                                ef.write(f"{s_name} | {st.get('class_name', '')} | {fail_reason} | {st.get('doc_key', '')}\n")
+                        except Exception:
+                            pass
                         _sticky_workers.pop(w_key, None)
                         _worker_assigned.pop(w_key, None)
                         in_progress_students.pop(s_name, None)
                         tried_cluster_set.add(s_name)
+                    else:
+                        sticky = _sticky_workers.get(w_key)
+                        if sticky and sticky.get("student", {}).get("name") == s_name and sticky.get("tries", 1) < 2:
+                            sticky["tries"] = sticky.get("tries", 1) + 1
+                            if acc_line:
+                                sticky["account_line"] = acc_line.strip()
+                            in_progress_students[s_name] = time.time()
+                        else:
+                            _sticky_workers.pop(w_key, None)
+                            _worker_assigned.pop(w_key, None)
+                            in_progress_students.pop(s_name, None)
+                            tried_cluster_set.add(s_name)
                 if node_id in cluster_nodes:
                     if "worker_statuses" not in cluster_nodes[node_id]:
                         cluster_nodes[node_id]["worker_statuses"] = {}
