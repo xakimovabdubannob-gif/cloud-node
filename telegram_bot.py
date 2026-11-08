@@ -2400,18 +2400,19 @@ class TelegramBotServer:
         buttons = []
         for idx, it in enumerate(queue, 1):
             row_actions = []
+            oid = it.get("id") or str(idx)
             if it.get("status") == "active":
                 if idx > 1:
-                    row_actions.append({"text": f"⚡ 1-qilish (#{idx})", "callback_data": f"q_top|{idx}"})
+                    row_actions.append({"text": f"⚡ 1-qilish", "callback_data": f"q_top|{oid}"})
                 if idx > 1:
-                    row_actions.append({"text": "⬆️", "callback_data": f"q_up|{idx}"})
+                    row_actions.append({"text": "⬆️", "callback_data": f"q_up|{oid}"})
                 if idx < len(queue):
-                    row_actions.append({"text": "⬇️", "callback_data": f"q_down|{idx}"})
-                row_actions.append({"text": "⏸ Muzlatish", "callback_data": f"q_pause|{idx}"})
-                row_actions.append({"text": "🗑 O'chirish", "callback_data": f"q_del|{idx}"})
+                    row_actions.append({"text": "⬇️", "callback_data": f"q_down|{oid}"})
+                row_actions.append({"text": "⏸ Muzlatish", "callback_data": f"q_pause|{oid}"})
+                row_actions.append({"text": "🗑 O'chirish", "callback_data": f"q_del|{oid}"})
             else:
-                row_actions.append({"text": f"▶️ Faollashtirish (#{idx})", "callback_data": f"q_pause|{idx}"})
-                row_actions.append({"text": "🗑 O'chirish", "callback_data": f"q_del|{idx}"})
+                row_actions.append({"text": f"▶️ Faollashtirish", "callback_data": f"q_pause|{oid}"})
+                row_actions.append({"text": "🗑 O'chirish", "callback_data": f"q_del|{oid}"})
             buttons.append(row_actions)
 
         par_label = "👥 Parallel: YOQILGAN 🟢" if parallel else "👥 Parallel: O'CHIQLIGICHA ⚪"
@@ -2980,25 +2981,25 @@ class TelegramBotServer:
                 msg_id = cb.get("message", {}).get("message_id")
                 alert_text = ""
                 if data.startswith("q_top|"):
-                    idx = int(data.split("|")[1])
-                    ok = order_queue_manager.move_order_to_top_by_index(idx)
+                    oid = data.split("|")[1]
+                    ok = order_queue_manager.move_order_to_top_by_id(oid)
                     alert_text = "⚡ 1-o'ringa chiqarildi! Kompyuterlar darhol bunga o'tmoqda." if ok else "Xatolik!"
                 elif data.startswith("q_up|"):
-                    idx = int(data.split("|")[1])
-                    ok = order_queue_manager.swap_order_by_index(idx, "up")
+                    oid = data.split("|")[1]
+                    ok = order_queue_manager.swap_order_by_id(oid, "up")
                     alert_text = "⬆️ 1 pog'ona oldinga surildi!" if ok else "Surib bo'lmadi!"
                 elif data.startswith("q_down|"):
-                    idx = int(data.split("|")[1])
-                    ok = order_queue_manager.swap_order_by_index(idx, "down")
+                    oid = data.split("|")[1]
+                    ok = order_queue_manager.swap_order_by_id(oid, "down")
                     alert_text = "⬇️ 1 pog'ona orqaga surildi!" if ok else "Surib bo'lmadi!"
                 elif data.startswith("q_pause|"):
-                    idx = int(data.split("|")[1])
-                    new_st = order_queue_manager.toggle_order_pause_by_index(idx)
+                    oid = data.split("|")[1]
+                    new_st = order_queue_manager.toggle_order_pause_by_id(oid)
                     alert_text = "⏸ Buyurtma muzlatildi!" if new_st == "paused" else "▶️ Buyurtma faollashtirildi!"
                 elif data.startswith("q_del|"):
-                    idx = int(data.split("|")[1])
-                    ok = order_queue_manager.archive_order_by_index(idx)
-                    alert_text = "🗑 Navbatdan olindi va arxivga saqlandi!" if ok else "O'chirib bo'lmadi!"
+                    oid = data.split("|")[1]
+                    ok = order_queue_manager.archive_order_by_id(oid)
+                    alert_text = "🗑 Buyurtma bittada navbatdan olindi!" if ok else "O'chirib bo'lmadi!"
                 elif data == "q_toggle_par":
                     is_par = order_queue_manager.toggle_parallel_mode()
                     alert_text = "👥 Parallel rejim yoqildi!" if is_par else "⚡ Ketma-ket rejim yoqildi!"

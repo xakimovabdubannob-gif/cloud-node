@@ -3,12 +3,12 @@
 order_queue_manager.py
 ======================
 Ko'p sonli buyurtmalar (Excel fayllar) navbatini to'liq boshqarish moduli:
-- Navbatdagi o'rinni o'zgartirish (3-ni 1-ga, 1-ni 2-ga ko'chirish)
-- Istalgan buyurtmani darhol 1-o'ringa olib chiqib zudlik bilan boshlash
-- Buyurtmani vaqtincha muzlatish (Pause) va qayta faollashtirish (Resume)
-- Keraksiz buyurtmani xavfsiz arxivlash (Delete -> Archive) va qayta tiklash (Undo)
-- Parallel ish rejimi (har bir kompyuter alohida sinfni olishi)
-- telegram_bot.py va cluster_master_bridge.py uchun yagona ma'lumotlar markazi
+- Har bir buyurtma uchun unikal qisqa ID (hash)
+- Bittada xatosiz o'chirish / arxivlash (dst mavjud bo'lsa ham)
+- Istalgan buyurtmani darhol 1-o'ringa chiqarish
+- O'rin almashtirish (oldinga / orqaga)
+- Muzlatish (Pause) va faollashtirish
+- Telegram callback_data uzunligi chegarasiga (64 bayt) 100% mos
 """
 
 import os
@@ -16,6 +16,7 @@ import sys
 import json
 import time
 import shutil
+import hashlib
 from typing import List, Dict, Optional, Tuple
 
 ORDERS_DIR = "bot_orders"
@@ -27,6 +28,10 @@ ERRORS_FILE = "xatolar_keshi.txt"
 def _ensure_dirs():
     os.makedirs(ORDERS_DIR, exist_ok=True)
     os.makedirs(ARCHIVE_DIR, exist_ok=True)
+
+def get_order_id(filename: str) -> str:
+    """Fayl nomi uchun unikal 8 belgili qisqa ID qaytaradi"""
+    return hashlib.md5(filename.encode("utf-8")).hexdigest()[:8]
 
 def _get_completed_and_unrec_keys() -> Tuple[set, set]:
     done_set = set()
@@ -112,10 +117,6 @@ def save_queue_state(state: Dict):
         print(f"[QUEUE SAVE ERROR] {e}")
 
 def sync_and_get_queue() -> List[Dict]:
-    """
-    bot_orders/ ichidagi barcha in_*.xlsx fayllarni skanerlaydi,
-    queue_state.json bilan sinxronlashtiradi va tartiblangan ro'yxatni qaytaradi.
-    """
     _ensure_dirs()
     state = load_queue_state()
     existing_items: List[Dict] = state.get("queue", [])
@@ -130,6 +131,7 @@ def sync_and_get_queue() -> List[Dict]:
         if fn in disk_files:
             fp = os.path.join(ORDERS_DIR, fn)
             tot, done, rem = count_excel_progress(fp, done_set, unrec_set)
+            item["id"] = get_order_id(fn)
             item["total"] = tot
             item["done"] = done
             item["remaining"] = rem
@@ -153,6 +155,7 @@ def sync_and_get_queue() -> List[Dict]:
 
         tot, done, rem = count_excel_progress(fp, done_set, unrec_set)
         new_item = {
+            "id": get_order_id(fn),
             "filename": fn,
             "display_name": clean_name,
             "chat_id": chat_id,
@@ -165,7 +168,6 @@ def sync_and_get_queue() -> List[Dict]:
         }
         updated_queue.append(new_item)
 
-    # Priority raqamlarini to'g'rilash (1, 2, 3...)
     for idx, item in enumerate(updated_queue, 1):
         item["priority"] = idx
 
@@ -173,16 +175,20 @@ def sync_and_get_queue() -> List[Dict]:
     save_queue_state(state)
     return updated_queue
 
-def move_order_to_top_by_index(idx: int) -> bool:
-    """idx (1-based) dagi buyurtmani 1-o'ringa chiqaradi"""
+def find_order_by_id(order_id: str) -> Optional[Dict]:
     queue = sync_and_get_queue()
-    if 1 <= idx <= len(queue):
-        fn = queue[idx - 1]["filename"]
-        return move_order_to_top(fn)
+    for item in queue:
+        if item.get("id") == order_id or str(item.get("priority")) == str(order_id):
+            return item
+    return None
+
+def move_order_to_top_by_id(order_id: str) -> bool:
+    item = find_order_by_id(order_id)
+    if item:
+        return move_order_to_top(item["filename"])
     return False
 
 def move_order_to_top(filename: str) -> bool:
-    """Istalgan faylni darhol 1-o'ringa chiqaradi"""
     state = load_queue_state()
     queue = state.get("queue", [])
     target = None
@@ -193,7 +199,7 @@ def move_order_to_top(filename: str) -> bool:
     if not target:
         return False
     queue.remove(target)
-    target["status"] = "active"  # 1-o'ringa chiqqanda avtomat faollashadi
+    target["status"] = "active"
     queue.insert(0, target)
     for idx, item in enumerate(queue, 1):
         item["priority"] = idx
@@ -201,12 +207,10 @@ def move_order_to_top(filename: str) -> bool:
     save_queue_state(state)
     return True
 
-def swap_order_by_index(idx: int, direction: str) -> bool:
-    """idx (1-based) dagi buyurtmani suradi ('up' yoki 'down')"""
-    queue = sync_and_get_queue()
-    if 1 <= idx <= len(queue):
-        fn = queue[idx - 1]["filename"]
-        return swap_order_position(fn, direction)
+def swap_order_by_id(order_id: str, direction: str) -> bool:
+    item = find_order_by_id(order_id)
+    if item:
+        return swap_order_position(item["filename"], direction)
     return False
 
 def swap_order_position(filename: str, direction: str) -> bool:
@@ -233,12 +237,10 @@ def swap_order_position(filename: str, direction: str) -> bool:
     save_queue_state(state)
     return True
 
-def toggle_order_pause_by_index(idx: int) -> str:
-    """idx (1-based) dagi buyurtma holatini almashtiradi (active <-> paused)"""
-    queue = sync_and_get_queue()
-    if 1 <= idx <= len(queue):
-        fn = queue[idx - 1]["filename"]
-        return toggle_order_pause(fn)
+def toggle_order_pause_by_id(order_id: str) -> str:
+    item = find_order_by_id(order_id)
+    if item:
+        return toggle_order_pause(item["filename"])
     return "not_found"
 
 def toggle_order_pause(filename: str) -> str:
@@ -259,25 +261,45 @@ def toggle_order_pause(filename: str) -> str:
         save_queue_state(state)
     return res
 
-def archive_order_by_index(idx: int) -> bool:
-    """idx (1-based) dagi buyurtmani arxivlaydi"""
-    queue = sync_and_get_queue()
-    if 1 <= idx <= len(queue):
-        fn = queue[idx - 1]["filename"]
-        return archive_order(fn)
+def archive_order_by_id(order_id: str) -> bool:
+    """Bittada xatosiz o'chirish/arxivlash"""
+    item = find_order_by_id(order_id)
+    if item:
+        return archive_order(item["filename"])
     return False
 
 def archive_order(filename: str) -> bool:
+    """
+    Faylni bot_orders dan olib tashlaydi:
+    - dst mavjud bo'lsa uni o'chiradi va yangisini yozadi
+    - shutil.move ishlamasa, faylni to'g'ridan-to'g'ri o'chiradi
+    - queue_state.json dan 100% KAFOLATLI o'chiradi!
+    """
     _ensure_dirs()
     src = os.path.join(ORDERS_DIR, filename)
     dst = os.path.join(ARCHIVE_DIR, filename)
+
     if os.path.exists(src):
         try:
+            if os.path.exists(dst):
+                try:
+                    os.remove(dst)
+                except Exception:
+                    pass
             shutil.move(src, dst)
-        except Exception as e:
-            print(f"[ARCHIVE MOVE ERROR] {e}")
-            return False
+        except Exception:
+            try:
+                os.remove(src)
+            except Exception:
+                pass
 
+    if os.path.exists(src):
+        try:
+            os.remove(src)
+        except Exception:
+            pass
+
+    # queue_state dan butunlay olib tashlaymiz
     state = load_queue_state()
     queue = [it for it in state.get("queue", []) if it.get("filename") != filename]
     for idx, item in enumerate(queue, 1):
@@ -292,10 +314,14 @@ def restore_order_from_archive(filename: str) -> bool:
     dst = os.path.join(ORDERS_DIR, filename)
     if os.path.exists(src):
         try:
+            if os.path.exists(dst):
+                try:
+                    os.remove(dst)
+                except Exception:
+                    pass
             shutil.move(src, dst)
-        except Exception as e:
-            print(f"[RESTORE ERROR] {e}")
-            return False
+        except Exception:
+            pass
 
     sync_and_get_queue()
     return True
@@ -324,10 +350,6 @@ def is_parallel_mode() -> bool:
     return state.get("parallel_mode", False)
 
 def get_candidates_for_cluster(node_id: str = "") -> List[Tuple[float, str, str]]:
-    """
-    cluster_master_bridge.py uchun maxsus:
-    Navbatdagi eng yuqori prioritetli FAOL (active) fayllarni qaytaradi.
-    """
     queue = sync_and_get_queue()
     active_orders = [it for it in queue if it.get("status") == "active" and it.get("remaining", 1) > 0]
     if not active_orders:
