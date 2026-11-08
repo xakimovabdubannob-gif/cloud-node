@@ -1696,7 +1696,26 @@ def extract_certificate_with_3_checks(page, student_name=""):
                 if "/account/accomplishments/verify/" in page.url:
                     return page.url
 
-            # Agar CERTIFICATES bo'sh bo'lsa, IN_PROGRESS tabini tekshiramiz: qaysi Quiz yoki Video qolib ketganini ko'ramiz!
+                        # 1.1 KAFOLATLI VERIFY MY NAME TEKSHIRUVI (Sertifikat kutayotgan bo'lsa darhol tasdiqlash!)
+            b_txt = page.evaluate("() => document.body ? document.body.innerText.toLowerCase() : ''")
+            if "verify my name" in b_txt or "проверить мое имя" in b_txt or "name verification" in b_txt:
+                print(f"[SERTIFIKAT] 'Verify My Name' aniqlandi! {student_name} uchun ism tasdiqlanmoqda...")
+                verify_student_name_with_3_checks(page, student_name)
+                time.sleep(3.0 * mult)
+                safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=CERTIFICATES")
+                time.sleep(3.0 * mult)
+                dismiss_all_popups(page)
+                links2 = page.evaluate("""() => Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h && h.includes('/account/accomplishments/verify/'))""")
+                if links2:
+                    return links2[0]
+                vc2 = page.locator("a:has-text('View certificate'), button:has-text('View certificate'), a:has-text('Посмотреть сертификат')").first
+                if vc2.count() > 0 and vc2.is_visible():
+                    vc2.click(force=True)
+                    time.sleep(3.0 * mult)
+                    if "/account/accomplishments/verify/" in page.url:
+                        return page.url
+
+# Agar CERTIFICATES bo'sh bo'lsa, IN_PROGRESS tabini tekshiramiz: qaysi Quiz yoki Video qolib ketganini ko'ramiz!
             safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=IN_PROGRESS")
             time.sleep(4)
             dismiss_all_popups(page)
