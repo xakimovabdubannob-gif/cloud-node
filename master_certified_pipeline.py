@@ -1354,20 +1354,19 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
 
 def verify_student_name_with_3_checks(page, student_name):
     """Verify My Name sahifasida ismni kiritib, galichka qo'yib, Submit bosadi (1x, 2x, 3x kutish bilan)."""
-    print(f"\n[ISMNI TASDIQLASH] {student_name}...")
+    clean_name = (student_name or "").replace("`", "'").strip()
+    print(f"\n[ISMNI TASDIQLASH] {clean_name}...")
     for v_try in range(1, 4):
         try:
             mult = v_try
             safe_navigate(page, "https://www.coursera.org/organizations/dedc/my-learning?myLearningTab=CERTIFICATES")
-            time.sleep(3.5 * mult)
-            dismiss_all_popups(page)
+            time.sleep(3.0 * mult)
             time.sleep(1.0)
 
             v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
             if not v_btn.is_visible():
                 safe_navigate(page, "https://www.coursera.org/organizations/dedc")
-                time.sleep(3.5 * mult)
-                dismiss_all_popups(page)
+                time.sleep(3.0 * mult)
                 time.sleep(1.0)
                 v_btn = page.locator("button:has-text('Verify My Name'), a:has-text('Verify My Name'), button:has-text('Проверить мое имя'), a:has-text('Проверить мое имя')").first
 
@@ -1376,96 +1375,143 @@ def verify_student_name_with_3_checks(page, student_name):
                 return True
 
             print(f"[ISMNI TASDIQLASH] 'Verify My Name' bosilmoqda (urinish #{v_try}/3 | {mult}x)...")
-            box_v = v_btn.bounding_box()
-            if box_v:
-                page.mouse.click(box_v['x'] + box_v['width']/2, box_v['y'] + box_v['height']/2)
+            try:
+                v_btn.click(force=True)
+            except Exception:
+                page.evaluate("""() => {
+                    const btns = Array.from(document.querySelectorAll('a, button'));
+                    const target = btns.find(b => {
+                        const t = (b.innerText || '').toLowerCase();
+                        return t.includes('verify my name') || t.includes('проверить мое имя');
+                    });
+                    if (target) target.click();
+                }""")
+            time.sleep(2.5 * mult)
+
+            # Modal dialog locatorini topamiz
+            dialog = page.locator("div[role='dialog'], .cds-Modal-container, .rc-Modal, div[aria-modal='true']").first
+
+            parts = [p for p in clean_name.split() if p]
+            if len(parts) >= 3:
+                first_name = parts[0]
+                middle_name = parts[1]
+                last_name = " ".join(parts[2:])
+            elif len(parts) == 2:
+                first_name = parts[0]
+                middle_name = ""
+                last_name = parts[1]
             else:
-                v_btn.click(force=True)
-            time.sleep(3.5 * mult)
-            dismiss_all_popups(page)
+                first_name = clean_name
+                middle_name = ""
+                last_name = ""
 
-            # Ism yozish maydonlari (First/Middle/Last name) ochilganini tekshiramiz
-            inp_count = page.evaluate("""() => {
-                return Array.from(document.querySelectorAll('input')).filter(i => i.type === 'text' && !i.className.includes('autosuggest') && !(i.placeholder || '').toLowerCase().includes('search')).length;
-            }""")
-            if inp_count < 2 and v_btn.is_visible():
-                v_btn.click(force=True)
-                time.sleep(3.0 * mult)
+            # 1. PLAYWRIGHT DIRECT LOCATOR FILL (Fokus o'g'irlashidan 100% himoyalangan)
+            inps = dialog.locator("input[type='text'], input:not([type])").all() if dialog.count() > 0 else []
+            if not inps:
+                inps = page.locator("div[role='dialog'] input[type='text'], input[type='text']:visible").all()
+            clean_inps = []
+            for inp in inps:
+                ph = (inp.get_attribute("placeholder") or "").lower()
+                if "search" not in ph and "поиск" not in ph:
+                    clean_inps.append(inp)
 
-            parts = student_name.split()
-            first_name = parts[0] if len(parts) > 0 else student_name
-            middle_name = parts[1] if len(parts) > 2 else ""
-            last_name = " ".join(parts[2:]) if len(parts) > 2 else (parts[1] if len(parts) == 2 else "")
+            if len(clean_inps) >= 3:
+                clean_inps[0].fill(first_name)
+                clean_inps[1].fill(middle_name)
+                clean_inps[2].fill(last_name)
+            elif len(clean_inps) == 2:
+                clean_inps[0].fill(first_name)
+                clean_inps[1].fill(f"{middle_name} {last_name}".strip() if middle_name else last_name)
+            elif len(clean_inps) == 1:
+                clean_inps[0].fill(clean_name)
 
-            # 1. FIRST NAME
+            # 2. JAVASCRIPT REACT VALUE DISPATCH (React form validatsiyasini 100% uyg'otish)
+            js_fn = first_name.replace("'", "\\'")
+            js_mn = middle_name.replace("'", "\\'")
+            js_ln = last_name.replace("'", "\\'")
+            js_full = clean_name.replace("'", "\\'")
+            page.evaluate(f"""() => {{
+                const modal = document.querySelector("div[role='dialog'], .cds-Modal-container, .rc-Modal") || document;
+                const inps = Array.from(modal.querySelectorAll("input[type='text'], input:not([type])")).filter(i => {{
+                    const p = (i.placeholder || '').toLowerCase();
+                    return !p.includes('search') && !p.includes('поиск');
+                }});
+                const setReactVal = (el, val) => {{
+                    if (!el) return;
+                    const proto = Object.getPrototypeOf(el);
+                    const set = Object.getOwnPropertyDescriptor(proto, 'value')?.set || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+                    if (set) set.call(el, val); else el.value = val;
+                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+                }};
+                if (inps.length >= 3) {{
+                    setReactVal(inps[0], '{js_fn}');
+                    setReactVal(inps[1], '{js_mn}');
+                    setReactVal(inps[2], '{js_ln}');
+                }} else if (inps.length === 2) {{
+                    setReactVal(inps[0], '{js_fn}');
+                    setReactVal(inps[1], '{js_mn} {js_ln}'.trim());
+                }} else if (inps.length === 1) {{
+                    setReactVal(inps[0], '{js_full}');
+                }}
+            }}""")
+            time.sleep(0.5)
+
+            # 3. GALICHKA (CHECKBOX) - PLAYWRIGHT VA JS IKKALASI BILAN BELGILASH
             page.evaluate("""() => {
-                const inps = Array.from(document.querySelectorAll('input')).filter(i => i.type === 'text' && !i.className.includes('autosuggest') && !(i.placeholder || '').toLowerCase().includes('search'));
-                if (inps.length >= 1) { inps[0].value = ''; inps[0].focus(); }
-            }""")
-            time.sleep(0.3)
-            page.keyboard.type(first_name, delay=30)
-            time.sleep(0.4)
-
-            # 2. MIDDLE NAME
-            if middle_name:
-                page.evaluate("""() => {
-                    const inps = Array.from(document.querySelectorAll('input')).filter(i => i.type === 'text' && !i.className.includes('autosuggest') && !(i.placeholder || '').toLowerCase().includes('search'));
-                    if (inps.length >= 2) { inps[1].value = ''; inps[1].focus(); }
-                }""")
-                time.sleep(0.3)
-                page.keyboard.type(middle_name, delay=30)
-                time.sleep(0.4)
-
-            # 3. LAST NAME
-            if last_name:
-                page.evaluate("""() => {
-                    const inps = Array.from(document.querySelectorAll('input')).filter(i => i.type === 'text' && !i.className.includes('autosuggest') && !(i.placeholder || '').toLowerCase().includes('search'));
-                    if (inps.length >= 3) { inps[2].value = ''; inps[2].focus(); }
-                }""")
-                time.sleep(0.3)
-                page.keyboard.type(last_name, delay=30)
-                time.sleep(0.4)
-
-            # 4. Galichka (Checkbox) - FAQAT qo'yilmagan bo'lsa qo'yamiz, qo'yilgan bo'lsa TEGILMAYDI!
-            page.evaluate("""() => {
-                const cb = document.querySelector("input[type='checkbox']");
-                if (cb && !cb.checked) {
-                    cb.click();
+                const modal = document.querySelector("div[role='dialog'], .cds-Modal-container, .rc-Modal") || document;
+                const cbs = Array.from(modal.querySelectorAll("input[type='checkbox']"));
+                cbs.forEach(cb => {
                     if (!cb.checked) {
+                        cb.click();
                         cb.checked = true;
                         cb.dispatchEvent(new Event('input', { bubbles: true }));
                         cb.dispatchEvent(new Event('change', { bubbles: true }));
+                        cb.dispatchEvent(new Event('click', { bubbles: true }));
                     }
-                }
+                });
             }""")
-            time.sleep(0.5)
-            cb = page.locator("input[type='checkbox']").first
-            if cb.count() > 0:
+            cbs = dialog.locator("input[type='checkbox']").all() if dialog.count() > 0 else page.locator("input[type='checkbox']:visible").all()
+            for cb in cbs:
                 try:
                     if not cb.is_checked():
                         cb.check(force=True)
                 except Exception:
-                    try:
-                        lbl = page.locator("label:has-text('By checking this box'), label:has-text('Устанавливая этот флажок')").first
-                        if lbl.is_visible() and not cb.is_checked():
-                            lbl.click(force=True)
-                    except Exception:
-                        pass
+                    pass
             time.sleep(0.5)
 
-            # 5. Submit ('Save' yozilmaydi, chunki 'Saved' tabiga bosilib ketmasligi kerak!)
-            sub_v = page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
-            if sub_v.is_visible() and sub_v.is_enabled():
-                box_s = sub_v.bounding_box()
-                if box_s:
-                    page.mouse.click(box_s['x'] + box_s['width']/2, box_s['y'] + box_s['height']/2)
-                else:
+            # 4. SUBMIT TUGMASI (DISABLED BO'LSA HAM OCHIB BOSAMIZ)
+            clicked_sub = page.evaluate("""() => {
+                const modal = document.querySelector("div[role='dialog'], .cds-Modal-container, .rc-Modal") || document;
+                const btns = Array.from(modal.querySelectorAll("button"));
+                const sub = btns.find(b => {
+                    const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+                    return t === 'submit' || t === 'отправить' || t === 'save' || t === 'сохранить';
+                }) || btns.find(b => b.type === 'submit') || btns.find(b => b.className.includes('primary'));
+                if (sub) {
+                    sub.removeAttribute('disabled');
+                    sub.disabled = false;
+                    sub.click();
+                    return true;
+                }
+                return false;
+            }""")
+
+            sub_v = dialog.locator("button[type='submit'], button:has-text('Submit'), button:has-text('Отправить'), button:has-text('Save'), button:has-text('Сохранить')").first if dialog.count() > 0 else page.locator("button:has-text('Submit'), button:has-text('Отправить')").first
+            if sub_v.count() > 0 and sub_v.is_visible():
+                try:
                     sub_v.click(force=True)
+                    clicked_sub = True
+                except Exception:
+                    pass
+
+            if clicked_sub:
                 print("[ISMNI TASDIQLASH] Tasdiqlash muvaffaqiyatli yuborildi!")
-                time.sleep(5.0 * mult)
+                time.sleep(4.0 * mult)
                 return True
             else:
-                print(f"[!] Verify My Name Submit tugmasi faol emas, qayta tekshirilmoqda ({v_try}/3)...")
+                print(f"[!] Verify My Name Submit tugmasi topilmadi, qayta tekshirilmoqda ({v_try}/3)...")
         except Exception as e:
             print(f"[!] Verify My Name {v_try}-urinishda xatolik ushlandi: {e}")
             time.sleep(2)

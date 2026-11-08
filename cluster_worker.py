@@ -103,7 +103,7 @@ class ClusterWorkerNode:
         self.pc_name = f"{socket.gethostname()}-{mac_tail}"
         self.node_id = self.pc_name.replace(" ", "_")[:28]
         self.ram_gb = get_ram_gb()
-        default_w = int(os.environ.get("WORKER_COUNT", "4"))
+        default_w = int(os.environ.get("WORKER_COUNT", "2"))
         self.target_workers = default_w
         self.approved = False
         self.master_url = ""
@@ -212,11 +212,6 @@ class ClusterWorkerNode:
 
     def worker_thread_fn(self, local_wid: int):
         while True:
-            # GitHub Runner 6 soat yashaydi. 5.5 soat (19800 soniya) o'tgach, o'chishidan 30 daqiqa oldin xavfsiz to'xtaymiz
-            if hasattr(self, 'start_time') and (time.time() - self.start_time > 19800):
-                print(f"[RUNNER TIMEOUT SAFEGUARD] Kompyuter 5.5 soat ishladi. O'chishidan 30 daqiqa oldin yangi vazifa olinmadi.")
-                time.sleep(30)
-                break
 
             if not self.approved or local_wid > self.target_workers or not self.master_url:
                 time.sleep(2)

@@ -1,20 +1,21 @@
 @echo off
 cd /d "d:\uzbekcodersbot"
 chcp 65001 >nul
-title UZBEK CODERS - SHU KOMPYUTERDA ISHLASH REJIMI (4 TA AGENT)
+title UZBEK CODERS - SHU KOMPYUTERDA ISHLASH REJIMI (2 TA AGENT)
 color 0A
 echo ======================================================================
-echo    UZBEK CODERS BOT - SHU KOMPYUTERDA ISHLASH REJIMI
+echo    UZBEK CODERS BOT - SHU KOMPYUTERDA ISHLASH REJIMI (2 TA AGENT)
 echo ======================================================================
 echo.
 echo  [1/2] GitHub Master Serverga ulanmoqda...
-echo  [2/2] Barcha 4 ta AI Agent ishga tushirilmoqda...
+echo  [2/2] 2 ta AI Agent ekranning chap va o'ng tomonida ochilmoqda...
 echo.
-echo  Endi Telegram botga Excel faylni tashlasangiz,
-echo  barcha buyurtmalar AYNAN SHU KOMPYUTERDA bajariladi!
+echo  Endi Telegram botga Excel faylni tashlasangiz yoki davom ettirishni bossangiz,
+echo  barcha buyurtmalar AYNAN SHU KOMPYUTERDA 2 TA AGENTDA bajariladi!
 echo ======================================================================
 echo.
 set HEADLESS=0
 set GUI_MODE=1
-python -u cluster_worker.py https://existence-incurred-film-cardiovascular.trycloudflare.com
+set WORKER_COUNT=2
+python -u cluster_worker.py https://med-infringement-steven-responsible.trycloudflare.com
 pause

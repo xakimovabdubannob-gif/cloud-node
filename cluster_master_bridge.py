@@ -80,7 +80,7 @@ if os.path.exists(NODES_STATE_FILE):
         for _nid, _ninf in cluster_nodes.items():
             _ninf["idle_alerted"] = False
             _ram_n = int(_ninf.get("ram_gb", 8))
-            _target_w = 6 if _ram_n >= 14 else 4
+            _target_w = 2
             if int(_ninf.get("workers", 0)) < _target_w:
                 _ninf["workers"] = _target_w
             _max_w = int(_ninf.get("workers", _target_w))
@@ -382,7 +382,6 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 sn_norm = normalize_student_key(sn_sticky)
                 if (
                     sn_norm not in done_norm
-                    and sn_norm not in unrec_norm
                     and sn_norm not in busy_by_others_norm
                     and sticky.get("tries", 1) < 10
                 ):
@@ -438,7 +437,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 if not s_name:
                     continue
                 s_norm = normalize_student_key(s_name)
-                if s_norm in done_norm or s_norm in unrec_norm:
+                if s_norm in done_norm:
                     continue
                 if s_norm == normalize_student_key("MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI"):
                     continue

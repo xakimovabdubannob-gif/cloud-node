@@ -2436,7 +2436,7 @@ class TelegramBotServer:
                 sts = parse_students_from_excel(fpath)
                 if not sts:
                     continue
-                rem = [s for s in sts if s["name"] not in done_set and s["name"] not in unrec_set]
+                rem = [s for s in sts if s["name"] not in done_set]
                 if rem:
                     bn = os.path.basename(fpath)
 # archived revival completely disabled
