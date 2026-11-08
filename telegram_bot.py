@@ -2451,6 +2451,7 @@ class TelegramBotServer:
                         self.send_message(
                             notify_chat_id,
                             f"▶️ <b>QOLGAN JOYIDAN DAVOM ETTIRILDI!</b>\n"
+                            f"📁 Fayl: <b>{res_orig_fname}.xlsx</b>\n"
                             f"━━━━━━━━━━━━━━━━━━━━━━\n"
                             f"👥 Jami ro'yxat: <b>{len(sts)} ta</b>\n"
                             f"✅ Olingan sertifikatlar: <b>{done_c} ta</b>\n"

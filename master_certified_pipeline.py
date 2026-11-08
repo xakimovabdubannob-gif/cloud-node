@@ -1809,67 +1809,99 @@ def safe_goto_commit(page, url, wait_sec=3.0):
     return False
 
 def select_coursera_course_and_tekshir(page):
-    """Coursera kursini tanlash va 'TEKSHIRISH' bosish (Asl kodimiz to'liq saqlangan holda)."""
+    """Coursera kursini tanlash va 'TEKSHIRISH' bosish (Xatosiz, sinxron va ishonchli)."""
     try:
         print("   Coursera 'Generativ AI' kursi biriktirilmoqda...")
         safe_goto_commit(page, "https://aileaders.uz/courses?platform=coursera", wait_sec=2.8)
-        for _ in range(2):
-            try:
-                page.keyboard.press("Escape")
-                page.evaluate("""() => {
-                    const b = document.querySelector('button[aria-label="Yopish"], button[aria-label="Close"]');
-                    if (b) b.click();
-                }""")
-            except Exception:
-                pass
-            time.sleep(0.25)
+        time.sleep(1.0)
+        dismiss_all_popups(page)
 
         # 1. Vkladkadan 'Coursera 5' (yoki 'Coursera') ni tanlash
-        c_tab = page.locator("button:has-text('Coursera 5'), button:has-text('Coursera'), [role='tab']:has-text('Coursera'), div:has-text('Coursera 5')").first
+        tab_clicked = page.evaluate("""() => {
+            const tabs = Array.from(document.querySelectorAll('button, [role="tab"], div'));
+            const ct = tabs.find(b => {
+                const t = (b.innerText || '').trim().toLowerCase();
+                return t.includes('coursera');
+            });
+            if (ct) {
+                ct.scrollIntoView({block: 'center'});
+                ct.click();
+                return 'clicked_coursera_tab';
+            }
+            return 'not_found';
+        }""")
+        c_tab = page.locator("button:has-text('Coursera 5'), button:has-text('Coursera'), [role='tab']:has-text('Coursera')").first
         if c_tab.count() > 0 and c_tab.is_visible():
             c_tab.click(force=True)
-            time.sleep(1.5)
-        else:
-            try:
-                page.evaluate("""() => {
-                    const els = Array.from(document.querySelectorAll('button, div, span, a, [role="tab"]'));
-                    const ct = els.find(e => (e.innerText || '').trim().toLowerCase().includes('coursera'));
-                    if (ct) { ct.scrollIntoView({block: 'center'}); ct.click(); }
-                }""")
-                time.sleep(1.2)
-            except Exception:
-                pass
+        time.sleep(2.0)
 
-        # 2. 'Generativ Sun'iy Intellektga Kirish' kursini tanlash (Asl card.click + burchakdagi 'Kursni ochish' tugmasi)
+        # 2. 'Generativ Sun'iy Intellektga Kirish' kursini tanlash
+        card_clicked = page.evaluate("""() => {
+            const allEls = Array.from(document.querySelectorAll('div, a, article, h3, p'));
+            const target = allEls.find(el => {
+                const t = (el.innerText || '').toLowerCase();
+                return t.includes('generativ sun') || t.includes('generativ ai') || t.includes('introduction to generative ai');
+            });
+            if (target) {
+                const cardBox = target.closest('div[class*="cursor-pointer"], article, div[class*="rounded"], a') || target;
+                cardBox.scrollIntoView({block: 'center'});
+                const btn = cardBox.querySelector('button, a');
+                if (btn) btn.click(); else cardBox.click();
+                return 'clicked_generativ_card';
+            }
+            return 'card_not_found';
+        }""")
         card = page.locator("div, a, h3, p, article").filter(has_text=re.compile(r"Generativ Sun.iy Intellekt|Introduction to Generative AI|Generativ AI", re.I)).first
         if card.count() > 0 and card.is_visible():
-            card.scroll_into_view_if_needed()
-            card.click(force=True)
-            time.sleep(1.5)
-
-        # Burchakdagi dumaloq 'Kursni ochish' tugmasini ham bosib kafolatlaymiz
-        arrow = page.locator("button[aria-label='Kursni ochish'], a[aria-label='Kursni ochish'], button[aria-label*='ochish']").first
-        if arrow.count() > 0 and arrow.is_visible():
-            arrow.scroll_into_view_if_needed()
-            arrow.click(force=True)
-            time.sleep(2.5)
-
-        # 3. Ochilgan darchada 'TEKSHIRISH' / 'Kursga o'tish' tugmasini bosib jo'natish (Submit)
-        tekshir_b = page.locator("button:visible:has-text('TEKSHIRISH'), button:visible:has-text('Tekshirish'), button:visible:has-text('Kursga o\'tish'), button:visible:has-text('Boshlash'), button:visible:has-text('Kursga')").first
-        if tekshir_b.count() > 0 and tekshir_b.is_visible():
-            print("   >>> 'TEKSHIRISH' bosildi va jo'natildi!")
-            tekshir_b.click(force=True)
-            time.sleep(4.0)
-        else:
             try:
-                modal_btn = page.locator("div[role='dialog'] button:visible, .modal button:visible").last
-                if modal_btn.count() > 0 and modal_btn.is_visible():
-                    b_txt = modal_btn.inner_text().strip()
-                    print(f"   >>> Modal ichidagi '{b_txt}' bosildi va jo'natildi!")
-                    modal_btn.click(force=True)
-                    time.sleep(4.0)
+                card.scroll_into_view_if_needed()
+                card.click(force=True)
             except Exception:
                 pass
+        time.sleep(2.0)
+
+        # Burchakdagi 'Kursni ochish' tugmasini ham bosib ochishni kafolatlaymiz
+        arrow = page.locator("button[aria-label*='ochish'], a[aria-label*='ochish'], button:has-text('ochish')").first
+        if arrow.count() > 0 and arrow.is_visible():
+            try:
+                arrow.scroll_into_view_if_needed()
+                arrow.click(force=True)
+                time.sleep(2.0)
+            except Exception:
+                pass
+
+        # 3. Ochilgan darchada 'TEKSHIRISH' tugmasini bosish (Xatosiz, sinxron)
+        sub_clicked = page.evaluate("""() => {
+            const btns = Array.from(document.querySelectorAll('div[role="dialog"] button, .modal button, button, a'));
+            const tBtn = btns.find(b => {
+                const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+                return t === 'tekshirish' || t.includes('tekshirish') || t.includes('kursga') || t.includes('boshlash');
+            });
+            if (tBtn) {
+                tBtn.click();
+                return true;
+            }
+            return false;
+        }""")
+
+        tekshir_b = page.locator("button:visible:has-text('TEKSHIRISH'), button:visible:has-text('Tekshirish'), button:visible:has-text('Boshlash')").first
+        if tekshir_b.count() > 0 and tekshir_b.is_visible():
+            try:
+                tekshir_b.click(force=True)
+                sub_clicked = True
+            except Exception:
+                pass
+
+        if sub_clicked:
+            print("   >>> 'TEKSHIRISH' bosildi va jo'natildi!")
+            time.sleep(4.0)
+        else:
+            modal_btn = page.locator("div[role='dialog'] button:visible, .modal button:visible").last
+            if modal_btn.count() > 0 and modal_btn.is_visible():
+                b_txt = modal_btn.inner_text().strip()
+                print(f"   >>> Modal ichidagi '{b_txt}' bosildi va jo'natildi!")
+                modal_btn.click(force=True)
+                time.sleep(4.0)
     except Exception as e:
         print(f"   [!] Coursera kursi tanlashda ogohlantirish: {e}")
 
@@ -2281,6 +2313,10 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
 
     print(f"[REGISTRATSIYA] {full_name} bazada yo'q. Aileaders.uz orqali yangi profil ochilmoqda...")
     try:
+        context.clear_cookies()
+    except Exception:
+        pass
+    try:
         from gmail_automation import GmailMailboxService
         mail_svc = GmailMailboxService()
         student_email = mail_svc.email
@@ -2651,6 +2687,8 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
 
     common_media_args = [
         "--disable-blink-features=AutomationControlled",
+        "--disable-session-crashed-bubble",
+        "--hide-crash-restore-bubble",
         "--autoplay-policy=no-user-gesture-required",
         "--mute-audio",
         "--disable-background-timer-throttling",

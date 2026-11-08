@@ -289,7 +289,9 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
             chat_id = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else load_bot_config().get("admin_id", 6580113791)
             students = parse_excel_students(full_p)
             if students and any(s["name"] not in done_set  and s["name"] != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI" for s in students):
-                parsed_orders.append((chat_id, students))
+                parts_f = fn.split('_', 3)
+                f_label = parts_f[3].rsplit('.', 1)[0] if len(parts_f) >= 4 else 'Buyurtma'
+                parsed_orders.append((chat_id, students, f_label))
         _state_mem_cache["done"] = done_set
         _state_mem_cache["unrec"] = unrec_set
         _state_mem_cache["accs"] = accs
@@ -428,7 +430,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         # 1-Kompyuter (Asosiy Server) boshidan oladi: 1, 2, 3...
         # Klaster kompyuterlari esa oxiridan oladi: N, N-1, N-2... Shunda ular o'rtaga qarab birlashadi va hech qachon to'qnashmaydi!
         best_cand = None
-        for chat_id, students in parsed_orders:
+        for chat_id, students, f_label in parsed_orders:
             total = len(students)
             indices = range(1, total + 1)
             for idx in indices:
@@ -446,13 +448,13 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
                 # Qo'shimcha qat'iy tekshiruv: agar bu o'quvchi birorta ham tirik agentda bo'lsa, qat'iyan o'tkazib yuboriladi!
                 if any(normalize_student_key(v) == s_norm for (k_n, k_w), v in _worker_assigned.items() if (k_n, k_w) != w_key and (k_n == "MASTER_PC" or (now - float(cluster_nodes.get(k_n, {}).get("last_seen", 0)) < 90))):
                     continue
-                best_cand = (chat_id, idx, total, st, s_name)
+                best_cand = (chat_id, idx, total, st, s_name, f_label)
                 break
             if best_cand is not None:
                 break
 
         if best_cand is not None:
-            chat_id, idx, total, st, s_name = best_cand
+            chat_id, idx, total, st, s_name, f_label = best_cand
             in_progress_students[s_name] = now
             acc_line = ""
             assigned_email = ""
@@ -2154,8 +2156,10 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     st_norm = normalize_student_key(st_n)
                     if st_norm and st_norm not in _started_notified_students:
                         _started_notified_students.add(st_norm)
+                        fn_tag = f"📁 Fayl: <b>{task.get('file_name', '')}.xlsx</b>\n" if task.get("file_name") else ""
                         start_msg = (
                             f"⏳ <b>[{idx_v}/{tot_v}] {st_n}</b>\n"
+                            f"{fn_tag}"
                             f"└ <b>{pc_tg_tag}</b>\n"
                             f"└ 🚀 Jarayon boshlanmoqda..."
                         )
