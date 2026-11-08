@@ -120,20 +120,21 @@ class ClusterWorkerNode:
             if arg_u not in candidates:
                 candidates.append(arg_u)
 
-        # 1. Eng birinchi: GitHub Repository'dagi eng so'nggi jonli cluster_url.txt (keshlanmagan)
-        try:
-            r_gh = requests.get(
-                f"https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt?t={int(time.time())}",
-                headers={"Cache-Control": "no-cache"},
-                timeout=3,
-            )
-            if r_gh.status_code == 200:
-                u_gh = r_gh.text.strip().splitlines()[0].strip()
-                if u_gh.startswith("https://") and "init.trycloudflare" not in u_gh:
-                    if u_gh not in candidates:
-                        candidates.append(u_gh)
-        except Exception:
-            pass
+        # 1. Eng birinchi: GitHub Repository'dagi eng so'nggi jonli cluster_url.txt (main va master)
+        for branch in ("main", "master"):
+            try:
+                r_gh = requests.get(
+                    f"https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/{branch}/cluster_url.txt?t={int(time.time()*1000)}",
+                    headers={"Cache-Control": "no-cache"},
+                    timeout=3.5,
+                )
+                if r_gh.status_code == 200:
+                    u_gh = r_gh.text.strip().splitlines()[0].strip()
+                    if u_gh.startswith("https://") and "init.trycloudflare" not in u_gh:
+                        if u_gh not in candidates:
+                            candidates.append(u_gh)
+            except Exception:
+                pass
 
         # 2. Lokal cluster_url.txt fayli
         if os.path.exists("cluster_url.txt"):
@@ -152,7 +153,7 @@ class ClusterWorkerNode:
 
         # 4. Telegram Admin Chat Pinned xabari
         try:
-            r = requests.get(f"{self.api_url}/getChat", params={"chat_id": self.admin_id}, timeout=3).json()
+            r = requests.get(f"{self.api_url}/getChat", params={"chat_id": self.admin_id}, timeout=3.5).json()
             pinned_txt = r.get("result", {}).get("pinned_message", {}).get("text", "")
             for part in pinned_txt.split():
                 if part.startswith("http://") or part.startswith("https://"):
@@ -162,11 +163,16 @@ class ClusterWorkerNode:
         except Exception:
             pass
 
-        # Har bir nomzodga tezkor ping (2 soniya)
+        # Har bir nomzodga tezkor ping (3.5 soniya)
         for url in candidates:
             try:
-                res = requests.get(f"{url}/cluster/ping", timeout=2.5)
+                res = requests.get(f"{url}/cluster/ping", timeout=3.5)
                 if res.status_code == 200 and res.text.strip() == "OK":
+                    try:
+                        with open("cluster_url.txt", "w", encoding="utf-8") as f:
+                            f.write(url + "\n")
+                    except Exception:
+                        pass
                     return url
             except Exception:
                 continue
