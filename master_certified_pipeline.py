@@ -2341,45 +2341,79 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                 if not keyingi.is_visible():
                     b_txt1 = page.evaluate("() => (document.body ? document.body.innerText : '')")
                     if "registratsiya qilingan" in b_txt1.lower():
-                        err_step = f"⚠️ Aileaders.uz: '{s_val} {n_val}' bilan oldin ro'yxatdan o'tgan!"
+                        err_step = f"⚠️ Aileaders.uz: '{s_val} {n_val}' bilan oldin ro'yxatdan o'tgan! Eski profil o'chirilmoqda..."
                         print(f"   [!] {err_step}")
                         if status_callback:
                             status_callback(err_step)
-                        # ESKI PROFILNI O'CHIRIB BIZNING POCHTAMIZGA BO'SHATISH:
-                        del_ok = delete_and_free_student_account(page, student, status_callback=status_callback)
-                        if del_ok:
-                            # 1-bosqichni toza ro'yxatdan o'tkazamiz
-                            safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.5)
-                            if doc_mode == "guvohnoma":
-                                guv_b = page.locator("button:has-text('Guvohnoma')").first
-                                if guv_b.is_visible():
-                                    guv_b.click(force=True)
-                                    page.wait_for_timeout(300)
-                                page.locator("input[placeholder*='Seriya'], input[name='metrika_series']").first.fill(s_val)
-                                page.locator("input[placeholder*='Raqam'], input[name='metrika_number']").first.fill(n_val)
-                            else:
-                                pass_b = page.locator("button").filter(has_text="Passport").first
-                                if pass_b.is_visible():
-                                    pass_b.click(force=True)
-                                    page.wait_for_timeout(300)
-                                page.locator("input[name='passport_number'], input[placeholder*='Seriya']").first.fill(f"{s_val}{n_val}")
-                            pick_date_aileaders(page, b_cand)
-                            cb = page.locator("button[role='combobox'], button[data-slot='select-trigger']").first
-                            if cb.is_visible():
-                                cb.click(force=True)
+
+                        # 1. Aileaders-dan eski begona profilni o'chirish:
+                        safe_goto_commit(page, "https://aileaders.uz/auth/delete_account", wait_sec=2.0)
+                        if doc_mode == "guvohnoma":
+                            guv = page.locator("button:has-text('Guvohnoma')").first
+                            if guv.is_visible():
+                                guv.click(force=True)
                                 page.wait_for_timeout(300)
-                                opt = page.locator("[role='option']").first
-                                if opt.is_visible():
-                                    opt.click(force=True)
-                            sub1 = page.locator("button[type='submit']").filter(has_text=re.compile(r"Ro.yxatdan o.tish", re.I)).first
-                            if sub1.is_visible():
-                                sub1.click(force=True)
-                                page.wait_for_timeout(3500)
-                            keyingi = page.locator("button:has-text('Keyingi')").first
-                            if keyingi.is_visible():
-                                print(f"   [YANGI RO'YXAT] O'chirishdan so'ng 1-bosqich muvaffaqiyatli o'tdi!")
+                            s_in = page.locator("input[name='metrika_series'], input[placeholder*='Seriya']").first
+                            n_in = page.locator("input[name='metrika_number'], input[placeholder*='Raqam']").first
+                            s_in.click(force=True)
+                            s_in.fill("")
+                            page.keyboard.type(str(s_val).replace("-", ""))
+                            n_in.fill(str(n_val))
                         else:
-                            continue
+                            pass_b = page.locator("button:has-text('Passport')").first
+                            if pass_b.is_visible():
+                                pass_b.click(force=True)
+                                page.wait_for_timeout(300)
+                            n_in = page.locator("input[name='passport_number'], input[placeholder*='Seriya']").first
+                            n_in.fill(f"{s_val}{n_val}")
+
+                        pick_date_aileaders(page, b_cand)
+                        page.wait_for_timeout(400)
+                        del_btn = page.locator("button:has-text(\"O'chirish\")").first
+                        if del_btn.is_visible():
+                            del_btn.click(force=True)
+                            page.wait_for_timeout(3000)
+
+                        print(f"   [O'CHIRILDI] Eski profil o'chirildi! Endi boshidan (https://aileaders.uz/auth/register) toza ro'yxatdan o'tilmoqda...")
+                        if status_callback:
+                            status_callback(f"✨ Eski profil o'chirildi! Boshidan noldan ro'yxatdan o'tilmoqda...")
+
+                        # 2. Endi Aileaders BOSHIDAN QAYTA RO'YXATDAN O'TISH:
+                        safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.5)
+                        if doc_mode == "guvohnoma":
+                            guv_b = page.locator("button:has-text('Guvohnoma')").first
+                            if guv_b.is_visible():
+                                guv_b.click(force=True)
+                                page.wait_for_timeout(400)
+                            page.locator("input[placeholder*='Seriya'], input[name='metrika_series']").first.fill(s_val)
+                            page.locator("input[placeholder*='Raqam'], input[name='metrika_number']").first.fill(n_val)
+                        else:
+                            pass_b = page.locator("button").filter(has_text="Passport").first
+                            if pass_b.is_visible():
+                                pass_b.click(force=True)
+                                page.wait_for_timeout(400)
+                            page.locator("input[name='passport_number'], input[placeholder*='Seriya']").first.fill(f"{s_val}{n_val}")
+
+                        pick_date_aileaders(page, b_cand)
+                        cb = page.locator("button[role='combobox'], button[data-slot='select-trigger']").first
+                        if cb.is_visible():
+                            cb.click(force=True)
+                            page.wait_for_timeout(400)
+                            opt = page.locator("[role='option']").first
+                            if opt.is_visible():
+                                opt.click(force=True)
+                            page.wait_for_timeout(400)
+
+                        sub1 = page.locator("button[type='submit']").filter(has_text=re.compile(r"Ro.yxatdan o.tish", re.I)).first
+                        if sub1.is_visible():
+                            sub1.click(force=True)
+                            page.wait_for_timeout(3500)
+
+                        keyingi = page.locator("button:has-text('Keyingi')").first
+
+                if not keyingi.is_visible():
+                    print(f"   [!] '{s_val} {n_val}' da 'Keyingi' tugmasi chiqmadi, keyingi variant sinab ko'riladi...")
+                    continue
 
                 print(f"   1-bosqich muvaffaqiyatli ({s_val} {n_val})! 'Keyingi' bosilmoqda...")
                 keyingi.click(force=True)
@@ -2481,17 +2515,11 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
                 break
 
         if not reg_step2_ok:
-            rec_email, is_logged = recover_existing_student_password(page, student, student_password, status_callback=status_callback)
-            if rec_email:
-                student_email = rec_email
-                reg_step2_ok = True
-                is_recovered = True
-            else:
-                reason_msg = f"Aileaders.uz: Ushbu ma'lumotlar bilan oldin registratsiya qilingan ({doc_series} {doc_number})" if "registratsiya qilingan" in b_txt1.lower() else f"Barcha hujjat variantlari ({doc_series} {doc_number}) tekshirildi, Aileaders ma'lumotni topmadi!"
-                if status_callback:
-                    status_callback(f"❌ {reason_msg}")
-                save_unrecoverable_student(full_name, class_name, reason_msg)
-                return "UNRECOVERABLE", None
+            reason_msg = f"Aileaders.uz: Ushbu ma'lumotlar bilan oldin registratsiya qilingan ({doc_series} {doc_number})" if "registratsiya qilingan" in b_txt1.lower() else f"Barcha hujjat variantlari ({doc_series} {doc_number}) tekshirildi, Aileaders ma'lumotni topmadi!"
+            if status_callback:
+                status_callback(f"❌ {reason_msg}")
+            save_unrecoverable_student(full_name, class_name, reason_msg)
+            return "UNRECOVERABLE", None
 
         with FILE_LOCK:
             with open(ACCOUNTS_FILE, "a", encoding="utf-8") as f:
@@ -2515,19 +2543,6 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
             pass
         if status_callback:
             status_callback(f"📧 Aileaders.uz profil ochildi ({student_email})! 1-xabar aktivatsiya qilinmoqda...")
-
-        if is_recovered:
-            print(f"   [TIKLANGAN PROFIL] {student_email} Aileaders orqali kursga biriktirilmoqda...")
-            if status_callback:
-                status_callback(f"🎯 Profil tiklandi ({student_email})! Coursera kursi ochilmoqda...")
-            select_coursera_course_and_tekshir(page)
-            if status_callback:
-                status_callback(f"🔐 Coursera tizimiga kirilmoqda ({student_email})...")
-            logged_ok, was_signup = login_coursera(page, student_email, student_password, full_name=full_name)
-            ensure_enrolled_on_coursera(page)
-            if status_callback:
-                status_callback(f"✅ Coursera kursiga muvaffaqiyatli ulandi!")
-            return "OK", {"email": student_email, "password": student_password}
 
         # 1-XABAR: Aileaders Tasdiqlash + TEKSHIRISH
         ensure_aileaders_activated_and_tekshirish(page, mail_svc, student_email, student_password)
