@@ -1427,9 +1427,11 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
 def verify_student_name_with_3_checks(page, student_name):
     """
     Verify My Name / user-verification sahifasida:
-    1. FIRST NAME, MIDDLE NAME, LAST NAME kataklarini insondek sekinroq (delay=45ms) to'ldiradi.
-    2. Galichka (Checkbox)ni tekshirib, agar qo'yilmagan bo'lsa qo'yadi.
-    3. Submit tugmasini bosadi va form yuborilganini tekshiradi!
+    1. SAIT YUKLANDIMI TEKSHIRISH: Sahifa, forma va kataklar to'liq yuklanguncha kutadi.
+    2. FIRST NAME, MIDDLE NAME, LAST NAME kataklarini tez va aniq to'ldiradi.
+    3. Galichka (Checkbox)ni tekshirib qo'yadi.
+    4. 1 SEKUNDDAN KEYIN O'Z ISHINI TEKSHIRADI (kataklar to'ldimi, galichka bormi).
+    5. Submit tugmasini bosadi va tasdiqlanganini tekshiradi!
     """
     clean_name = (student_name or "").replace("`", "'").strip()
     print(f"\n[ISMNI TASDIQLASH] {clean_name} boshlanmoqda...")
@@ -1450,7 +1452,8 @@ def verify_student_name_with_3_checks(page, student_name):
 
     for v_try in range(1, 4):
         try:
-            # 1. Agar hozir myLearningTab=CERTIFICATES da bo'lsa, 'Verify My Name' ni bosib forma ochilishini kutamiz:
+            mult = v_try
+            # 1. SAITGA O'TISH / FORMANI OCHISH
             if "user-verification" not in page.url:
                 try:
                     page.keyboard.press("Escape")
@@ -1460,15 +1463,33 @@ def verify_student_name_with_3_checks(page, student_name):
                 if v_btn.count() > 0 and v_btn.is_visible():
                     print("[ISMNI TASDIQLASH] 'Verify My Name' tugmasi bosilmoqda...")
                     v_btn.click(force=True)
-                    time.sleep(2.5)
+                else:
+                    print("[ISMNI TASDIQLASH] To'g'ridan-to'g'ri user-verification havolasiga o'tilmoqda...")
+                    safe_navigate(page, "https://www.coursera.org/user-verification?returnTo=%2Forganizations%2Fdedc%2Fmy-learning%3FmyLearningTab%3DCERTIFICATES")
 
-            # 2. Inputlar paydo bo'lishini kutamiz
+            # 2. SAIT YUKLANDIMI? (ANIK VA QAT'IY TEKSHIRUV)
+            print(f"[SAYT TEKSHIRUVI #{v_try}] Coursera sahifasi to'liq yuklanishi kutilmoqda...")
             try:
-                page.wait_for_selector("input:not([type='hidden']):not([type='checkbox'])", state="visible", timeout=6000)
+                page.wait_for_load_state("domcontentloaded", timeout=12000)
             except Exception:
                 pass
 
-            # 3. Aniq FIRST NAME, MIDDLE NAME, LAST NAME kataklarini topish
+            site_ready = False
+            for s_wait in range(12):
+                inps_cnt = page.locator("input:not([type='hidden']):not([type='checkbox']):not([type='radio']):visible").count()
+                cbs_cnt = page.locator("input[type='checkbox']:visible").count()
+                b_txt = page.evaluate("() => document.body ? document.body.innerText.toLowerCase() : ''")
+                if inps_cnt >= 1 and (cbs_cnt >= 1 or "legal name" in b_txt or "verify" in b_txt or "first name" in b_txt):
+                    site_ready = True
+                    print(f"[SAYT YUKLANDIMI?] ✅ HA! Coursera sahifasi 100% yuklandi! ({inps_cnt} ta ism katagi, {cbs_cnt} ta galichka topildi)")
+                    break
+                time.sleep(1)
+
+            if not site_ready:
+                print(f"[SAYT TEKSHIRUVI] Kataklar hali paydo bo'lmadi, qo'shimcha kutilmoqda (urinish {v_try}/3)...")
+                time.sleep(2)
+
+            # 3. ISMLARNI TEZ VA ANIQ TO'LDIRISH
             inputs = page.locator("input:not([type='hidden']):not([type='checkbox']):not([type='radio']):visible").all()
             clean_inps = []
             for inp in inputs:
@@ -1477,49 +1498,34 @@ def verify_student_name_with_3_checks(page, student_name):
                 if "search" not in ph and "поиск" not in ph and "search" not in nm and "query" not in nm:
                     clean_inps.append(inp)
 
-            print(f"[ISMNI TASDIQLASH] Topilgan ism kataklari: {len(clean_inps)} ta")
+            print(f"[ISMNI YOZISH] Topilgan ism kataklari: {len(clean_inps)} ta")
 
             if len(clean_inps) >= 3:
-                # FIRST NAME
+                # 1: FIRST NAME
                 clean_inps[0].click(force=True)
-                clean_inps[0].fill("")
-                page.keyboard.type(first_name, delay=45)
-                time.sleep(0.3)
-
-                # MIDDLE NAME
+                clean_inps[0].fill(first_name)
+                # 2: MIDDLE NAME
                 clean_inps[1].click(force=True)
-                clean_inps[1].fill("")
-                if middle_name:
-                    page.keyboard.type(middle_name, delay=45)
-                time.sleep(0.3)
-
-                # LAST NAME
+                clean_inps[1].fill(middle_name)
+                # 3: LAST NAME
                 clean_inps[2].click(force=True)
-                clean_inps[2].fill("")
-                if last_name:
-                    page.keyboard.type(last_name, delay=45)
-                time.sleep(0.3)
+                clean_inps[2].fill(last_name)
+                print(f"[ISMNI YOZISH] Tez yozildi: 1={first_name}, 2={middle_name}, 3={last_name}")
 
             elif len(clean_inps) == 2:
                 clean_inps[0].click(force=True)
-                clean_inps[0].fill("")
-                page.keyboard.type(first_name, delay=45)
-                time.sleep(0.3)
-
+                clean_inps[0].fill(first_name)
                 clean_inps[1].click(force=True)
-                clean_inps[1].fill("")
-                full_rest = f"{middle_name} {last_name}".strip() if middle_name else last_name
-                if full_rest:
-                    page.keyboard.type(full_rest, delay=45)
-                time.sleep(0.3)
+                rest_name = f"{middle_name} {last_name}".strip() if middle_name else last_name
+                clean_inps[1].fill(rest_name)
+                print(f"[ISMNI YOZISH] 2 katakka yozildi: 1={first_name}, 2={rest_name}")
 
             elif len(clean_inps) == 1:
                 clean_inps[0].click(force=True)
-                clean_inps[0].fill("")
-                page.keyboard.type(clean_name, delay=45)
-                time.sleep(0.3)
+                clean_inps[0].fill(clean_name)
+                print(f"[ISMNI YOZISH] 1 katakka to'liq ism yozildi: {clean_name}")
 
-            # React qiymatlarini ham to'liq mustahkamlash:
+            # React virtual DOM holatini 100% yangilash:
             js_fn = first_name.replace("'", "\\'")
             js_mn = middle_name.replace("'", "\\'")
             js_ln = last_name.replace("'", "\\'")
@@ -1541,18 +1547,16 @@ def verify_student_name_with_3_checks(page, student_name):
                     el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
                 }};
                 if (inps.length >= 3) {{
-                    if (!inps[0].value) setVal(inps[0], '{js_fn}');
-                    if (!inps[1].value && '{js_mn}') setVal(inps[1], '{js_mn}');
-                    if (!inps[2].value && '{js_ln}') setVal(inps[2], '{js_ln}');
+                    setVal(inps[0], '{js_fn}');
+                    if ('{js_mn}') setVal(inps[1], '{js_mn}');
+                    if ('{js_ln}') setVal(inps[2], '{js_ln}');
                 }} else if (inps.length === 2) {{
-                    if (!inps[0].value) setVal(inps[0], '{js_fn}');
-                    if (!inps[1].value) setVal(inps[1], '{js_mn} {js_ln}'.trim());
+                    setVal(inps[0], '{js_fn}');
+                    setVal(inps[1], '{js_mn} {js_ln}'.trim());
                 }} else if (inps.length === 1) {{
-                    if (!inps[0].value) setVal(inps[0], '{js_full}');
+                    setVal(inps[0], '{js_full}');
                 }}
             }}""")
-
-            time.sleep(0.8)
 
             # 4. GALICHKANI TEKSHIRISH VA QO'YISH
             cbs = page.locator("input[type='checkbox']").all()
@@ -1575,8 +1579,10 @@ def verify_student_name_with_3_checks(page, student_name):
                     }
                 });
             }""")
+            print("[GALICHKA] Tasdiqlash galichkasi tekshirildi va qo'yildi.")
 
-            # 4.1 QILGAN ISHINI 1 SONIYADAN KEYIN TEKSHIRISH (Ism to'ldimi, galichka qo'yildimi?)
+            # 5. QILGAN ISHINI 1 SEKUNDDAN KEYIN TEKSHIRISH
+            print("[1s TEKSHIRUV] 1 soniya kutilmoqda va to'ldirilgan ma'lumotlar tekshirilmoqda...")
             time.sleep(1.0)
             chk_res = page.evaluate("""() => {
                 const inps = Array.from(document.querySelectorAll("input:not([type='hidden']):not([type='checkbox']):not([type='radio'])")).filter(i => {
@@ -1587,22 +1593,31 @@ def verify_student_name_with_3_checks(page, student_name):
                 const cbs = Array.from(document.querySelectorAll("input[type='checkbox']"));
                 const hasFirst = inps.length > 0 && inps[0].value && inps[0].value.trim().length > 0;
                 const hasCb = cbs.length > 0 && cbs[0].checked;
-                return { hasFirst, hasCb };
+                const firstVal = inps.length > 0 ? inps[0].value : '';
+                return { hasFirst, hasCb, firstVal };
             }""")
 
-            # Agar biror narsa qolib ketgan bo'lsa, zudlik bilan qo'yib tekshiramiz:
+            print(f"[1s TEKSHIRUV NATIJASI] Katakdagi ism: '{chk_res.get('firstVal')}', Galichka: {chk_res.get('hasCb')}")
+
+            # Agar biror narsa qolib ketgan bo'lsa darhol to'g'irlash:
             if not chk_res.get("hasFirst") and clean_inps:
+                print("[1s TEKSHIRUV] Ism bo'sh qolgan, qayta to'ldirilmoqda...")
                 clean_inps[0].fill(first_name)
             if not chk_res.get("hasCb"):
+                print("[1s TEKSHIRUV] Galichka belgilanmagan, qayta belgilanmoqda...")
                 page.evaluate("""() => {
-                    document.querySelectorAll("input[type='checkbox']").forEach(cb => { cb.checked = true; cb.click(); });
+                    document.querySelectorAll("input[type='checkbox']").forEach(cb => {
+                        cb.checked = true;
+                        cb.click();
+                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                    });
                 }""")
             time.sleep(0.5)
 
-            # 5. SUBMIT TUGMASINI BOSISH
+            # 6. SUBMIT TUGMASINI BOSISH
             sub_btn = page.locator("button:has-text('Submit'), button[type='submit'], button:has-text('Отправить'), button:has-text('Save')").first
-            if sub_btn.count() > 0 and sub_btn.is_visible():
-                print("[ISMNI TASDIQLASH] Submit tugmasi bosilmoqda...")
+            if sub_btn.count() > 0:
+                print("[SUBMIT] Submit tugmasi bosilmoqda...")
                 page.evaluate("""() => {
                     const btns = Array.from(document.querySelectorAll('button'));
                     const s = btns.find(b => (b.innerText || '').trim().toLowerCase() === 'submit' || b.type === 'submit');
@@ -1617,25 +1632,32 @@ def verify_student_name_with_3_checks(page, student_name):
                 except Exception:
                     pass
 
-                time.sleep(3.5)
+                # 7. VERIFIYNI BO'LDIMI TEKSHIRADI
+                print("[TASDIQ TEKSHIRUVI] Ism yuborildimi tekshirilmoqda...")
+                is_verified = False
+                for _ in range(6):
+                    time.sleep(1.0)
+                    curr_url = page.url
+                    b_txt = page.evaluate("() => (document.body ? document.body.innerText.toLowerCase() : '')")
+                    if "user-verification" not in curr_url:
+                        print(f"[TASDIQ TEKSHIRUVI] ✅ Sahifa yangilandi ({curr_url})! Muvaffaqiyatli tasdiqlandi!")
+                        is_verified = True
+                        break
+                    if "thank you" in b_txt or "verified" in b_txt or "successfully" in b_txt or "congratulations" in b_txt:
+                        print("[TASDIQ TEKSHIRUVI] ✅ Xabar tasdiqlandi! Muvaffaqiyatli tasdiqlandi!")
+                        is_verified = True
+                        break
 
-                # 6. TASDIQLANDIMI?
-                curr_url = page.url
-                if "user-verification" not in curr_url or "returnTo" not in curr_url:
-                    print("[ISMNI TASDIQLASH] ✅ MUVAFFAQIYATLI TASDIQLANDI!")
+                if is_verified:
                     return True
                 else:
-                    b_txt = page.evaluate("() => (document.body ? document.body.innerText.toLowerCase() : '')")
-                    if "thank you" in b_txt or "verified" in b_txt or "successfully" in b_txt or "congratulations" in b_txt:
-                        print("[ISMNI TASDIQLASH] ✅ MUVAFFAQIYATLI TASDIQLANDI (xabar tasdiqlandi)!")
-                        return True
+                    print(f"[TASDIQ TEKSHIRUVI] Hali sahifa yangilanmadi, keyingi urinish ({v_try}/3)...")
 
         except Exception as e:
             print(f"[ISMNI TASDIQLASH] {v_try}-urinishda ogohlantirish: {e}")
             time.sleep(2)
 
     return False
-
 
 def extract_certificate_with_3_checks(page, student_name=""):
     """Sertifikat havolasini 3 martagacha (1x, 2x, 3x kutish bilan) tekshirib oladi. Agar kurs hali IN_PROGRESS bo'lsa, o'sha yerdagi kamchilikni (Quiz yoki Video) darhol topib bajaradi!"""

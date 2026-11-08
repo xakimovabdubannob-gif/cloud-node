@@ -6,8 +6,8 @@ color 0A
 :: 1. Papkani avtomatik aniqlash (Har qanday kompyuterda ishlaydi!)
 set "TARGET_DIR=%~dp0"
 if "%TARGET_DIR:~-1%"=="\" set "TARGET_DIR=%TARGET_DIR:~0,-1%"
-if exist "d:\uzbekcodersbot\cluster_worker.py" set "TARGET_DIR=d:\uzbekcodersbot"
-if exist "%USERPROFILE%\uzbekcodersbot\cluster_worker.py" set "TARGET_DIR=%USERPROFILE%\uzbekcodersbot"
+if exist "d:\uzbekcodersbot\cluster_worker.py?t=%RANDOM%%RANDOM%" set "TARGET_DIR=d:\uzbekcodersbot"
+if exist "%USERPROFILE%\uzbekcodersbot\cluster_worker.py?t=%RANDOM%%RANDOM%" set "TARGET_DIR=%USERPROFILE%\uzbekcodersbot"
 
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%" >nul 2>&1
 cd /d "%TARGET_DIR%"
@@ -20,12 +20,12 @@ echo  Papka: %TARGET_DIR%
 echo.
 
 :: 2. Agar yangi kompyuterda fayllar bo'lmasa, GitHub'dan avtomat yuklab oladi
-if not exist "cluster_worker.py" (
+if not exist "cluster_worker.py?t=%RANDOM%%RANDOM%" (
     echo  [YUKLANMOQDA] Yangi kompyuter uchun kerakli fayllar GitHub'dan olinmoqda...
-    curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_worker.py" -o "cluster_worker.py"
-    curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/master_certified_pipeline.py" -o "master_certified_pipeline.py"
-    curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/bot_config.json" -o "bot_config.json"
-    curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt" -o "cluster_url.txt"
+    curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_worker.py?t=%RANDOM%%RANDOM%" -o "cluster_worker.py?t=%RANDOM%%RANDOM%"
+    curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/master_certified_pipeline.py?t=%RANDOM%%RANDOM%" -o "master_certified_pipeline.py?t=%RANDOM%%RANDOM%"
+    curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/bot_config.json?t=%RANDOM%%RANDOM%" -o "bot_config.json?t=%RANDOM%%RANDOM%"
+    curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt?t=%RANDOM%%RANDOM%" -o "cluster_url.txt?t=%RANDOM%%RANDOM%"
     echo  [OK] Fayllar muvaffaqiyatli yuklandi!
     echo.
 )
