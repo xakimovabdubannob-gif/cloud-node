@@ -2997,36 +2997,63 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                 print(f"{tag}>>> O'QUVCHI: {full_name} ({email}) <<<")
                 print(f"=======================================================")
                 if status_callback:
-                    status_callback(f"🔐 {full_name}: Profilga kirilmoqda ({email})...")
-                logged_ok, was_signup = login_coursera(page, email, password, full_name=full_name)
-                cookies = [c.get("name", "") for c in context.cookies()]
-                has_cauth = any("CAUTH" in c for c in cookies)
+                    status_callback(f"📧 {full_name}: Pochtadagi Join now orqali Coursera DEDC ga ulanmoqda...")
 
-                # MUHIM HIMOYA: Agar oddiy login o'tmasa yoki was_signup bo'lsa -> pochtadan DEDC Join now ochiladi
-                if not logged_ok or not has_cauth or was_signup:
-                    print(f"{tag}[TIKLASH] {email} uchun mail.tm pochtasidan 1- va 2-Join havolalari ochilib DEDC dasturiga ulanmoqda...")
-                    if status_callback:
-                        status_callback(f"🔗 1-xabar tasdiqlandi! Coursera 2-xabar (Join now) ulanmoqda...")
-                    try:
-                        if "gmail.com" in email.lower() or "quizai.uz" in email.lower():
-                            from gmail_automation import GmailMailboxService
-                            existing_mail = GmailMailboxService(existing_email=email)
-                        else:
-                            existing_mail = TempMailAPI(existing_email=email)
-                        if existing_mail.token:
-                            joined_ok = complete_coursera_join_and_enroll(page, existing_mail, password, full_name=full_name, wait_timeout=15)
+                # 1. POCHTADAGI 'JOIN NOW' ORQALI TO'G'RIDAN-TO'G'RI DEDC DASTURIGA ULASH
+                has_cauth = False
+                existing_mail = None
+                try:
+                    if "gmail.com" in email.lower() or "quizai.uz" in email.lower():
+                        from gmail_automation import GmailMailboxService
+                        existing_mail = GmailMailboxService(existing_email=email)
+                    else:
+                        existing_mail = TempMailAPI(existing_email=email)
+                except Exception as _m_err:
+                    print(f"{tag}[!] Pochta xizmatiga ulanishda ogohlantirish: {_m_err}")
+
+                if existing_mail and existing_mail.token:
+                    invs = existing_mail.get_all_coursera_invites() if hasattr(existing_mail, "get_all_coursera_invites") else []
+                    if invs:
+                        print(f"{tag}[DEDC POCHTA] {email} uchun pochtadan 'Join now' taklifnomasi topildi va ochilmoqda...")
+                        joined_ok = complete_coursera_join_and_enroll(page, existing_mail, password, full_name=full_name, wait_timeout=10)
+                        if joined_ok:
+                            cookies = [c.get("name", "") for c in context.cookies()]
+                            has_cauth = any("CAUTH" in c for c in cookies)
+                    else:
+                        print(f"{tag}[POCHTA BO'SH] {email} pochtasida 'Join now' xati yo'q! Aileaders.uz ga kirib xat chaqirilmoqda...")
+                        if status_callback:
+                            status_callback(f"🔄 {full_name}: Aileaders'ga kirib 'Join now' xati chaqirilmoqda...")
+                        try:
+                            safe_goto_commit(page, "https://aileaders.uz/auth/login", wait_sec=2.0)
+                            l_em = page.locator("input[type='email'], input[name='email']").first
+                            if l_em.count() > 0 and l_em.is_visible():
+                                l_em.fill(email)
+                            l_pwd = page.locator("input[type='password'], input[name='password']").first
+                            if l_pwd.count() > 0 and l_pwd.is_visible():
+                                l_pwd.fill(password)
+                            l_sub = page.locator("button[type='submit'], button:has-text('Kirish')").first
+                            if l_sub.count() > 0 and l_sub.is_visible():
+                                l_sub.click(force=True)
+                                page.wait_for_timeout(3000)
+                            select_coursera_course_and_tekshir(page)
+                            # Yangi taklifnoma pochtada kutiladi:
+                            joined_ok = complete_coursera_join_and_enroll(page, existing_mail, password, full_name=full_name, wait_timeout=35)
                             if joined_ok:
-                                if status_callback:
-                                    status_callback(f"✅ Coursera DEDC dasturiga ulandi va kursga yozildi!")
-                                has_cauth = True
-                    except Exception as rec_e:
-                        print(f"{tag}[!] Pochtadan tiklashda ogohlantirish: {rec_e}")
+                                cookies = [c.get("name", "") for c in context.cookies()]
+                                has_cauth = any("CAUTH" in c for c in cookies)
+                        except Exception as _ail_err:
+                            print(f"{tag}[!] Aileaders xat chaqirishda ogohlantirish: {_ail_err}")
 
-                # Agar hali ham kirmagan bo'lsa, Magic link orqali kirish
+                # 2. Agar hali ham kirmagan bo'lsa, Coursera direct login va Magic Link
                 if not has_cauth:
-                    if login_via_magic_link(page, email):
-                        cookies = [c.get("name", "") for c in context.cookies()]
-                        has_cauth = any("CAUTH" in c for c in cookies)
+                    print(f"{tag}[DIRECT LOGIN] {email} uchun to'g'ridan-to'g'ri Coursera login kiritilmoqda...")
+                    logged_ok, was_signup = login_coursera(page, email, password, full_name=full_name)
+                    cookies = [c.get("name", "") for c in context.cookies()]
+                    has_cauth = any("CAUTH" in c for c in cookies)
+                    if not has_cauth:
+                        if login_via_magic_link(page, email):
+                            cookies = [c.get("name", "") for c in context.cookies()]
+                            has_cauth = any("CAUTH" in c for c in cookies)
 
                 # Kurs ichiga kirishni tekshiramiz: faqat haqiqiy CAUTH sessiya cookie bo'lsa kirilgan deb hisoblaymiz!
                 cookies = [c.get("name", "") for c in context.cookies()]
