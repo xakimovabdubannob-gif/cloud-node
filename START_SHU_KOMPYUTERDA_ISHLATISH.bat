@@ -16,5 +16,5 @@ echo ======================================================================
 echo.
 set HEADLESS=0
 set GUI_MODE=1
-python -u cluster_worker.py
+python -u cluster_worker.py https://existence-incurred-film-cardiovascular.trycloudflare.com
 pause

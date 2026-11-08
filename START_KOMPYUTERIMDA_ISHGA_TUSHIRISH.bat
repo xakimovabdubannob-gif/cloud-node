@@ -1,5 +1,5 @@
 @echo off
-cd /d "%~dp0"
+cd /d "d:\uzbekcodersbot"
 chcp 65001 >nul
 title UZBEK CODERS - MAHALLIY O'ZBEKISTON SERVERI (JONLI CHROME)
 color 0A
