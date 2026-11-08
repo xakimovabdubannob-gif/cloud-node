@@ -2383,18 +2383,34 @@ def register_new_student_and_enroll(context, page, student, status_callback=None
             for cand_idx, (doc_mode, s_val, n_val) in enumerate(doc_candidates):
                 if cand_idx > 0 or len(birth_variants) > 1:
                     print(f"   [HUJJAT VARIANTI] {doc_mode.upper()} '{s_val} {n_val}' | Sana: {b_cand} tekshirilmoqda...")
-                safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.5)
+                safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.0)
+                try:
+                    page.evaluate("() => { try { localStorage.clear(); sessionStorage.clear(); } catch(e){} }")
+                    if "/courses" in page.url or "/profile" in page.url:
+                        context.clear_cookies()
+                        safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.0)
+                except Exception:
+                    pass
 
                 if doc_mode == "guvohnoma":
                     guv_b = page.locator("button:has-text('Guvohnoma')").first
                     try:
-                        guv_b.wait_for(state="visible", timeout=12000)
+                        guv_b.wait_for(state="visible", timeout=8000)
+                        if guv_b.is_visible():
+                            guv_b.click(force=True)
+                            page.wait_for_timeout(400)
                     except Exception:
                         pass
-                    if guv_b.is_visible():
-                        guv_b.click(force=True)
-                        page.wait_for_timeout(600)
-                    page.locator("input[placeholder*='Seriya'], input[name='metrika_series']").first.fill(s_val)
+                    s_loc = page.locator("input[placeholder*='Seriya'], input[name='metrika_series']").first
+                    try:
+                        s_loc.wait_for(state="visible", timeout=8000)
+                        s_loc.fill(s_val)
+                    except Exception:
+                        safe_goto_commit(page, "https://aileaders.uz/auth/register", wait_sec=2.0)
+                        if guv_b.is_visible():
+                            guv_b.click(force=True)
+                            page.wait_for_timeout(400)
+                        s_loc.fill(s_val)
                     page.locator("input[placeholder*='Raqam'], input[name='metrika_number']").first.fill(n_val)
                 else:
                     pass_b = page.locator("button").filter(has_text="Passport").first
