@@ -249,7 +249,15 @@ def wipe_browser_session_completely(context, page):
 
 def dismiss_all_popups(page):
     try:
-        page.keyboard.press("Escape")
+        page.keyboard.press('Escape')
+    except Exception:
+        pass
+    try:
+        for _sel in ['button[aria-label*="close"]', 'button[aria-label*="Close"]', '.modal-close', 'svg.lucide-x', "button:has-text('✕')", "button:has-text('×')"]:
+            _b = page.locator(_sel).first
+            if _b.count() > 0 and _b.is_visible():
+                try: _b.click(force=True)
+                except Exception: pass
     except Exception:
         pass
     try:
@@ -258,21 +266,36 @@ def dismiss_all_popups(page):
             const pendos = Array.from(document.querySelectorAll('[id^="pendo"], [class*="pendo"], .cds-Modal-backdrop, div[data-testid="overlay"]'));
             pendos.forEach(p => { try { p.remove(); } catch(e) {} });
 
-            // 0.1 Remove promotional modals ("Your homepage got simpler", "Great job! We're impressed", "Protect your accomplishments")
-            const promoModals = Array.from(document.querySelectorAll("div[role='dialog'], .cds-Modal-container, .cds-Modal-dialog, [data-testid='modal'], div[aria-modal='true']"));
+            // 0.1 Remove Aileaders Telegram kanaliga obuna popaplari va fon pardalarini BUTUNLAY yo'qotish
+            const ailPopups = Array.from(document.querySelectorAll('div[role="dialog"], div.fixed, div[class*="modal"], div[class*="Dialog"], div[class*="popup"]'));
+            ailPopups.forEach(m => {
+                const t = (m.innerText || '').toLowerCase();
+                if (t.includes('telegram') || t.includes('obuna') || t.includes('kanalimizga') || t.includes("a'zo bo'lish")) {
+                    try { m.remove(); } catch(e) {}
+                }
+            });
+            const ailBackdrops = Array.from(document.querySelectorAll('div.fixed.inset-0, div[class*="backdrop"], div[class*="overlay"]'));
+            ailBackdrops.forEach(b => {
+                const t = (b.innerText || '').toLowerCase();
+                if (t.includes('telegram') || t.includes('obuna') || b.classList.contains('bg-black') || (b.getAttribute('class') || '').includes('opacity')) {
+                    try { b.remove(); } catch(e) {}
+                }
+            });
+
+            // 0.2 Remove promotional modals ("Your homepage got simpler", "Great job! We're impressed", "Protect your accomplishments")
+            const promoModals = Array.from(document.querySelectorAll('div[role="dialog"], .cds-Modal-container, .cds-Modal-dialog, [data-testid="modal"], div[aria-modal="true"]'));
             promoModals.forEach(m => {
                 const t = (m.innerText || '').toLowerCase();
-                const hasNameInput = m.querySelector("input[type='text'], input:not([type])");
-                if (!hasNameInput && (t.includes('simpler') || t.includes('update') || t.includes('impressed') || t.includes('great job') || t.includes('protect your accomplishments') || t.includes('защитите свои достижения'))) {
+                const hasNameInput = m.querySelector('input[type="text"], input:not([type])');
+                if (!hasNameInput && (t.includes('simpler') || t.includes('update') || t.includes('impressed') || t.includes('great job') || t.includes('protect your accomplishments') || t.includes('telegram') || t.includes('obuna'))) {
                     const nextB = Array.from(m.querySelectorAll('button')).find(b => {
                         const bt = (b.innerText || '').trim().toLowerCase();
-                        return bt === 'next' || bt === 'got it' || bt === 'close' || bt === 'x' || bt === 'далее' || bt === 'понятно';
+                        return bt === 'next' || bt === 'got it' || bt === 'close' || bt === 'x' || bt === '✕' || bt === '×';
                     });
                     if (nextB) { try { nextB.click(); } catch(e) {} }
                     try { m.remove(); } catch(e) {}
                 }
             });
-
             // 1. Coursera Cookie & Privacy Banner removal
             const acceptBtn = Array.from(document.querySelectorAll('button, a')).find(b => {
                 const t = (b.innerText || '').trim().toLowerCase();
