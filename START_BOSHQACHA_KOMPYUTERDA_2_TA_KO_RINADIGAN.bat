@@ -30,16 +30,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: 3. Agar yangi kompyuterda fayllar bo'lmasa, GitHub'dan avtomat yuklab oladi
-if not exist "cluster_worker.py" (
-    echo  [YUKLANMOQDA] Yangi kompyuter uchun kerakli fayllar GitHub'dan olinmoqda...
-    curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_worker.py" -o "cluster_worker.py"
-    curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/master_certified_pipeline.py" -o "master_certified_pipeline.py"
-    curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/bot_config.json" -o "bot_config.json"
-    curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_url.txt" -o "cluster_url.txt"
-    echo  [OK] Fayllar muvaffaqiyatli yuklandi!
-    echo.
-)
+:: 3. Eng so'nggi 100%% xatosiz kodlarni GitHub'dan yangilab olish
+echo  [YANGILANMOQDA] Eng so'nggi xatosiz kodlar GitHub'dan olinmoqda...
+curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_worker.py" -o "cluster_worker.py"
+curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/master_certified_pipeline.py" -o "master_certified_pipeline.py"
+curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/bot_config.json" -o "bot_config.json"
+curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_url.txt" -o "cluster_url.txt"
+echo  [OK] Barcha kodlar eng so'nggi holatga yangilandi!
+echo.
 
 :: 4. Kutubxonalar tekshiruvi
 python -c "import requests, openpyxl, playwright" >nul 2>&1
