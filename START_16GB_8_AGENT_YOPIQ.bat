@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 title UZBEK CODERS - 16GB KOMPYUTER (8 TA AGENT YOPIQ REJIM)
-color 0B
+color 0A
 
 :: 1. Papkani avtomatik aniqlash (Har qanday kompyuterda ishlaydi!)
 set "TARGET_DIR=%~dp0"
@@ -19,22 +19,28 @@ echo.
 echo  Papka: %TARGET_DIR%
 echo.
 
-:: 2. Eski qotib qolgan profillarni tozalash (1 dan 8 gacha)
-for /L %%i in (1,1,8) do (
-    rd /s /q "%USERPROFILE%\.real_chrome_user_prof_%%i" >nul 2>&1
-    rd /s /q "%TEMP%\clean_chrome_prof_w%%i" >nul 2>&1
-)
+:: 2. Eski qotib qolgan profillarni tozalash (1 dan 4 gacha)
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_1" >nul 2>&1
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_2" >nul 2>&1
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_3" >nul 2>&1
+rd /s /q "%USERPROFILE%\.real_chrome_user_prof_4" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w1" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w2" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w3" >nul 2>&1
+rd /s /q "%TEMP%\clean_chrome_prof_w4" >nul 2>&1
 
-:: 3. Python tekshiruvi
+:: 3. Python bor-yo'qligini tekshirish
 where python >nul 2>&1
 if errorlevel 1 (
     echo [XATOLIK] Ushbu kompyuterda Python topilmadi!
-    echo Iltimos, Python 3.10 yoki 3.11 o'rnating ("Add to PATH" belgisi bilan).
+    echo Iltimos, https://www.python.org saytidan Python 3.10 yoki 3.11 ni o'rnating.
+    echo O'rnatishda "Add python.exe to PATH" katagiga belgi qo'yishni unutmang!
+    echo.
     pause
     exit /b 1
 )
 
-:: 4. Eng so'nggi xatosiz kodlarni GitHub'dan yuklab olish
+:: 4. Eng so'nggi 100%% xatosiz kodlarni GitHub'dan yangilab olish
 echo  [YANGILANMOQDA] Eng so'nggi xatosiz kodlar GitHub'dan olinmoqda...
 curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_worker.py?t=%RANDOM%%RANDOM%" -o "cluster_worker.py"
 curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/master_certified_pipeline.py?t=%RANDOM%%RANDOM%" -o "master_certified_pipeline.py"
@@ -46,17 +52,17 @@ echo.
 :: 5. Kutubxonalar tekshiruvi
 python -c "import requests, openpyxl, playwright" >nul 2>&1
 if errorlevel 1 (
-    echo  [O'RNATILMOQDA] Kerakli kutubxonalar o'rnatilmoqda...
+    echo  [O'RNATILMOQDA] Bir martalik kerakli kutubxonalar o'rnatilmoqda...
     python -m pip install --quiet --disable-pip-version-check requests openpyxl playwright pillow
     python -m playwright install chromium
     echo  [OK] Kutubxonalar tayyor!
     echo.
 )
 
-echo  [1/2] Master Server qidirilmoqda...
-echo  [2/2] 8 ta AI Agent orqa fonda (yopiq brauzerda) ishga tushmoqda...
+echo  [1/2] Telegram / GitHub orqali Asosiy Master Server qidirilmoqda...
+echo  [2/2] 8 ta AI Agent orqa fonda (yopiq brauzerda) ishlamoqda...
 echo.
-echo  Kompyuter ekrani butunlay bo'sh qoladi, 8 barobar tezlikda ishlaydi!
+echo  Kompyuter ekrani bo'sh qoladi, fonda 8 barobar tez ishlaydi!
 echo ======================================================================
 echo.
 
