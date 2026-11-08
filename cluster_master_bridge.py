@@ -433,7 +433,14 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         best_cand = None
         for chat_id, students, f_label in parsed_orders:
             total = len(students)
-            indices = range(1, total + 1)
+            # 1-Kompyuter (Asosiy kompyuter) boshidan: 1, 2, 3...
+            # 2-Kompyuter (Qo'shimcha kompyuter) oxiridan: N, N-1, N-2... Shunda ular o'rtaga qarab to'qnashmasdan keladi!
+            all_keys = [k for k in cluster_nodes.keys() if k != "MASTER_PC"]
+            is_secondary = (node_id and node_id in all_keys and all_keys.index(node_id) > 0)
+            if is_secondary:
+                indices = range(total, 0, -1)
+            else:
+                indices = range(1, total + 1)
             for idx in indices:
                 st = students[idx - 1]
                 s_name = st.get("name", "")
