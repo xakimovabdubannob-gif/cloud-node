@@ -1554,16 +1554,12 @@ def verify_student_name_with_3_checks(page, student_name):
 
             time.sleep(0.8)
 
-            # 4. GALICHKANI TEKSHIRISH VA BOSISH
+            # 4. GALICHKANI TEKSHIRISH VA QO'YISH
             cbs = page.locator("input[type='checkbox']").all()
             for cb in cbs:
                 try:
                     if not cb.is_checked():
-                        print("[ISMNI TASDIQLASH] Galichka tekshirildi (qo'yilmagan ekan) -> Galichka qo'yildi!")
                         cb.click(force=True)
-                        time.sleep(0.4)
-                    else:
-                        print("[ISMNI TASDIQLASH] Galichka allaqachon qo'yilgan (tegmaymiz).")
                 except Exception:
                     pass
 
@@ -1580,7 +1576,28 @@ def verify_student_name_with_3_checks(page, student_name):
                 });
             }""")
 
-            time.sleep(0.8)
+            # 4.1 QILGAN ISHINI 1 SONIYADAN KEYIN TEKSHIRISH (Ism to'ldimi, galichka qo'yildimi?)
+            time.sleep(1.0)
+            chk_res = page.evaluate("""() => {
+                const inps = Array.from(document.querySelectorAll("input:not([type='hidden']):not([type='checkbox']):not([type='radio'])")).filter(i => {
+                    const p = (i.placeholder || '').toLowerCase();
+                    const n = (i.name || '').toLowerCase();
+                    return !p.includes('search') && !n.includes('search');
+                });
+                const cbs = Array.from(document.querySelectorAll("input[type='checkbox']"));
+                const hasFirst = inps.length > 0 && inps[0].value && inps[0].value.trim().length > 0;
+                const hasCb = cbs.length > 0 && cbs[0].checked;
+                return { hasFirst, hasCb };
+            }""")
+
+            # Agar biror narsa qolib ketgan bo'lsa, zudlik bilan qo'yib tekshiramiz:
+            if not chk_res.get("hasFirst") and clean_inps:
+                clean_inps[0].fill(first_name)
+            if not chk_res.get("hasCb"):
+                page.evaluate("""() => {
+                    document.querySelectorAll("input[type='checkbox']").forEach(cb => { cb.checked = true; cb.click(); });
+                }""")
+            time.sleep(0.5)
 
             # 5. SUBMIT TUGMASINI BOSISH
             sub_btn = page.locator("button:has-text('Submit'), button[type='submit'], button:has-text('Отправить'), button:has-text('Save')").first
