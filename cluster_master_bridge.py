@@ -512,7 +512,7 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
             normalize_student_key(s["name"]) not in done_norm
             and normalize_student_key(s["name"]) not in unrec_norm
             and normalize_student_key(s["name"]) != normalize_student_key("MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI")
-            for _, sts in parsed_orders
+            for _, sts, *__ in parsed_orders
             for s in sts
         )
         if has_any_remaining:
