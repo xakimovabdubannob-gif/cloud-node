@@ -42,10 +42,10 @@ if errorlevel 1 (
 
 :: 4. Eng so'nggi 100%% xatosiz kodlarni GitHub'dan yangilab olish
 echo  [YANGILANMOQDA] Eng so'nggi xatosiz kodlar GitHub'dan olinmoqda...
-curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_worker.py" -o "cluster_worker.py"
+curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_worker.py" -o "cluster_worker.py"
 curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/master_certified_pipeline.py" -o "master_certified_pipeline.py"
 curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/bot_config.json" -o "bot_config.json"
-curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_url.txt" -o "cluster_url.txt"
+curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt" -o "cluster_url.txt"
 echo  [OK] Barcha kodlar eng so'nggi holatga yangilandi!
 echo.
 

