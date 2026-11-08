@@ -4,7 +4,8 @@ order_queue_manager.py
 ======================
 Ko'p sonli buyurtmalar (Excel fayllar) navbatini to'liq boshqarish moduli:
 - Har bir buyurtma uchun unikal qisqa ID (hash)
-- Bittada xatosiz o'chirish / arxivlash (dst mavjud bo'lsa ham)
+- openpyxl fayl qulflarini (file locks) to'liq oldini olish (wb.close + gc.collect)
+- Kafolatli bittada o'chirish (deleted_files qora ro'yxati orqali qayta chiqib qolmaydi)
 - Istalgan buyurtmani darhol 1-o'ringa chiqarish
 - O'rin almashtirish (oldinga / orqaga)
 - Muzlatish (Pause) va faollashtirish
@@ -13,6 +14,7 @@ Ko'p sonli buyurtmalar (Excel fayllar) navbatini to'liq boshqarish moduli:
 
 import os
 import sys
+import gc
 import json
 import time
 import shutil
@@ -58,9 +60,10 @@ def _get_completed_and_unrec_keys() -> Tuple[set, set]:
     return done_set, unrec_set
 
 def count_excel_progress(file_path: str, done_set: set, unrec_set: set) -> Tuple[int, int, int]:
-    """Qaytaradi: (total, completed_count, remaining_count)"""
+    """Qaytaradi: (total, completed_count, remaining_count). Faylni o'qigach darhol close() qiladi!"""
     if not os.path.exists(file_path):
         return 0, 0, 0
+    wb = None
     try:
         from openpyxl import load_workbook
         wb = load_workbook(file_path, data_only=True, read_only=True)
@@ -93,6 +96,12 @@ def count_excel_progress(file_path: str, done_set: set, unrec_set: set) -> Tuple
         return total, done_cnt, rem
     except Exception:
         return 0, 0, 0
+    finally:
+        if wb is not None:
+            try:
+                wb.close()
+            except Exception:
+                pass
 
 def load_queue_state() -> Dict:
     _ensure_dirs()
@@ -102,7 +111,7 @@ def load_queue_state() -> Dict:
                 return json.load(f)
         except Exception:
             pass
-    return {"queue": [], "parallel_mode": False}
+    return {"queue": [], "deleted": [], "parallel_mode": False}
 
 def save_queue_state(state: Dict):
     _ensure_dirs()
@@ -119,15 +128,29 @@ def save_queue_state(state: Dict):
 def sync_and_get_queue() -> List[Dict]:
     _ensure_dirs()
     state = load_queue_state()
-    existing_items: List[Dict] = state.get("queue", [])
+    deleted_set = set(state.get("deleted", []))
 
-    disk_files = [f for f in os.listdir(ORDERS_DIR) if f.startswith("in_") and f.endswith(".xlsx")]
+    # Deleted ro'yxatidagi fayllarni diskdan tozalashga harakat qilamiz
+    gc.collect()
+    for dfn in list(deleted_set):
+        dfp = os.path.join(ORDERS_DIR, dfn)
+        if os.path.exists(dfp):
+            try:
+                os.remove(dfp)
+            except Exception:
+                pass
+
+    existing_items: List[Dict] = state.get("queue", [])
+    # Faqat o'chirilmagan fayllarni olamiz
+    disk_files = [f for f in os.listdir(ORDERS_DIR) if f.startswith("in_") and f.endswith(".xlsx") and f not in deleted_set]
     done_set, unrec_set = _get_completed_and_unrec_keys()
 
     updated_queue = []
     # 1. Avval mavjud navbatdagi fayllarni tekshiramiz
     for item in existing_items:
         fn = item.get("filename")
+        if fn in deleted_set:
+            continue
         if fn in disk_files:
             fp = os.path.join(ORDERS_DIR, fn)
             tot, done, rem = count_excel_progress(fp, done_set, unrec_set)
@@ -141,7 +164,7 @@ def sync_and_get_queue() -> List[Dict]:
             updated_queue.append(item)
             disk_files.remove(fn)
 
-    # 2. Yangi diskka tushgan, lekin hali queue_state da bo'lmagan fayllarni oxiriga qo'shamiz
+    # 2. Yangi diskka tushgan (va o'chirilmagan) fayllarni oxiriga qo'shamiz
     disk_files_sorted = sorted(disk_files, key=lambda x: os.path.getmtime(os.path.join(ORDERS_DIR, x)))
     for fn in disk_files_sorted:
         fp = os.path.join(ORDERS_DIR, fn)
@@ -270,15 +293,31 @@ def archive_order_by_id(order_id: str) -> bool:
 
 def archive_order(filename: str) -> bool:
     """
-    Faylni bot_orders dan olib tashlaydi:
-    - dst mavjud bo'lsa uni o'chiradi va yangisini yozadi
-    - shutil.move ishlamasa, faylni to'g'ridan-to'g'ri o'chiradi
-    - queue_state.json dan 100% KAFOLATLI o'chiradi!
+    Kafolatli bittada navbatdan o'chirish:
+    1. 'deleted' qora ro'yxatiga qo'shadi (hech qachon qayta ko'rinmaydi)
+    2. queue dan darhol olib tashlaydi
+    3. gc.collect() chaqirib qulfni bo'shatadi va diskdan o'chiradi
     """
     _ensure_dirs()
+    state = load_queue_state()
+
+    # 1. Qora ro'yxatga qo'shish
+    deleted_list = state.get("deleted", [])
+    if filename not in deleted_list:
+        deleted_list.append(filename)
+    state["deleted"] = deleted_list
+
+    # 2. queue ro'yxatidan olib tashlash
+    state["queue"] = [it for it in state.get("queue", []) if it.get("filename") != filename]
+    for idx, item in enumerate(state["queue"], 1):
+        item["priority"] = idx
+    save_queue_state(state)
+
+    # 3. Diskdan xavfsiz arxivlash yoki o'chirish
     src = os.path.join(ORDERS_DIR, filename)
     dst = os.path.join(ARCHIVE_DIR, filename)
 
+    gc.collect()
     if os.path.exists(src):
         try:
             if os.path.exists(dst):
@@ -293,23 +332,17 @@ def archive_order(filename: str) -> bool:
             except Exception:
                 pass
 
-    if os.path.exists(src):
-        try:
-            os.remove(src)
-        except Exception:
-            pass
-
-    # queue_state dan butunlay olib tashlaymiz
-    state = load_queue_state()
-    queue = [it for it in state.get("queue", []) if it.get("filename") != filename]
-    for idx, item in enumerate(queue, 1):
-        item["priority"] = idx
-    state["queue"] = queue
-    save_queue_state(state)
     return True
 
 def restore_order_from_archive(filename: str) -> bool:
     _ensure_dirs()
+    state = load_queue_state()
+    deleted_list = state.get("deleted", [])
+    if filename in deleted_list:
+        deleted_list.remove(filename)
+    state["deleted"] = deleted_list
+    save_queue_state(state)
+
     src = os.path.join(ARCHIVE_DIR, filename)
     dst = os.path.join(ORDERS_DIR, filename)
     if os.path.exists(src):

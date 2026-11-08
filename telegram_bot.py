@@ -2396,6 +2396,7 @@ class TelegramBotServer:
 
         mode_text = "👥 <b>Rejim:</b> Parallel (Har kompyuter alohida sinf)" if parallel else "⚡ <b>Rejim:</b> Ketma-ket (Barcha kompyuterlar 1-o'rindagi sinfda)"
         lines.append(mode_text)
+        lines.append(f"⏱ <i>Yangilangan vaqt: {time.strftime('%H:%M:%S')}</i>")
 
         buttons = []
         for idx, it in enumerate(queue, 1):
