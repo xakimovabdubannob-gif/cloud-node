@@ -1,19 +1,5 @@
 {
-  "queue": [
-    {
-      "id": "96be3496",
-      "filename": "in_6580113791_1794219265_ravshanbek 9m.xlsx",
-      "display_name": "ravshanbek 9m",
-      "chat_id": 6580113791,
-      "status": "active",
-      "total": 30,
-      "done": 13,
-      "remaining": 17,
-      "mtime": 1794219265.2845342,
-      "added_ts": 1794219267,
-      "priority": 1
-    }
-  ],
+  "queue": [],
   "deleted": [],
   "parallel_mode": false
 }
