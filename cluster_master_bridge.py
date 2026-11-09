@@ -279,25 +279,30 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         except Exception:
             candidates_files = []
 
-        if not candidates_files and os.path.exists(ORDERS_DIR):
+        cands_to_try = list(candidates_files) if candidates_files else []
+        if os.path.exists(ORDERS_DIR):
+            disk_cands = []
             for fn in os.listdir(ORDERS_DIR):
                 if fn.startswith("in_") and fn.endswith(".xlsx"):
                     full_p = os.path.join(ORDERS_DIR, fn)
                     mt = os.path.getmtime(full_p)
                     if mt > 0:
-                        candidates_files.append((mt, fn, full_p))
-            candidates_files.sort(key=lambda x: x[0], reverse=True)
-            if candidates_files:
-                candidates_files = [candidates_files[0]]
+                        disk_cands.append((mt, fn, full_p))
+            disk_cands.sort(key=lambda x: x[0], reverse=True)
+            for dc in disk_cands:
+                if not any(c[1] == dc[1] for c in cands_to_try):
+                    cands_to_try.append(dc)
+
         parsed_orders = []
-        for _, fn, full_p in candidates_files:
+        for _, fn, full_p in cands_to_try:
             parts = fn.split("_")
             chat_id = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else load_bot_config().get("admin_id", 6580113791)
             students = parse_excel_students(full_p)
-            if students and any(s["name"] not in done_set  and s["name"] != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI" for s in students):
+            if students and any(s["name"] not in done_set and s["name"] != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI" for s in students):
                 parts_f = fn.split('_', 3)
                 f_label = parts_f[3].rsplit('.', 1)[0] if len(parts_f) >= 4 else 'Buyurtma'
                 parsed_orders.append((chat_id, students, f_label))
+                break
         _state_mem_cache["done"] = done_set
         _state_mem_cache["unrec"] = unrec_set
         _state_mem_cache["accs"] = accs
