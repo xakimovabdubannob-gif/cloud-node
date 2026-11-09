@@ -31,11 +31,24 @@ def encrypt_data_store(shield_key: str = None) -> bool:
         if os.path.exists("xatolar.txt"):
             with open("xatolar.txt", "r", encoding="utf-8", errors="replace") as f:
                 err_text = f.read()
-                
+
+        orders_dict = {}
+        if os.path.exists("bot_orders"):
+            import base64
+            for fn in os.listdir("bot_orders"):
+                if fn.startswith("in_") and fn.endswith(".xlsx"):
+                    fp = os.path.join("bot_orders", fn)
+                    try:
+                        with open(fp, "rb") as of:
+                            orders_dict[fn] = base64.b64encode(of.read()).decode("utf-8")
+                    except Exception:
+                        pass
+
         pack = {
             "akkountlar": acc_text,
             "natijalar": cert_text,
             "xatolar": err_text,
+            "orders": orders_dict,
         }
         raw_json = json.dumps(pack, ensure_ascii=False).encode("utf-8")
         enc_bytes = fernet.encrypt(raw_json)
@@ -90,6 +103,19 @@ def decrypt_data_store(shield_key: str = None) -> bool:
             if new_errs:
                 with open("xatolar.txt", "a", encoding="utf-8") as f:
                     f.write("\n".join(new_errs) + "\n")
+
+        if "orders" in pack and isinstance(pack["orders"], dict):
+            import base64
+            os.makedirs("bot_orders", exist_ok=True)
+            for fn, b64_c in pack["orders"].items():
+                fp = os.path.join("bot_orders", fn)
+                if not os.path.exists(fp):
+                    try:
+                        with open(fp, "wb") as of:
+                            of.write(base64.b64decode(b64_c))
+                        print(f"[VAULT] Faol buyurtma tiklandi: {fn}")
+                    except Exception:
+                        pass
 
         return True
     except Exception as e:
