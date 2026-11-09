@@ -1417,7 +1417,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                             if sn and sn not in seen_names:
                                 seen_names.add(sn)
                                 total_s_count += 1
-                                if sn not in done_s  and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
+                                if sn not in done_s and sn not in unrec_s and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
                                     rem_s_count += 1
 
             if recent_completed_records:
@@ -1882,7 +1882,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
                     sts = parse_excel_students(c_files[0][1])
                     for i_s, s_obj in enumerate(sts, 1):
                         sn = s_obj["name"]
-                        if sn not in done_s  and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
+                        if sn not in done_s and sn not in unrec_s and sn != "MUXAMMADAMINOVA IBODATOY ILXOMBEK QIZI":
                             rem_cnt += 1
                             em_s = accs_s.get(sn, {}).get("email", "yangi")
                             rem_rows += f"<div style='padding:5px 10px;border-bottom:1px solid #334155;font-size:13px;'>⏳ <b>[{i_s}/{len(sts)}] {sn}</b> ({s_obj.get('class_name', '')}) — Pochta: <code>{em_s}</code></div>"
@@ -2395,7 +2395,7 @@ class ClusterBridgeHandler(http.server.BaseHTTPRequestHandler):
 
                             cur_time_str = time.strftime("%d.%m.%Y_%H-%M")
                             out_filename = f"{clean_base}_Sertifikatlar_{cur_time_str}_({file_dur_tag}).xlsx"
-                            out_xlsx = os.path.join(ORDERS_DIR, out_filename)
+                            out_xlsx = os.path.join(ORDERS_DIR, "archived", out_filename)
                             export_results_to_excel(all_sts, output_file=out_xlsx)
                             cfg_b = load_bot_config()
                             tok_b = cfg_b.get("bot_token", "")

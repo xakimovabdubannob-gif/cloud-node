@@ -25,7 +25,7 @@ ORDERS_DIR = "bot_orders"
 ARCHIVE_DIR = os.path.join(ORDERS_DIR, "archived")
 QUEUE_STATE_FILE = os.path.join(ORDERS_DIR, "queue_state.json")
 CERTS_FILE = "natijalar_sertifikatlar.txt"
-ERRORS_FILE = "xatolar_keshi.txt"
+ERRORS_FILE = "xatolar.txt"
 
 def _ensure_dirs():
     os.makedirs(ORDERS_DIR, exist_ok=True)
@@ -42,21 +42,22 @@ def _get_completed_and_unrec_keys() -> Tuple[set, set]:
             with open(CERTS_FILE, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
                     p = line.strip().split("|")
-                    if p and p[0].strip():
+                    if p and p[0].strip() and not p[0].startswith("#"):
                         done_set.add(p[0].strip().upper())
         except Exception:
             pass
 
     unrec_set = set()
-    if os.path.exists(ERRORS_FILE):
-        try:
-            with open(ERRORS_FILE, "r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    p = line.strip().split("|")
-                    if p and p[0].strip():
-                        unrec_set.add(p[0].strip().upper())
-        except Exception:
-            pass
+    for err_fn in ("xatolar.txt", "xatolar_keshi.txt"):
+        if os.path.exists(err_fn):
+            try:
+                with open(err_fn, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        p = line.strip().split("|")
+                        if p and p[0].strip() and not p[0].startswith("#"):
+                            unrec_set.add(p[0].strip().upper())
+            except Exception:
+                pass
     return done_set, unrec_set
 
 def count_excel_progress(file_path: str, done_set: set, unrec_set: set) -> Tuple[int, int, int]:
@@ -70,6 +71,7 @@ def count_excel_progress(file_path: str, done_set: set, unrec_set: set) -> Tuple
         ws = wb.active
         total = 0
         done_cnt = 0
+        header_words = ["F.I.SH", "F.I.O", "ISM", "FAMILIYA", "№", "T/R", "FISH", "COURSERA", "SHABLON", "SERTIFIKAT", "TUG'ILGAN", "GUVOHNOMA", "SANA"]
         for row in ws.iter_rows(values_only=True):
             if not row or not any(row):
                 continue
@@ -77,16 +79,18 @@ def count_excel_progress(file_path: str, done_set: set, unrec_set: set) -> Tuple
             if not cells:
                 continue
             first_c = cells[0].upper()
-            if any(h in first_c for h in ["F.I.SH", "F.I.O", "ISM", "FAMILIYA", "№", "T/R", "FISH"]):
+            if any(h in first_c for h in header_words):
                 continue
             name_cand = ""
             for val in cells:
                 parts = val.split()
                 if len(parts) >= 2 and all(p.isalpha() or "'" in p or "`" in p or "ʻ" in p for p in parts[:2]):
-                    name_cand = val.upper()
-                    break
+                    if not any(h in val.upper() for h in header_words):
+                        name_cand = val.upper()
+                        break
             if not name_cand and len(cells) >= 1 and len(cells[0].split()) >= 2:
-                name_cand = cells[0].upper()
+                if not any(h in cells[0].upper() for h in header_words):
+                    name_cand = cells[0].upper()
 
             if name_cand:
                 total += 1
@@ -161,6 +165,20 @@ def sync_and_get_queue() -> List[Dict]:
             item["mtime"] = os.path.getmtime(fp)
             if "status" not in item:
                 item["status"] = "active"
+
+            if rem == 0 and tot > 0:
+                dst = os.path.join(ARCHIVE_DIR, fn)
+                try:
+                    gc.collect()
+                    if os.path.exists(dst):
+                        try: os.remove(dst)
+                        except Exception: pass
+                    shutil.move(fp, dst)
+                    disk_files.remove(fn)
+                    continue
+                except Exception:
+                    pass
+
             updated_queue.append(item)
             disk_files.remove(fn)
 
@@ -177,6 +195,19 @@ def sync_and_get_queue() -> List[Dict]:
             clean_name = parts[2].rsplit(".", 1)[0]
 
         tot, done, rem = count_excel_progress(fp, done_set, unrec_set)
+
+        if rem == 0 and tot > 0:
+            dst = os.path.join(ARCHIVE_DIR, fn)
+            try:
+                gc.collect()
+                if os.path.exists(dst):
+                    try: os.remove(dst)
+                    except Exception: pass
+                shutil.move(fp, dst)
+                continue
+            except Exception:
+                pass
+
         new_item = {
             "id": get_order_id(fn),
             "filename": fn,
