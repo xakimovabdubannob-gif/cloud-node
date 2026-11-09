@@ -26,10 +26,16 @@ def encrypt_data_store(shield_key: str = None) -> bool:
         if os.path.exists("natijalar_sertifikatlar.txt"):
             with open("natijalar_sertifikatlar.txt", "r", encoding="utf-8", errors="replace") as f:
                 cert_text = f.read()
+
+        err_text = ""
+        if os.path.exists("xatolar.txt"):
+            with open("xatolar.txt", "r", encoding="utf-8", errors="replace") as f:
+                err_text = f.read()
                 
         pack = {
             "akkountlar": acc_text,
             "natijalar": cert_text,
+            "xatolar": err_text,
         }
         raw_json = json.dumps(pack, ensure_ascii=False).encode("utf-8")
         enc_bytes = fernet.encrypt(raw_json)
@@ -73,6 +79,18 @@ def decrypt_data_store(shield_key: str = None) -> bool:
             if new_certs:
                 with open("natijalar_sertifikatlar.txt", "a", encoding="utf-8") as f:
                     f.write("\n".join(new_certs) + "\n")
+
+        if "xatolar" in pack and pack["xatolar"]:
+            existing_errs = set()
+            if os.path.exists("xatolar.txt"):
+                with open("xatolar.txt", "r", encoding="utf-8", errors="replace") as f:
+                    existing_errs = {line.strip() for line in f if line.strip()}
+            vault_errs = [l.strip() for l in pack["xatolar"].splitlines() if l.strip()]
+            new_errs = [l for l in vault_errs if l not in existing_errs]
+            if new_errs:
+                with open("xatolar.txt", "a", encoding="utf-8") as f:
+                    f.write("\n".join(new_errs) + "\n")
+
         return True
     except Exception as e:
         print(f"[VAULT DECRYPT ERROR] {e}")
