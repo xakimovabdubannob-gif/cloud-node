@@ -152,9 +152,9 @@ p_bridge = subprocess.Popen([sys.executable, "-u", "cluster_master_bridge.py"])
 time.sleep(3)
 
 # 2. Asosiy Telegram Botni ishga tushirish (GitHub faqat boshqaruvchi: MAX_WORKERS=0)
-print("[2] Telegram Bot (@Sertifikatagentbot) ishga tushirilmoqda (Faol AI Agentlar: MAX_WORKERS=3)...")
+print("[2] Telegram Bot (@Sertifikatagentbot) ishga tushirilmoqda (Faol AI Agentlar: MAX_WORKERS=0)...")
 env_bot = os.environ.copy()
-env_bot["MAX_WORKERS"] = "3"
+env_bot["MAX_WORKERS"] = "0"
 env_bot["HEADLESS"] = "1"
 p_bot = subprocess.Popen([sys.executable, "-u", "telegram_bot.py"], env=env_bot)
 time.sleep(2)
@@ -206,7 +206,7 @@ while time.time() - start_ts < 16200:
     if p_bot.poll() is not None:
         print(f"[QAYTA ISHGA TUSHIRISH] Telegram Bot to'xtadi (kod: {p_bot.poll()}). Qayta yoqilmoqda...")
         env_bot = os.environ.copy()
-        env_bot["MAX_WORKERS"] = "3"
+        env_bot["MAX_WORKERS"] = "0"
         env_bot["HEADLESS"] = "1"
         p_bot = subprocess.Popen([sys.executable, "-u", "telegram_bot.py"], env=env_bot)
 
