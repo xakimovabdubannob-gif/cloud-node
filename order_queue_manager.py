@@ -61,51 +61,21 @@ def _get_completed_and_unrec_keys() -> Tuple[set, set]:
     return done_set, unrec_set
 
 def count_excel_progress(file_path: str, done_set: set, unrec_set: set) -> Tuple[int, int, int]:
-    """Qaytaradi: (total, completed_count, remaining_count). Faylni o'qigach darhol close() qiladi!"""
+    """Qaytaradi: (total, completed_count, remaining_count)."""
     if not os.path.exists(file_path):
         return 0, 0, 0
-    wb = None
     try:
-        from openpyxl import load_workbook
-        wb = load_workbook(file_path, data_only=True, read_only=True)
-        ws = wb.active
-        total = 0
-        done_cnt = 0
-        header_words = ["F.I.SH", "F.I.O", "ISM", "FAMILIYA", "№", "T/R", "FISH", "COURSERA", "SHABLON", "SERTIFIKAT", "TUG'ILGAN", "GUVOHNOMA", "SANA"]
-        for row in ws.iter_rows(values_only=True):
-            if not row or not any(row):
-                continue
-            cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
-            if not cells:
-                continue
-            first_c = cells[0].upper()
-            if any(h in first_c for h in header_words):
-                continue
-            name_cand = ""
-            for val in cells:
-                parts = val.split()
-                if len(parts) >= 2 and all(p.isalpha() or "'" in p or "`" in p or "ʻ" in p for p in parts[:2]):
-                    if not any(h in val.upper() for h in header_words):
-                        name_cand = val.upper()
-                        break
-            if not name_cand and len(cells) >= 1 and len(cells[0].split()) >= 2:
-                if not any(h in cells[0].upper() for h in header_words):
-                    name_cand = cells[0].upper()
-
-            if name_cand:
-                total += 1
-                if name_cand in done_set or name_cand in unrec_set:
-                    done_cnt += 1
+        from telegram_bot import parse_students_from_excel
+        sts = parse_students_from_excel(file_path)
+        if not sts:
+            return 0, 0, 0
+        total = len(sts)
+        done_cnt = sum(1 for s in sts if s.get("name", "").upper() in done_set or s.get("name", "").upper() in unrec_set)
         rem = max(0, total - done_cnt)
         return total, done_cnt, rem
-    except Exception:
+    except Exception as e:
+        print(f"[COUNT PROGRESS ERROR] {e}")
         return 0, 0, 0
-    finally:
-        if wb is not None:
-            try:
-                wb.close()
-            except Exception:
-                pass
 
 def load_queue_state() -> Dict:
     _ensure_dirs()
@@ -417,6 +387,16 @@ def get_candidates_for_cluster(node_id: str = "") -> List[Tuple[float, str, str]
     queue = sync_and_get_queue()
     active_orders = [it for it in queue if it.get("status") == "active" and it.get("remaining", 1) > 0]
     if not active_orders:
+        if os.path.exists(ORDERS_DIR):
+            cands = []
+            for fn in os.listdir(ORDERS_DIR):
+                if fn.startswith("in_") and fn.endswith(".xlsx"):
+                    fp = os.path.join(ORDERS_DIR, fn)
+                    mt = os.path.getmtime(fp)
+                    cands.append((mt, fn, fp))
+            cands.sort(key=lambda x: x[0], reverse=True)
+            if cands:
+                return [cands[0]]
         return []
 
     parallel = is_parallel_mode()

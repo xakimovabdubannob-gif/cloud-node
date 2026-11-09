@@ -272,18 +272,20 @@ def get_pending_cluster_task(node_id: str = "", worker_id: str = "1"):
         done_set = get_completed_students()
         unrec_set = get_unrecoverable_students()
         accs = get_existing_accounts()
+        candidates_files = []
         try:
             import order_queue_manager
             candidates_files = order_queue_manager.get_candidates_for_cluster(node_id=node_id)
-        except Exception as q_err:
+        except Exception:
             candidates_files = []
-            if os.path.exists(ORDERS_DIR):
-                for fn in os.listdir(ORDERS_DIR):
-                    if fn.startswith("in_") and fn.endswith(".xlsx"):
-                        full_p = os.path.join(ORDERS_DIR, fn)
-                        mt = os.path.getmtime(full_p)
-                        if mt > 0:
-                            candidates_files.append((mt, fn, full_p))
+
+        if not candidates_files and os.path.exists(ORDERS_DIR):
+            for fn in os.listdir(ORDERS_DIR):
+                if fn.startswith("in_") and fn.endswith(".xlsx"):
+                    full_p = os.path.join(ORDERS_DIR, fn)
+                    mt = os.path.getmtime(full_p)
+                    if mt > 0:
+                        candidates_files.append((mt, fn, full_p))
             candidates_files.sort(key=lambda x: x[0], reverse=True)
             if candidates_files:
                 candidates_files = [candidates_files[0]]
