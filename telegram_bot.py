@@ -531,8 +531,49 @@ def parse_students_from_doc_or_docx(file_path: str):
     txt = extract_text_from_word_doc(file_path)
     return parse_students_from_text(txt)
 
+
+def convert_xls_to_xlsx(xls_path: str, xlsx_path: str = None) -> str:
+    """Eski Excel 97-2003 (.xls) fayllarini zamonaviy .xlsx ga aylantiradi."""
+    if not xlsx_path:
+        xlsx_path = os.path.splitext(xls_path)[0] + ".xlsx"
+    try:
+        import xlrd
+    except ImportError:
+        import subprocess
+        subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "xlrd"], check=False)
+        import xlrd
+    import openpyxl
+    book = xlrd.open_workbook(xls_path)
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    for s_idx in range(book.nsheets):
+        sh = book.sheet_by_index(s_idx)
+        ws = wb.create_sheet(title=sh.name[:31])
+        for r in range(sh.nrows):
+            row_vals = []
+            for c in range(sh.ncols):
+                val = sh.cell_value(r, c)
+                if sh.cell_type(r, c) == xlrd.XL_CELL_DATE:
+                    try:
+                        d = xlrd.xldate_as_tuple(val, book.datemode)
+                        val = f"{d[2]:02d}.{d[1]:02d}.{d[0]}"
+                    except Exception:
+                        pass
+                elif sh.cell_type(r, c) == xlrd.XL_CELL_NUMBER and isinstance(val, float) and val.is_integer():
+                    val = str(int(val))
+                row_vals.append(val)
+            ws.append(row_vals)
+    wb.save(xlsx_path)
+    return xlsx_path
+
 def parse_students_from_excel(file_path: str):
-    """Excel (.xlsx) fayldan o'quvchilar ro'yxatini o'qiydi (sarlavha, '№' va namuna qatorlarni avtomatik tashlab ketadi)."""
+    """Excel (.xlsx va .xls) fayldan o'quvchilar ro'yxatini o'qiydi (sarlavha, '№' va namuna qatorlarni avtomatik tashlab ketadi)."""
+    if str(file_path).lower().endswith(".xls"):
+        conv_p = os.path.splitext(file_path)[0] + "_conv.xlsx"
+        try:
+            file_path = convert_xls_to_xlsx(file_path, conv_p)
+        except Exception as e_conv:
+            print(f"[XLS CONVERT ERROR] {e_conv}")
     students = []
     wb = load_workbook(file_path, data_only=True)
     ws = wb.active
@@ -2029,7 +2070,7 @@ class TelegramBotServer:
             if getattr(self, "is_paused", False):
                 time.sleep(1.5)
                 continue
-            ctx, idx, st = self._pop_helper_task()
+            ctx, idx, st = (self._pop_helper_task() if MAX_PARALLEL_WORKERS > 0 else (None, None, None))
             if ctx is not None:
                 try:
                     self._process_order_student(ctx, idx, st, worker_id)
@@ -2800,7 +2841,8 @@ class TelegramBotServer:
                 pass
         create_template_excel()
 
-        for w_i in range(1, MAX_PARALLEL_WORKERS + 1):
+        w_threads_count = 1 if MAX_PARALLEL_WORKERS == 0 else MAX_PARALLEL_WORKERS
+        for w_i in range(1, w_threads_count + 1):
             t = threading.Thread(target=self.worker_loop, args=(w_i,), daemon=True)
             t.start()
 
@@ -3991,6 +4033,20 @@ class TelegramBotServer:
             pref = f"in_{chat_id}_" if (self.admin_id and chat_id == self.admin_id) else f"pending_{chat_id}_"
             if fname.endswith(".xlsx"):
                 local_p = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}.xlsx"))
+                students = parse_students_from_excel(local_p)
+                self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
+                return
+            elif fname.endswith(".xls"):
+                raw_xls = self.download_file(doc["file_id"], os.path.join(ORDERS_DIR, f"temp_{int(time.time())}_{clean_base}.xls"))
+                local_p = os.path.join(ORDERS_DIR, f"{pref}{int(time.time())}_{clean_base}.xlsx")
+                try:
+                    convert_xls_to_xlsx(raw_xls, local_p)
+                    if os.path.exists(raw_xls):
+                        try: os.remove(raw_xls)
+                        except Exception: pass
+                except Exception as ex_xls:
+                    print(f"[XLS CONVERT ERROR] {ex_xls}")
+                    local_p = raw_xls
                 students = parse_students_from_excel(local_p)
                 self.handle_students_submission(chat_id, user_name, username, students, orig_fname=orig_fname)
                 return
