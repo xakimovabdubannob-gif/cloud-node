@@ -253,7 +253,7 @@ def dismiss_all_popups(page):
     except Exception:
         pass
     try:
-        for _sel in ['button[aria-label*="close"]', 'button[aria-label*="Close"]', '.modal-close', 'svg.lucide-x', "button:has-text('✕')", "button:has-text('×')"]:
+        for _sel in ['button:has-text("Close X")', 'a:has-text("Close X")', 'button:has-text("Start the course")', 'button:has-text("Start course")', 'button[aria-label*="close"]', 'button[aria-label*="Close"]', '.modal-close', 'svg.lucide-x', "button:has-text('✕')", "button:has-text('×')"]:
             _b = page.locator(_sel).first
             if _b.count() > 0 and _b.is_visible():
                 try: _b.click(force=True)
@@ -336,10 +336,15 @@ def dismiss_all_popups(page):
             });
             const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
             const bTxtComm = (document.body ? document.body.innerText : '').toLowerCase();
-            if ((bTxtComm.includes('my commitment') || bTxtComm.includes('мое обязательство') || bTxtComm.includes('обязательство') || bTxtComm.includes('обязуюсь') || bTxtComm.includes('majburiyat')) && cbs.length > 0) {
+            if ((bTxtComm.includes('my commitment') || bTxtComm.includes('мое обязательство') || bTxtComm.includes('обязательство') || bTxtComm.includes('обязуюсь') || bTxtComm.includes('majburiyat'))) {
                 cbs.forEach(cb => {
                     try { if (!cb.checked) cb.click(); } catch(e) {}
                 });
+                const closeCommit = Array.from(document.querySelectorAll('button, a')).find(el => {
+                    const t = (el.innerText || el.textContent || '').trim();
+                    return t === 'Close X' || t === 'Start the course' || t === 'Start course' || t === 'Close';
+                });
+                if (closeCommit) { try { closeCommit.click(); } catch(e) {} }
             }
 
             const isAssignmentPage = window.location.href.includes('assignment') || window.location.href.includes('quiz') || window.location.href.includes('exam');
@@ -407,6 +412,10 @@ def dismiss_all_popups(page):
                     cb.check(force=True, timeout=500)
             except Exception:
                 pass
+        # Close X on commitment modal or Start the course
+        cx = page.locator("button:visible:has-text('Close X'), a:visible:has-text('Close X')").first
+        if cx.count() > 0 and cx.is_visible():
+            cx.click(force=True, timeout=1000)
         # Start course / Launch course button in English, Uzbek, and Russian (prioritize Запустить курс)
         st = page.locator("button:visible:has-text('Запустить курс'), button:visible:has-text('Launch course'), button:visible:has-text('Start the course'), button:visible:has-text('Start course'), button:visible:has-text('Go To Course'), button:visible:has-text('Kursni boshlash'), button:visible:has-text('Kursga o\'tish'), button:visible:has-text('Запустить'), button:visible:has-text('Начать курс'), button:visible:has-text('Начать обучение')").first
         if st.count() > 0 and st.is_visible():
@@ -978,11 +987,17 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                             }
                         }
                     }''')
-                    start_course_btn = page.locator("button:visible:has-text('Запустить курс'), button:visible:has-text('Запустить'), button:visible:has-text('Start the course'), button:visible:has-text('Launch course'), button:visible:has-text('Start course'), button:visible:has-text('Начать курс')").first
-                    if start_course_btn.count() > 0 and start_course_btn.is_visible():
-                        print(f"[{q_name}] 'Мое обязательство' topildi -> 'Запустить курс' bosildi!")
-                        start_course_btn.click(force=True)
-                        time.sleep(2.0)
+                    close_x = page.locator("button:visible:has-text('Close X'), a:visible:has-text('Close X'), button:visible:has-text('Close')").first
+                    if close_x.count() > 0 and close_x.is_visible():
+                        print(f"[{q_name}] 'Close X' bosildi!")
+                        close_x.click(force=True)
+                        time.sleep(1.5)
+                    else:
+                        start_course_btn = page.locator("button:visible:has-text('Start the course'), button:visible:has-text('Start course'), button:visible:has-text('Запустить курс'), button:visible:has-text('Запустить'), button:visible:has-text('Launch course'), button:visible:has-text('Начать курс')").first
+                        if start_course_btn.count() > 0 and start_course_btn.is_visible():
+                            print(f"[{q_name}] 'Start the course' bosildi!")
+                            start_course_btn.click(force=True)
+                            time.sleep(2.0)
                 except Exception as ex_comm:
                     print(f"[{q_name}] Commitment handle: {ex_comm}")
 
@@ -3239,7 +3254,12 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                     # 2. Module 1 dagi barcha Quiz va dars holatini tekshirish
                     overview = check_module1_overview(page)
 
-                    # 3. BIRINCHI O'RINDA 4 TA QUIZNI TEKSHIRISH VA YECHISH!
+                    # 3. BIRINCHI O'RINDA Videolar va Reading 100% bajariladi (Coursera testlari qulfini ochish uchun!)
+                    if status_callback:
+                        status_callback(f"🎬 {full_name}: Videolar va Reading 100% bajarilmoqda (testlar qulfi ochilmoqda)...")
+                    ensure_videos_and_reading_100(page, overview)
+
+                    # 4. KEYIN 4 TA QUIZNI TEKSHIRISH VA YECHISH (barcha testlar qulfdan to'liq chiqqan holda!)
                     quiz_statuses = overview.get("quizzes", {})
                     dynamic_urls = overview.get("quiz_urls", {})
                     print(f"{tag}[MODULE 1 QUIZ HOLATI]: {quiz_statuses}")
@@ -3251,13 +3271,8 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                         if quiz_statuses.get(q_name) == "PASSED":
                             print(f"{tag}[+] {q_name} allaqachon 100% (PASSED) - vaqt sarflamay o'tkazib yuborildi!")
                         else:
-                            print(f"{tag}[-] {q_name} bajarilmagan ({quiz_statuses.get(q_name)}) - birinchi o'rinda yechilmoqda...")
+                            print(f"{tag}[-] {q_name} bajarilmagan ({quiz_statuses.get(q_name)}) - yechilmoqda...")
                             solve_single_quiz_with_3_checks(page, q_name, actual_url, q_num, full_name)
-
-                    # 4. KEYIN Videolar va Reading 100% ekanligini tekshirish (agar yashil ptichka bo'lsa, kirmaydi!)
-                    if status_callback:
-                        status_callback(f"🎬 {full_name}: Videolar va Reading 100% tekshirilmoqda...")
-                    ensure_videos_and_reading_100(page, overview)
 
                     # 5. Ismni tasdiqlash (Verify My Name)
                     if status_callback:
