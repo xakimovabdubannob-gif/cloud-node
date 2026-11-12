@@ -1,1 +1,36 @@
+# Antigravity & AI
 .aider*
+.gemini/
+
+# Private sensitive data & credentials (safely stored in private cloud-data repo)
+akkountlar.txt
+bot_config.json
+student_docs.json
+natijalar_sertifikatlar.txt
+xatolar.txt
+used_aliases.txt
+data_store.enc
+cluster_url.txt
+cluster_nodes_state.json
+cluster_tried_students.json
+anydesk_id.txt
+
+# Student databases, sessions & orders
+5millionsertifikat/
+bot_orders/
+*.xlsx
+*.xls
+*.session
+*.enc
+*.png
+*.jpg
+*.jpeg
+*.mp4
+*.zip
+
+# Python & Environment
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+venv/

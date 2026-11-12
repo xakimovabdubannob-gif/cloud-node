@@ -125,21 +125,41 @@ def sync_databases_to_github():
     try:
         from vault_security import encrypt_data_store
         encrypt_data_store()
-        st = subprocess.run(["git", "status", "--porcelain", "data_store.enc", "bot_orders"], capture_output=True, text=True)
-        if st.stdout.strip():
-            print("[SYNC] Yangi akkountlar va sertifikatlar shifrlangan qutida GitHub'ga saqlanmoqda...")
-            subprocess.run(["git", "config", "user.name", "github-actions[bot]"])
-            subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"])
-            subprocess.run(["git", "config", "--unset-all", "http.https://github.com/.extraheader"])
-            subprocess.run(["git", "add", "data_store.enc", "bot_orders"])
-            subprocess.run(["git", "commit", "-m", "sync: encrypted data store and orders updated [skip ci]"])
-            push_url = f"https://{GH_OWNER}:{GH_TOKEN}@github.com/{GH_OWNER}/{GH_REPO}.git"
-            subprocess.run(["git", "pull", "--rebase", push_url, "HEAD:main"], capture_output=True, text=True)
-            res = subprocess.run(["git", "push", push_url, "HEAD:main"], capture_output=True, text=True)
-            if res.returncode == 0:
-                print("[SYNC] Muvaffaqiyatli saqlandi!")
-            else:
-                print(f"[SYNC PUSH ERROR] {res.stderr}")
+
+        data_repo = "cloud-data"
+        push_url = f"https://{GH_OWNER}:{GH_TOKEN}@github.com/{GH_OWNER}/{data_repo}.git"
+        tmp_dir = "temp_sync_data"
+        if os.path.exists(tmp_dir):
+            try:
+                import shutil
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+        c_res = subprocess.run(["git", "clone", "--depth", "1", push_url, tmp_dir], capture_output=True, text=True)
+        if c_res.returncode == 0:
+            import shutil
+            for fn in ("bot_config.json", "akkountlar.txt", "student_docs.json", "natijalar_sertifikatlar.txt", "xatolar.txt", "used_aliases.txt", "data_store.enc"):
+                if os.path.exists(fn):
+                    shutil.copy2(fn, os.path.join(tmp_dir, fn))
+            if os.path.exists("bot_orders"):
+                shutil.copytree("bot_orders", os.path.join(tmp_dir, "bot_orders"), dirs_exist_ok=True)
+
+            subprocess.run(["git", "-C", tmp_dir, "config", "user.name", "github-actions[bot]"])
+            subprocess.run(["git", "-C", tmp_dir, "config", "user.email", "github-actions[bot]@users.noreply.github.com"])
+            subprocess.run(["git", "-C", tmp_dir, "add", "-A"])
+            chk = subprocess.run(["git", "-C", tmp_dir, "status", "--porcelain"], capture_output=True, text=True)
+            if chk.stdout.strip():
+                subprocess.run(["git", "-C", tmp_dir, "commit", "-m", "sync: auto-update student data and orders [skip ci]"])
+                res = subprocess.run(["git", "-C", tmp_dir, "push", "origin", "main"], capture_output=True, text=True)
+                if res.returncode == 0:
+                    print("[SYNC] Yangi ma'lumotlar Private repozitoriyga (cloud-data) muvaffaqiyatli saqlandi!")
+                else:
+                    print(f"[SYNC PUSH ERROR] {res.stderr}")
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            except Exception:
+                pass
     except Exception as e:
         print(f"[SYNC XATO] {e}")
 
