@@ -881,8 +881,8 @@ def complete_video_fully(page, v_url):
     Bitta videoni 100% yakunlash va Coursera beaconlarini to'liq jo'natish:
     1. Sahifaga o'tish va popuplarni yopish.
     2. Video metadatasi yuklanishini (v.duration > 0) sabr bilan kutish.
-    3. Oxirgi 0.5 soniyasiga o'tkazib, tabiiy tugatish (v.onended va Coursera AJAX beaconlari).
-    4. Agar 'Mark as completed' / 'Next' tugmasi bo'lsa, bosish.
+    3. Tabiiy 2.0x tezlikda (anti-skip himoyasini buzmasdan) ijro etish.
+    4. 85% yoki oxiriga yetganda, Next yoki Mark as completed bosish.
     """
     try:
         if v_url and (v_url.split("?")[0].rstrip("/") not in page.url or "/lecture/" not in page.url):
@@ -891,7 +891,7 @@ def complete_video_fully(page, v_url):
 
         # 1. Video elementi va metadatasini kutish (v.duration > 0)
         video_ready = False
-        for _ in range(14):
+        for _ in range(15):
             is_ready = page.evaluate("""() => {
                 const v = document.querySelector('video');
                 return !!(v && v.duration && Number.isFinite(v.duration) && v.duration > 0);
@@ -899,42 +899,46 @@ def complete_video_fully(page, v_url):
             if is_ready:
                 video_ready = True
                 break
+            dismiss_all_popups(page)
             time.sleep(0.5)
 
         if video_ready:
+            dur = page.evaluate("() => document.querySelector('video') ? document.querySelector('video').duration : 0")
+            print(f"      [Video] Davomiyligi: {round(dur)}s. Tabiiy 2.0x tezlikda ijro boshlanmoqda...")
             page.evaluate("""() => {
                 const v = document.querySelector('video');
                 if (v) {
                     try {
                         v.muted = true;
-                        try { v.playbackRate = 2.0; } catch(e) {}
-                        v.currentTime = Math.max(0, v.duration - 0.5);
-                        const p = v.play();
-                        if (p && p.catch) p.catch(() => {});
+                        v.playbackRate = 2.0;
+                        v.play();
                     } catch(e) {}
                 }
             }""")
-            time.sleep(2.5)
-            # Tugash hodisasi (ended) va yakunlovchi beaconlarni yuborish
-            page.evaluate("""() => {
-                const v = document.querySelector('video');
-                if (v) {
-                    try {
-                        if (!v.ended) {
-                            v.currentTime = v.duration;
-                        }
-                        v.dispatchEvent(new Event('ended'));
-                        v.dispatchEvent(new Event('pause'));
-                    } catch(e) {}
-                }
-            }""")
-            time.sleep(1.0)
+
+            # 2.0x tezlikda 85% ga yetguncha kutamiz (Coursera anti-skip me'yori)
+            target_time = max(10, dur * 0.85)
+            max_wait = int(dur / 2.0) + 12
+            st = time.time()
+            while time.time() - st < max_wait:
+                time.sleep(2)
+                cur_info = page.evaluate("""() => {
+                    const v = document.querySelector('video');
+                    return v ? { cur: v.currentTime, ended: v.ended, dur: v.duration } : null;
+                }""")
+                if not cur_info:
+                    break
+                if cur_info.get("ended") or cur_info.get("cur", 0) >= target_time:
+                    print(f"      [Video] {round(cur_info.get('cur', 0))}/{round(dur)}s (>=85%) muvaffaqiyatli bajarildi!")
+                    break
+
+            time.sleep(1.5)
 
         # 2. 'Mark as completed' yoki 'Next' tugmasi bo'lsa bosish
-        mark_btn = page.locator("button:visible:has-text('Mark as completed'), button:visible:has-text('Отметить как пройденное'), button:visible:has-text('Отметить как выполненное'), button:visible:has-text('Отметить как завершенное'), button:visible:has-text('Далее'), button:visible:has-text('Следующий материал')").first
-        if mark_btn.count() > 0 and mark_btn.is_visible():
-            mark_btn.click(force=True, timeout=1000)
-            time.sleep(1.0)
+        nb = page.locator("button[aria-label*='next' i], button:visible:has-text('Next'), button:visible:has-text('Mark as completed'), button:visible:has-text('Далее')").first
+        if nb.count() > 0 and nb.is_visible():
+            nb.click(force=True, timeout=2000)
+            time.sleep(1.5)
     except Exception as e:
         print(f"   [!] Video yakunlashda xatolik: {e}")
 
