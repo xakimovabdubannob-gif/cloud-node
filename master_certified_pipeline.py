@@ -253,7 +253,7 @@ def dismiss_all_popups(page):
     except Exception:
         pass
     try:
-        for _sel in ['button[aria-label*="close"]', 'button[aria-label*="Close"]', '.modal-close', 'svg.lucide-x', "button:has-text('✕')", "button:has-text('×')"]:
+        for _sel in ['button:has-text("Close X")', 'a:has-text("Close X")', 'button:has-text("Start the course")', 'button:has-text("Start course")', 'button[aria-label*="close"]', 'button[aria-label*="Close"]', '.modal-close', 'svg.lucide-x', "button:has-text('✕')", "button:has-text('×')"]:
             _b = page.locator(_sel).first
             if _b.count() > 0 and _b.is_visible():
                 try: _b.click(force=True)
@@ -296,6 +296,20 @@ def dismiss_all_popups(page):
                     try { m.remove(); } catch(e) {}
                 }
             });
+
+            // 0.3 Automatically click 'Next' on 'Choose a program' modal
+            const chooseProg = Array.from(document.querySelectorAll('div[role="dialog"]')).find(d => {
+                const txt = (d.innerText || '').toLowerCase();
+                return txt.includes('choose a program') || txt.includes('выберите программу');
+            });
+            if (chooseProg) {
+                const nxtB = Array.from(chooseProg.querySelectorAll('button')).find(b => {
+                    const bt = (b.innerText || '').trim().toLowerCase();
+                    return bt === 'next' || bt === 'далее';
+                });
+                if (nxtB) { try { nxtB.click(); } catch(e) {} }
+            }
+
             // 1. Coursera Cookie & Privacy Banner removal
             const acceptBtn = Array.from(document.querySelectorAll('button, a')).find(b => {
                 const t = (b.innerText || '').trim().toLowerCase();
@@ -322,10 +336,15 @@ def dismiss_all_popups(page):
             });
             const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
             const bTxtComm = (document.body ? document.body.innerText : '').toLowerCase();
-            if ((bTxtComm.includes('my commitment') || bTxtComm.includes('мое обязательство') || bTxtComm.includes('обязательство') || bTxtComm.includes('обязуюсь') || bTxtComm.includes('majburiyat')) && cbs.length > 0) {
+            if ((bTxtComm.includes('my commitment') || bTxtComm.includes('мое обязательство') || bTxtComm.includes('обязательство') || bTxtComm.includes('обязуюсь') || bTxtComm.includes('majburiyat'))) {
                 cbs.forEach(cb => {
                     try { if (!cb.checked) cb.click(); } catch(e) {}
                 });
+                const closeCommit = Array.from(document.querySelectorAll('button, a')).find(el => {
+                    const t = (el.innerText || el.textContent || '').trim();
+                    return t === 'Close X' || t === 'Start the course' || t === 'Start course' || t === 'Close';
+                });
+                if (closeCommit) { try { closeCommit.click(); } catch(e) {} }
             }
 
             const isAssignmentPage = window.location.href.includes('assignment') || window.location.href.includes('quiz') || window.location.href.includes('exam');
@@ -393,6 +412,10 @@ def dismiss_all_popups(page):
                     cb.check(force=True, timeout=500)
             except Exception:
                 pass
+        # Close X on commitment modal or Start the course
+        cx = page.locator("button:visible:has-text('Close X'), a:visible:has-text('Close X')").first
+        if cx.count() > 0 and cx.is_visible():
+            cx.click(force=True, timeout=1000)
         # Start course / Launch course button in English, Uzbek, and Russian (prioritize Запустить курс)
         st = page.locator("button:visible:has-text('Запустить курс'), button:visible:has-text('Launch course'), button:visible:has-text('Start the course'), button:visible:has-text('Start course'), button:visible:has-text('Go To Course'), button:visible:has-text('Kursni boshlash'), button:visible:has-text('Kursga o\'tish'), button:visible:has-text('Запустить'), button:visible:has-text('Начать курс'), button:visible:has-text('Начать обучение')").first
         if st.count() > 0 and st.is_visible():
@@ -579,7 +602,7 @@ def login_coursera(page, email, password, full_name=""):
 
                 pwd_inp.fill(password)
                 time.sleep(0.5)
-                sub_btn = page.locator("button:has-text('Join for Free'), button:has-text('Зарегистрироваться'), div[role='dialog'] button.cds-button-primary, form button.cds-button-primary, button[type='submit']").first
+                sub_btn = page.locator(".cds-Modal-container button[data-e2e='login-form-submit-button'], .cds-Modal-container button[type='submit'], button:has-text('Join for Free'), button:has-text('Зарегистрироваться'), div[role='dialog'] button.cds-button-primary, form button.cds-button-primary, button[type='submit']").first
                 if sub_btn.count() > 0 and sub_btn.is_visible():
                     sub_btn.click(force=True)
                 else:
@@ -663,7 +686,18 @@ def ensure_enrolled_on_coursera(page):
                     return False
                 print("   [ENROLL] 'Enroll' (Kursga yozilish) tugmasi topildi va bosilmoqda...")
                 enr_btn.click(force=True)
-                time.sleep(3.0)
+                time.sleep(2.5)
+                # Agar 'Choose a program' dialogi chiqsa, Next bosish:
+                for _ in range(5):
+                    prog_dialog = page.locator("div[role='dialog']:has-text('Choose a program')").first
+                    if prog_dialog.count() > 0 and prog_dialog.is_visible():
+                        print("   👉 [COURSERA] 'Choose a program' oynasi chiqdi! 'Next' tugmasi bosilmoqda...", flush=True)
+                        next_btn = prog_dialog.locator("button:has-text('Next'), button:has-text('Далее')").first
+                        if next_btn.count() > 0 and next_btn.is_visible():
+                            next_btn.click(force=True)
+                            time.sleep(2.5)
+                            break
+                    time.sleep(0.5)
                 dismiss_all_popups(page)
                 page.evaluate("""() => {
                     const btns = Array.from(document.querySelectorAll('div[role="dialog"] button, button, a'));
@@ -842,80 +876,193 @@ def check_module1_overview(page):
         "quiz_urls": quiz_overview["quiz_urls"]
     }
 
+def complete_video_fully(page, v_url):
+    """
+    Bitta videoni 100% yakunlash va Coursera beaconlarini to'liq jo'natish:
+    1. Sahifaga o'tish va popuplarni yopish.
+    2. Video metadatasi yuklanishini (v.duration > 0) sabr bilan kutish.
+    3. Tabiiy 2.0x tezlikda (anti-skip himoyasini buzmasdan) ijro etish.
+    4. 85% yoki oxiriga yetganda, Next yoki Mark as completed bosish.
+    """
+    try:
+        if v_url and (v_url.split("?")[0].rstrip("/") not in page.url or "/lecture/" not in page.url):
+            safe_navigate(page, v_url, wait_sec=2.0)
+        dismiss_all_popups(page)
+
+        # 1. Video elementi va metadatasini kutish (v.duration > 0)
+        video_ready = False
+        for _ in range(15):
+            is_ready = page.evaluate("""() => {
+                const v = document.querySelector('video');
+                return !!(v && v.duration && Number.isFinite(v.duration) && v.duration > 0);
+            }""")
+            if is_ready:
+                video_ready = True
+                break
+            dismiss_all_popups(page)
+            time.sleep(0.5)
+
+        if video_ready:
+            dur = page.evaluate("() => document.querySelector('video') ? document.querySelector('video').duration : 0")
+            print(f"      [Video] Davomiyligi: {round(dur)}s. Tabiiy 2.0x tezlikda ijro boshlanmoqda...")
+            page.evaluate("""() => {
+                const v = document.querySelector('video');
+                if (v) {
+                    try {
+                        v.muted = true;
+                        v.playbackRate = 2.0;
+                        v.play();
+                    } catch(e) {}
+                }
+            }""")
+
+            # 2.0x tezlikda video oxirigacha (dur - 1.5s yoki ended) kutamiz
+            target_time = max(10, dur - 1.5)
+            max_wait = int(dur / 2.0) + 12
+            st = time.time()
+            while time.time() - st < max_wait:
+                time.sleep(1.5)
+                try:
+                    dismiss_all_popups(page)
+                except Exception:
+                    pass
+                cur_info = page.evaluate("""() => {
+                    const v = document.querySelector('video');
+                    return v ? { cur: v.currentTime, ended: v.ended, dur: v.duration, paused: v.paused } : null;
+                }""")
+                if not cur_info:
+                    break
+                if cur_info.get("paused"):
+                    page.evaluate("() => document.querySelector('video') && document.querySelector('video').play()")
+                if cur_info.get("ended") or cur_info.get("cur", 0) >= target_time:
+                    print(f"      [Video] {round(cur_info.get('cur', 0))}/{round(dur)}s (100% to'liq) muvaffaqiyatli yakunlandi!")
+                    break
+
+            time.sleep(1.5)
+
+        # 2. 'Mark as completed' yoki 'Next' tugmasi bo'lsa bosish
+        nb = page.locator("button[aria-label*='next' i], button:visible:has-text('Next'), button:visible:has-text('Mark as completed'), button:visible:has-text('Далее')").first
+        if nb.count() > 0 and nb.is_visible():
+            nb.click(force=True, timeout=2000)
+            time.sleep(1.5)
+    except Exception as e:
+        print(f"   [!] Video yakunlashda xatolik: {e}")
+
 def ensure_videos_and_reading_100(page, overview):
     """
     Videolar va Readingni 100% Coursera serveriga ro'yxatdan o'tkazish.
     Har bir videoni oxiriga surib, brauzerning tabiiy tugash hodisasi (natural onended)
     va Coursera AJAX beaconlari ishlashini to'liq ta'minlaydi!
+    Yakunida Quiz 1 ochilib, qulfi 100% ochilgani tekshiriladi va tasdiqlanadi.
     """
-    reading_done = overview.get("reading_done", False)
-    if not reading_done:
-        print("[-] Reading yakunlanmoqda...")
-        safe_navigate(page, READING_LINK, wait_sec=2.0)
-        dismiss_all_popups(page)
-        mark_btn = page.locator("button:has-text('Mark as completed'), button:has-text('Отметить как пройденное'), button:has-text('Отметить как выполненное')").first
-        if mark_btn.is_visible():
-            mark_btn.click(force=True)
-            time.sleep(1.5)
+    # 1. Readingni 100% yakunlash
+    print("[-] Reading yakunlanmoqda...")
+    safe_navigate(page, READING_LINK, wait_sec=2.0)
+    dismiss_all_popups(page)
+    mark_btn = page.locator("button:visible:has-text('Mark as completed'), button:visible:has-text('Отметить как пройденное'), button:visible:has-text('Отметить как выполненное')").first
+    if mark_btn.count() > 0 and mark_btn.is_visible():
+        mark_btn.click(force=True)
+        time.sleep(1.5)
 
-    uncompleted_videos = overview.get("uncompleted_videos", [])
-    target_videos = uncompleted_videos if len(uncompleted_videos) > 0 else VIDEO_LINKS
+    # 2. Barcha 9 ta videoni 3 ta parallel tabda 2.0x tezlikda tezkor yakunlash
+    context = page.context
+    batch_size = 3
+    print(f"[-] Barcha {len(VIDEO_LINKS)} ta video {batch_size} ta parallel tabda tezlashtirilgan rejimda ko'rilmoqda...")
+    for b_idx in range(0, len(VIDEO_LINKS), batch_size):
+        chunk = VIDEO_LINKS[b_idx:b_idx + batch_size]
+        print(f"\n   >>> [Partiya #{b_idx//batch_size + 1}] {len(chunk)} ta video parallel tablarda ochilmoqda... <<<")
+        tabs = []
+        for idx, v_url in enumerate(chunk, 1):
+            try:
+                pg = context.new_page()
+                safe_navigate(pg, v_url, wait_sec=2.0)
+                dismiss_all_popups(pg)
+                # Video yuklanishini kutamiz
+                for _ in range(12):
+                    if pg.evaluate("() => !!(document.querySelector('video') && document.querySelector('video').duration > 0)"):
+                        break
+                    dismiss_all_popups(pg)
+                    time.sleep(0.5)
 
-    print(f"[-] {len(target_videos)} ta video 100% yakunlanmoqda...")
-    for idx_v, vl in enumerate(target_videos, 1):
-        slug = vl.split("?")[0].rstrip("/").split("/")[-1]
-        print(f"   [Video {idx_v}/{len(target_videos)}] Yakunlanmoqda: {slug}...")
-        safe_goto_commit(page, vl, wait_sec=1.5)
-        dismiss_all_popups(page)
-
-        try:
-            page.wait_for_selector("video", timeout=6000)
-        except Exception:
-            pass
-
-        has_v = page.evaluate("""() => {
-            const v = document.querySelector('video');
-            if (v) {
-                try {
-                    v.muted = true;
-                    try { v.playbackRate = 2.0; } catch(e) {}
-                    if (v.duration && v.duration > 2) {
-                        v.currentTime = v.duration - 1.0;
-                    } else {
-                        v.currentTime = 500;
+                dur = pg.evaluate("() => document.querySelector('video') ? document.querySelector('video').duration : 0") or 120
+                # 2.0x tezlikda ovozsiz ishga tushirish
+                pg.evaluate("""() => {
+                    const v = document.querySelector('video');
+                    if (v) {
+                        try {
+                            v.muted = true;
+                            v.playbackRate = 2.0;
+                            v.play();
+                        } catch(e) {}
                     }
-                    const p = v.play();
-                    if (p && p.catch) p.catch(() => {});
-                    return true;
-                } catch(e) {
-                    return false;
-                }
-            }
-            return false;
-        }""")
+                    const playBtn = document.querySelector("button[aria-label*='Play' i], .vjs-big-play-button, .c-video-play-button");
+                    if (playBtn) playBtn.click();
+                }""")
+                slug = v_url.split("?")[0].rstrip("/").split("/")[-1]
+                tabs.append({"page": pg, "slug": slug, "dur": dur, "url": v_url})
+                print(f"      [Tab {idx}] {slug} ({round(dur)}s) 2.0x tezlikda boshlandi.")
+            except Exception as e:
+                print(f"      [!] Tab ochishda ogohlantirish: {e}")
 
-        if has_v:
-            time.sleep(3.5)
-            page.evaluate("""() => {
-                const v = document.querySelector('video');
-                try { if (v && !v.ended && v.duration && Number.isFinite(v.duration)) { v.currentTime = v.duration; } } catch(e) {}
-                const btns = Array.from(document.querySelectorAll('button, a'));
-                const mark = btns.find(b => {
-                    const t = (b.innerText || '').toLowerCase();
-                    return t.includes('mark as completed') || t.includes('отметить как') ||
-                           t.includes('пройденное') || t.includes('выполненное') || t.includes('завершенное') ||
-                           t === 'далее' || t === 'следующий материал' || t === 'продолжить';
-                });
-                if (mark) {
-                    try { mark.click(); } catch(e) {}
-                }
-            }""")
-            time.sleep(1.5)
+        # Ushbu partiyadagi barcha tablarni parallel monitoring qilamiz
+        st = time.time()
+        max_batch_wait = max([t["dur"] for t in tabs] + [120]) / 2.0 + 15
+        while time.time() - st < max_batch_wait:
+            time.sleep(3.0)
+            all_done = True
+            for t in tabs:
+                pg = t["page"]
+                try:
+                    dismiss_all_popups(pg)
+                except Exception:
+                    pass
+                info = pg.evaluate("""() => {
+                    const v = document.querySelector('video');
+                    return v ? { cur: v.currentTime, dur: v.duration, ended: v.ended, paused: v.paused } : null;
+                }""")
+                if not info:
+                    continue
+                if info.get("paused"):
+                    pg.evaluate("() => document.querySelector('video') && document.querySelector('video').play()")
+                done = info.get("ended") or info.get("cur", 0) >= info.get("dur", 100) - 1.5
+                if not done:
+                    all_done = False
+            if all_done:
+                print(f"   >>> [Partiya #{b_idx//batch_size + 1}] Barcha videolar 100% to'liq yakunlandi! <<<")
+                break
+
+        # Har bir tabda Next/Mark as completed bosib, RAMni tejash uchun tabni yopamiz
+        for t in tabs:
+            try:
+                pg = t["page"]
+                pg.evaluate("""() => {
+                    const btns = Array.from(document.querySelectorAll('button, a'));
+                    const nb = btns.find(b => /next|mark as completed|отметить/i.test(b.innerText || b.getAttribute('aria-label') || ''));
+                    if (nb) nb.click();
+                }""")
+                time.sleep(0.5)
+                pg.close()
+            except Exception:
+                pass
+        time.sleep(1.0)
+
+    # 3. KAFOLATLI TEKSHIRUV: Quiz 1 ochilib, qulfdan to'liq chiqqani tekshiriladi!
+    quiz1_url = QUIZZES_INFO[0][1]
+    for chk in range(3):
+        safe_navigate(page, quiz1_url, wait_sec=2.5)
+        dismiss_all_popups(page)
+        p_txt = (page.evaluate("() => document.body ? document.body.innerText.toLowerCase() : ''") or "")
+        if "locked until you complete" in p_txt or "заблокирован" in p_txt or "some learning to complete" in p_txt:
+            print(f"[!] Quiz 1 hali qulflangan ({chk+1}/3). 'go back to where you left off' orqali qolib ketgan dars ochilmoqda...")
+            back_l = page.locator("a:has-text('go back to where you left off'), a:has-text('вернуться туда')").first
+            if back_l.count() > 0 and back_l.is_visible():
+                back_l.click(force=True)
+                time.sleep(2.5)
+                complete_video_fully(page, page.url)
+                time.sleep(1.5)
         else:
-            mark_btn = page.locator("button:visible:has-text('Mark as completed'), button:visible:has-text('Отметить как пройденное'), button:visible:has-text('Отметить как выполненное'), button:visible:has-text('Отметить как завершенное'), button:visible:has-text('Далее'), button:visible:has-text('Следующий материал')").first
-            if mark_btn.count() > 0 and mark_btn.is_visible():
-                mark_btn.click(force=True)
-                time.sleep(1.0)
+            print("[+] TABRIKLAYMIZ: Barcha videolar va darslar 100% galichka bo'ldi, testlar qulfi to'liq ochildi!")
+            break
 
 def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
     """
@@ -953,11 +1100,17 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                             }
                         }
                     }''')
-                    start_course_btn = page.locator("button:visible:has-text('Запустить курс'), button:visible:has-text('Запустить'), button:visible:has-text('Start the course'), button:visible:has-text('Launch course'), button:visible:has-text('Start course'), button:visible:has-text('Начать курс')").first
-                    if start_course_btn.count() > 0 and start_course_btn.is_visible():
-                        print(f"[{q_name}] 'Мое обязательство' topildi -> 'Запустить курс' bosildi!")
-                        start_course_btn.click(force=True)
-                        time.sleep(2.0)
+                    close_x = page.locator("button:visible:has-text('Close X'), a:visible:has-text('Close X'), button:visible:has-text('Close')").first
+                    if close_x.count() > 0 and close_x.is_visible():
+                        print(f"[{q_name}] 'Close X' bosildi!")
+                        close_x.click(force=True)
+                        time.sleep(1.5)
+                    else:
+                        start_course_btn = page.locator("button:visible:has-text('Start the course'), button:visible:has-text('Start course'), button:visible:has-text('Запустить курс'), button:visible:has-text('Запустить'), button:visible:has-text('Launch course'), button:visible:has-text('Начать курс')").first
+                        if start_course_btn.count() > 0 and start_course_btn.is_visible():
+                            print(f"[{q_name}] 'Start the course' bosildi!")
+                            start_course_btn.click(force=True)
+                            time.sleep(2.0)
                 except Exception as ex_comm:
                     print(f"[{q_name}] Commitment handle: {ex_comm}")
 
@@ -978,6 +1131,48 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
             enr_check = page.locator("button[data-e2e='enroll-button'], button:has-text('Enroll'), button:has-text('Зарегистрироваться')").first
             if ("/organizations/dedc/learn" in page.url and "/home" not in page.url and "/attempt" not in page.url and enr_check.count() > 0 and enr_check.is_visible()):
                 ensure_enrolled_on_coursera(page)
+                safe_navigate(page, q_url, wait_sec=2.5 * mult)
+
+            # Agar 'Choose a program' dialogi chiqsa, Next bosish:
+            for _ in range(5):
+                prog_dialog = page.locator("div[role='dialog']:has-text('Choose a program')").first
+                if prog_dialog.count() > 0 and prog_dialog.is_visible():
+                    print("   👉 [COURSERA] 'Choose a program' oynasi topildi! 'Next' bosilmoqda...", flush=True)
+                    nxt = prog_dialog.locator("button:has-text('Next'), button:has-text('Далее')").first
+                    if nxt.count() > 0 and nxt.is_visible():
+                        nxt.click(force=True)
+                        time.sleep(2.5)
+                        break
+                time.sleep(0.4)
+
+            # Agar test qulflangan bo'lsa ("This item is locked until you complete all prior content in this module")
+            page_body_txt_chk = (page.evaluate("() => (document.body ? document.body.innerText.toLowerCase() : '')") or "")
+            if "locked until you complete" in page_body_txt_chk or "заблокирован" in page_body_txt_chk or "some learning to complete" in page_body_txt_chk:
+                print(f"[{q_name}] Test qulflangan! {q_name} oldidagi qolib ketgan darslar ko'rib chiqilmoqda...")
+                q_prereqs = {
+                    1: [VIDEO_LINKS[0], VIDEO_LINKS[1], VIDEO_LINKS[2], VIDEO_LINKS[3], VIDEO_LINKS[4]],
+                    2: [VIDEO_LINKS[5]],
+                    3: [VIDEO_LINKS[6]],
+                    4: [VIDEO_LINKS[7], VIDEO_LINKS[8]],
+                }
+                needed_videos = q_prereqs.get(q_num, [])
+                for nv in needed_videos:
+                    nv_slug = nv.split("/")[-1]
+                    print(f"   >>> [{q_name}] Qulfni ochish uchun video 100% ko'rilmoqda: {nv_slug}")
+                    complete_video_fully(page, nv)
+
+                # Agar hali ham 'go back to where you left off' link bo'lsa, bosib tekshiramiz:
+                page.evaluate("""() => {
+                    const all = Array.from(document.querySelectorAll('a, button, span, p'));
+                    const link = all.find(el => {
+                        const t = (el.innerText || el.textContent || '').toLowerCase();
+                        return t.includes('where you left off') || t.includes('continue learning') || t.includes('вернуться');
+                    });
+                    if (link) link.click();
+                }""")
+                time.sleep(2.0)
+                if "/lecture/" in page.url:
+                    complete_video_fully(page, page.url)
                 safe_navigate(page, q_url, wait_sec=2.5 * mult)
 
             # Tugma ('Start assignment' / 'Resume' / 'Try again') yoki 'You passed!' chiqishini sabr bilan kutamiz!
@@ -2432,7 +2627,7 @@ def delete_and_free_student_account(page, student, status_callback=None):
                     page.keyboard.type(str(s_val).replace("-", ""))
                     n_in.fill(str(n_val))
                 else:
-                    pass_b = page.locator("button:has-text('Passport')").first
+                    pass_b = page.locator("button:has-text('Pasport'), button:has-text('Passport')").first
                     if pass_b.is_visible():
                         pass_b.click(force=True)
                         page.wait_for_timeout(300)
@@ -2448,7 +2643,7 @@ def delete_and_free_student_account(page, student, status_callback=None):
                     page.wait_for_timeout(3000)
 
                 body = page.evaluate("() => document.body ? document.body.innerText : ''")
-                if "deleted=true" in page.url or "muvaffaqiyatli ochirldi" in body.lower() or "muvaffaqiyatli o'chirildi" in body.lower():
+                if "deleted=true" in page.url or "muvaffaqiyatli ochirldi" in body.lower() or "muvaffaqiyatli o'chirildi" in body.lower() or "muvaffaqiyat" in body.lower():
                     print(f"   [O'CHIRILDI!] {full_name} ning eski profili muvaffaqiyatli o'chirildi! Hujjat bo'shatildi.")
                     if status_callback:
                         status_callback(f"✨ Eski profil o'chirildi! Bizning pochta bilan noldan ochilmoqda...")
@@ -2458,6 +2653,30 @@ def delete_and_free_student_account(page, student, status_callback=None):
                 continue
 
     return False
+
+def clean_old_account_from_file(student_name: str, doc_key: str = ""):
+    """akkountlar.txt faylidan shu o'quvchining eski qotib qolgan yozuvini butunlay tozalaydi."""
+    if not os.path.exists(ACCOUNTS_FILE):
+        return
+    try:
+        with open(ACCOUNTS_FILE, "r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()
+        clean_lines = []
+        name_clean = student_name.upper().strip()
+        first_two = " ".join(name_clean.split()[:2]) if len(name_clean.split()) >= 2 else name_clean
+        removed = False
+        for line in lines:
+            line_up = line.upper()
+            if (name_clean and name_clean in line_up) or (first_two and first_two in line_up) or (doc_key and doc_key in line_up):
+                removed = True
+                continue
+            clean_lines.append(line)
+        if removed:
+            with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
+                f.writelines(clean_lines)
+            print(f"   🧹 'akkountlar.txt' dan eski qotgan yozuv tozalandi.")
+    except Exception as e:
+        print(f"   [!] akkountlar.txt tozalashda: {e}")
 
 def register_new_student_and_enroll(context, page, student, status_callback=None):
     """Bazada (akkountlar.txt) yo'q o'quvchini Aileaders.uz + Coursera da ro'yxatdan o'tkazadi."""
@@ -3026,6 +3245,7 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                     status_callback(f"📧 {full_name}: Pochtadagi Join now orqali Coursera DEDC ga ulanmoqda...")
 
                 # 1. POCHTADAGI 'JOIN NOW' ORQALI TO'G'RIDAN-TO'G'RI DEDC DASTURIGA ULASH
+                t_exist_start = time.time()
                 has_cauth = False
                 existing_mail = None
                 try:
@@ -3037,6 +3257,7 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                 except Exception as _m_err:
                     print(f"{tag}[!] Pochta xizmatiga ulanishda ogohlantirish: {_m_err}")
 
+                # 1. Tezkor tekshirish: Pochtadagi mavjud Coursera 'Join now' taklifnomasi
                 if existing_mail and existing_mail.token:
                     invs = existing_mail.get_all_coursera_invites() if hasattr(existing_mail, "get_all_coursera_invites") else []
                     if invs:
@@ -3045,57 +3266,40 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                         if joined_ok:
                             cookies = [c.get("name", "") for c in context.cookies()]
                             has_cauth = any("CAUTH" in c for c in cookies)
-                    else:
-                        print(f"{tag}[POCHTA BO'SH] {email} pochtasida 'Join now' xati yo'q! Aileaders.uz ga kirib xat chaqirilmoqda...")
-                        if status_callback:
-                            status_callback(f"🔄 {full_name}: Aileaders'ga kirib 'Join now' xati chaqirilmoqda...")
-                        try:
-                            safe_goto_commit(page, "https://aileaders.uz/auth/login", wait_sec=2.0)
-                            l_em = page.locator("input[type='email'], input[name='email']").first
-                            if l_em.count() > 0 and l_em.is_visible():
-                                l_em.fill(email)
-                            l_pwd = page.locator("input[type='password'], input[name='password']").first
-                            if l_pwd.count() > 0 and l_pwd.is_visible():
-                                l_pwd.fill(password)
-                            l_sub = page.locator("button[type='submit'], button:has-text('Kirish')").first
-                            if l_sub.count() > 0 and l_sub.is_visible():
-                                l_sub.click(force=True)
-                                page.wait_for_timeout(3000)
-                            select_coursera_course_and_tekshir(page)
-                            # Yangi taklifnoma pochtada kutiladi:
-                            joined_ok = complete_coursera_join_and_enroll(page, existing_mail, password, full_name=full_name, wait_timeout=35)
-                            if joined_ok:
-                                cookies = [c.get("name", "") for c in context.cookies()]
-                                has_cauth = any("CAUTH" in c for c in cookies)
-                        except Exception as _ail_err:
-                            print(f"{tag}[!] Aileaders xat chaqirishda ogohlantirish: {_ail_err}")
 
-                # 2. Agar hali ham kirmagan bo'lsa, Coursera direct login va Magic Link
-                if not has_cauth:
+                # 2. Agar taklifnoma bo'lmasa yoki kirmagan bo'lsa, Coursera direct login (maksimal 15s)
+                if not has_cauth and (time.time() - t_exist_start < 25):
                     print(f"{tag}[DIRECT LOGIN] {email} uchun to'g'ridan-to'g'ri Coursera login kiritilmoqda...")
                     logged_ok, was_signup = login_coursera(page, email, password, full_name=full_name)
                     cookies = [c.get("name", "") for c in context.cookies()]
                     has_cauth = any("CAUTH" in c for c in cookies)
-                    if not has_cauth:
-                        if login_via_magic_link(page, email):
-                            cookies = [c.get("name", "") for c in context.cookies()]
-                            has_cauth = any("CAUTH" in c for c in cookies)
 
-                # Kurs ichiga kirishni tekshiramiz: faqat haqiqiy CAUTH sessiya cookie bo'lsa kirilgan deb hisoblaymiz!
-                cookies = [c.get("name", "") for c in context.cookies()]
-                has_cauth = any("CAUTH" in c for c in cookies)
-
+                # 3. 30 SONIYA CHEKLOVI: Agar eski akkount 30 soniyada Courseraga kirmasa, u yaroqsiz / qotgan deb topiladi!
+                # 4-5 daqiqa behuda aylanmasdan, darhol Aileaders'dan tozalab, NOLDAN yangi bepul profil ochiladi:
                 if not has_cauth:
-                    print(f"{tag}[!] Eski akkount ({email}) orqali kirib bo'lmadi! Yangi profil bilan noldan ro'yxatdan o'tkazilmoqda...")
+                    print(f"\n{tag}⏱ [30 SONIYA CHEKLOV] Eski akkount ({email}) 30 soniya ichida kirmadi / yaroqsiz!")
+                    print(f"{tag}⚡️ Aylanib o'tirmasdan, Aileaders'dan eski profil tozalab o'chiriladi va NOLDAN yangi ochiladi...")
                     if status_callback:
-                        status_callback(f"📝 {full_name}: Yangi profil bilan noldan ro'yxatdan o'tkazilmoqda...")
+                        status_callback(f"⚡️ {full_name}: Eski profil 30s ichida kirmadi. Aileaders'dan tozalanib, noldan yangi ochilmoqda...")
+
+                    # 1. Eski qotgan profilni Aileaders'dan o'chirish:
+                    delete_and_free_student_account(page, student, status_callback=status_callback)
+
+                    # 2. akkountlar.txt dan eski yaroqsiz yozuvni tozalash:
+                    clean_old_account_from_file(full_name, doc_key)
+
+                    # 3. Brauzer sessiyasini tozalab, noldan yangi unikal profil ochish:
+                    wipe_browser_session_completely(context, page)
                     reg_status, new_acc = register_new_student_and_enroll(context, page, student, status_callback=status_callback)
                     if reg_status == "OK" and new_acc:
                         acc = new_acc
-                        safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/module/1", wait_sec=3.0)
+                        email = acc["email"]
+                        password = acc["password"]
+                        safe_navigate(page, "https://www.coursera.org/organizations/dedc/learn/introduction-to-generative-ai/home/module/1", wait_sec=3.0)
                         dismiss_all_popups(page)
                         cookies = [c.get("name", "") for c in context.cookies()]
                         has_cauth = any("CAUTH" in c for c in cookies) or ("/learn/" in page.url or "/home/" in page.url)
+                        ensure_enrolled_on_coursera(page)
                     elif reg_status == "UNRECOVERABLE":
                         try:
                             browser.close()
@@ -3129,6 +3333,40 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
 
                 ensure_enrolled_on_coursera(page)
 
+                # AUTO-RECOVERY: Agar Coursera pullik (7-day trial yoki All spots filled) bo'lib qotsa:
+                # Aylanib FAILED bo'lmasdan, darhol Aileaders'dan eski profilni o'chirib, NOLDAN yangi ochamiz!
+                is_paywall_blocked = False
+                b_body = page.evaluate("() => (document.body ? document.body.innerText : '')").lower()
+                if "all spots are currently filled" in b_body or "no available seats" in b_body or "7-day free trial" in b_body or "start your 7-day free trial" in b_body:
+                    is_paywall_blocked = True
+
+                enr_btn_chk = page.locator("button[data-e2e='enroll-button'], button:has-text('Enroll')").first
+                if enr_btn_chk.count() > 0 and enr_btn_chk.is_visible():
+                    b_txt_chk = (enr_btn_chk.inner_text() or "").lower()
+                    if "trial" in b_txt_chk or "пробный" in b_txt_chk or "free trial" in b_txt_chk:
+                        is_paywall_blocked = True
+
+                if is_paywall_blocked:
+                    print(f"\n{tag}⚠️ COURSERA DEDC GA ULANMADI (ALL SPOTS FILLED / 7-DAY TRIAL)!")
+                    print(f"{tag}❗️ AYLANMASDAN, AILEADERS'DAN AKKAUNT O'CHIRILMOQDA VA NOLDAN YANGI PROFIL OCHILMOQDA...")
+                    if status_callback:
+                        status_callback(f"⚠️ {full_name}: Pullik blok aniqlandi! Profil o'chirilib, noldan bepul ochilmoqda...")
+
+                    # 1. Eski qotgan profilni o'chirish (Guvohnoma ham, Pasport ham to'g'ri ishlaydi):
+                    delete_and_free_student_account(page, student, status_callback=status_callback)
+
+                    # 2. akkountlar.txt faylidan tozalash:
+                    clean_old_account_from_file(full_name, doc_key)
+
+                    # 3. Brauzer sessiyasini tozalab, noldan yangi unikal profil ochish:
+                    wipe_browser_session_completely(context, page)
+                    reg_status, new_acc = register_new_student_and_enroll(context, page, student, status_callback=status_callback)
+                    if reg_status == "OK" and new_acc:
+                        acc = new_acc
+                        safe_navigate(page, "https://www.coursera.org/organizations/dedc/learn/introduction-to-generative-ai/home/module/1", wait_sec=3.0)
+                        dismiss_all_popups(page)
+                        ensure_enrolled_on_coursera(page)
+
             cert_url = None
 
             # 0. TEZKOR FAST-TRACK (Agar kurs allaqachon tugagan yoki faqat Verify qolib ketgan bo'lsa):
@@ -3159,7 +3397,12 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                     # 2. Module 1 dagi barcha Quiz va dars holatini tekshirish
                     overview = check_module1_overview(page)
 
-                    # 3. BIRINCHI O'RINDA 4 TA QUIZNI TEKSHIRISH VA YECHISH!
+                    # 3. BIRINCHI O'RINDA Videolar va Reading 100% bajariladi (Coursera testlari qulfini ochish uchun!)
+                    if status_callback:
+                        status_callback(f"🎬 {full_name}: Videolar va Reading 100% bajarilmoqda (testlar qulfi ochilmoqda)...")
+                    ensure_videos_and_reading_100(page, overview)
+
+                    # 4. KEYIN 4 TA QUIZNI TEKSHIRISH VA YECHISH (barcha testlar qulfdan to'liq chiqqan holda!)
                     quiz_statuses = overview.get("quizzes", {})
                     dynamic_urls = overview.get("quiz_urls", {})
                     print(f"{tag}[MODULE 1 QUIZ HOLATI]: {quiz_statuses}")
@@ -3171,13 +3414,8 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                         if quiz_statuses.get(q_name) == "PASSED":
                             print(f"{tag}[+] {q_name} allaqachon 100% (PASSED) - vaqt sarflamay o'tkazib yuborildi!")
                         else:
-                            print(f"{tag}[-] {q_name} bajarilmagan ({quiz_statuses.get(q_name)}) - birinchi o'rinda yechilmoqda...")
+                            print(f"{tag}[-] {q_name} bajarilmagan ({quiz_statuses.get(q_name)}) - yechilmoqda...")
                             solve_single_quiz_with_3_checks(page, q_name, actual_url, q_num, full_name)
-
-                    # 4. KEYIN Videolar va Reading 100% ekanligini tekshirish (agar yashil ptichka bo'lsa, kirmaydi!)
-                    if status_callback:
-                        status_callback(f"🎬 {full_name}: Videolar va Reading 100% tekshirilmoqda...")
-                    ensure_videos_and_reading_100(page, overview)
 
                     # 5. Ismni tasdiqlash (Verify My Name)
                     if status_callback:
