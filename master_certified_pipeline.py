@@ -921,7 +921,11 @@ def complete_video_fully(page, v_url):
             max_wait = int(dur / 2.0) + 12
             st = time.time()
             while time.time() - st < max_wait:
-                time.sleep(2)
+                time.sleep(1.5)
+                try:
+                    dismiss_all_popups(page)
+                except Exception:
+                    pass
                 cur_info = page.evaluate("""() => {
                     const v = document.querySelector('video');
                     return v ? { cur: v.currentTime, ended: v.ended, dur: v.duration, paused: v.paused } : null;
@@ -1144,14 +1148,32 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
             # Agar test qulflangan bo'lsa ("This item is locked until you complete all prior content in this module")
             page_body_txt_chk = (page.evaluate("() => (document.body ? document.body.innerText.toLowerCase() : '')") or "")
             if "locked until you complete" in page_body_txt_chk or "заблокирован" in page_body_txt_chk or "some learning to complete" in page_body_txt_chk:
-                print(f"[{q_name}] Test qulflangan! 'go back to where you left off' orqali qolib ketgan dars ochilmoqda...")
-                back_link = page.locator("a:has-text('go back to where you left off'), a:has-text('вернуться туда')").first
-                if back_link.count() > 0 and back_link.is_visible():
-                    back_link.click(force=True)
-                    time.sleep(2.5)
+                print(f"[{q_name}] Test qulflangan! {q_name} oldidagi qolib ketgan darslar ko'rib chiqilmoqda...")
+                q_prereqs = {
+                    1: [VIDEO_LINKS[0], VIDEO_LINKS[1], VIDEO_LINKS[2], VIDEO_LINKS[3], VIDEO_LINKS[4]],
+                    2: [VIDEO_LINKS[5]],
+                    3: [VIDEO_LINKS[6]],
+                    4: [VIDEO_LINKS[7], VIDEO_LINKS[8]],
+                }
+                needed_videos = q_prereqs.get(q_num, [])
+                for nv in needed_videos:
+                    nv_slug = nv.split("/")[-1]
+                    print(f"   >>> [{q_name}] Qulfni ochish uchun video 100% ko'rilmoqda: {nv_slug}")
+                    complete_video_fully(page, nv)
+
+                # Agar hali ham 'go back to where you left off' link bo'lsa, bosib tekshiramiz:
+                page.evaluate("""() => {
+                    const all = Array.from(document.querySelectorAll('a, button, span, p'));
+                    const link = all.find(el => {
+                        const t = (el.innerText || el.textContent || '').toLowerCase();
+                        return t.includes('where you left off') || t.includes('continue learning') || t.includes('вернуться');
+                    });
+                    if (link) link.click();
+                }""")
+                time.sleep(2.0)
+                if "/lecture/" in page.url:
                     complete_video_fully(page, page.url)
-                    time.sleep(1.5)
-                    safe_navigate(page, q_url, wait_sec=2.5 * mult)
+                safe_navigate(page, q_url, wait_sec=2.5 * mult)
 
             # Tugma ('Start assignment' / 'Resume' / 'Try again') yoki 'You passed!' chiqishini sabr bilan kutamiz!
             act_selector = (
