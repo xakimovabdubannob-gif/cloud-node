@@ -11,22 +11,25 @@ STUDENT_PASSWORD = "Smart9368#B"
 COURSE_SLUG = "introduction-to-generative-ai"
 COURSE_HOME = f"https://www.coursera.org/learn/{COURSE_SLUG}/home/module/1"
 
-MODULE_ITEMS = [
-    # Module 1
-    ("video", "Video 1: Where Generative AI Fits", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/sEzxC/where-generative-ai-fits-in-the-ai-and-ml-landscape"),
-    ("video", "Video 2: Supervised and Unsupervised Models", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/YUZhf/supervised-and-unsupervised-machine-learning-models"),
-    ("quiz", "Quiz 1", f"https://www.coursera.org/learn/{COURSE_SLUG}/assignment-submission/UOf9n/quiz-1"),
-    ("video", "Video 3: Generative AI as a Subset of Deep Learning", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/HGiXV/generative-ai-as-a-subset-of-deep-learning"),
-    ("video", "Video 4: Is It Generative AI or Not?", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/jno82/is-it-generative-ai-or-not"),
-    ("video", "Video 5: Defining Generative AI: A Formal Approach", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/Nfz2y/defining-generative-ai-a-formal-approach"),
-    ("quiz", "Quiz 2", f"https://www.coursera.org/learn/{COURSE_SLUG}/assignment-submission/PbAYx/quiz-2"),
-    ("video", "Video 6: Transformers, Hallucinations, and Prompts", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/6npRm/transformers-hallucinations-and-prompts"),
-    ("video", "Video 7: An Overview of Generative AI Model Types", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/oG55M/an-overview-of-generative-ai-model-types"),
-    ("quiz", "Quiz 3", f"https://www.coursera.org/learn/{COURSE_SLUG}/assignment-submission/68izF/quiz-3"),
-    ("video", "Video 8: Generative AI for Code Generation", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/zMq98/generative-ai-for-code-generation"),
-    ("video", "Video 9: Leveraging Google Cloud for Enhanced Gen AI", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/XulSM/leveraging-google-cloud-for-enhanced-generative-ai"),
-    ("reading", "Reading: Introduction to Generative AI", f"https://www.coursera.org/learn/{COURSE_SLUG}/supplement/vARuq/reading"),
-    ("quiz", "Quiz 4", f"https://www.coursera.org/learn/{COURSE_SLUG}/assignment-submission/QR1K5/quiz-4")
+ALL_VIDEOS = [
+    ("Video 1: Where Generative AI Fits", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/sEzxC/where-generative-ai-fits-in-the-ai-and-ml-landscape"),
+    ("Video 2: Supervised and Unsupervised Models", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/YUZhf/supervised-and-unsupervised-machine-learning-models"),
+    ("Video 3: Deep Learning Subset", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/HGiXV/generative-ai-as-a-subset-of-deep-learning"),
+    ("Video 4: Is It Generative AI or Not?", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/jno82/is-it-generative-ai-or-not"),
+    ("Video 5: Defining Generative AI", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/Nfz2y/defining-generative-ai-a-formal-approach"),
+    ("Video 6: Transformers and Prompts", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/6npRm/transformers-hallucinations-and-prompts"),
+    ("Video 7: Model Types Overview", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/oG55M/an-overview-of-generative-ai-model-types"),
+    ("Video 8: Code Generation", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/zMq98/generative-ai-for-code-generation"),
+    ("Video 9: Google Cloud Gen AI", f"https://www.coursera.org/learn/{COURSE_SLUG}/lecture/XulSM/leveraging-google-cloud-for-enhanced-generative-ai")
+]
+
+READING_LINK = f"https://www.coursera.org/learn/{COURSE_SLUG}/supplement/vARuq/reading"
+
+QUIZZES = [
+    ("Quiz 1", f"https://www.coursera.org/learn/{COURSE_SLUG}/assignment-submission/UOf9n/quiz-1"),
+    ("Quiz 2", f"https://www.coursera.org/learn/{COURSE_SLUG}/assignment-submission/PbAYx/quiz-2"),
+    ("Quiz 3", f"https://www.coursera.org/learn/{COURSE_SLUG}/assignment-submission/68izF/quiz-3"),
+    ("Quiz 4", f"https://www.coursera.org/learn/{COURSE_SLUG}/assignment-submission/QR1K5/quiz-4")
 ]
 
 QUIZ_ANSWERS = {
@@ -36,12 +39,12 @@ QUIZ_ANSWERS = {
     "quiz 4": ["vertex ai", "gemini"]
 }
 
-def safe_goto(page, url, wait_sec=3.0):
+def safe_goto(page, url, wait_sec=2.5):
     for attempt in range(5):
         try:
-            page.goto(url, wait_until='domcontentloaded', timeout=22000)
+            page.goto(url, wait_until='domcontentloaded', timeout=20000)
             break
-        except Exception as e:
+        except Exception:
             time.sleep(2.0)
     time.sleep(wait_sec)
     dismiss_popups(page)
@@ -70,7 +73,7 @@ def dismiss_popups(page):
         pass
 
 def perform_login(page, context):
-    print("\n[1/3] Coursera tizimiga kirilmoqda...")
+    print("\n[1/4] Coursera tizimiga kirilmoqda...")
     page.goto('https://www.coursera.org/?authMode=login', wait_until='domcontentloaded')
     time.sleep(3.0)
 
@@ -111,88 +114,95 @@ def perform_login(page, context):
     print(f"[OK] Tizimga muvaffaqiyatli kirildi! ({STUDENT_EMAIL})")
     return logged_in
 
-def play_video_to_end(page, url, title):
-    print(f"\n[-] Video tekshirilmoqda: {title}...")
-    safe_goto(page, url, wait_sec=3.0)
+def watch_videos_in_parallel_batches(context, video_list, batch_size=3):
+    print(f"\n[2/4] Barcha {len(video_list)} ta video {batch_size} ta parallel tabda tezkor ko'rilmoqda...")
+    for b_idx in range(0, len(video_list), batch_size):
+        chunk = video_list[b_idx:b_idx + batch_size]
+        part_num = b_idx // batch_size + 1
+        total_parts = (len(video_list) + batch_size - 1) // batch_size
+        print(f"\n   >>> Partiya {part_num}/{total_parts} ({len(chunk)} ta video parallel ochilmoqda)... <<<")
+        tabs = []
+        for idx, (title, v_url) in enumerate(chunk, 1):
+            try:
+                pg = context.new_page()
+                safe_goto(pg, v_url, wait_sec=2.0)
+                # Video tayyor bo'lishini kutamiz
+                for _ in range(10):
+                    if pg.evaluate("() => !!(document.querySelector('video') && document.querySelector('video').duration > 0)"):
+                        break
+                    dismiss_popups(pg)
+                    time.sleep(0.5)
 
-    # Video elementini topish
-    for _ in range(12):
-        if page.evaluate("() => !!(document.querySelector('video') && document.querySelector('video').duration > 0)"):
-            break
-        dismiss_popups(page)
+                dur = pg.evaluate("() => document.querySelector('video') ? document.querySelector('video').duration : 0") or 120
+                cur = pg.evaluate("() => document.querySelector('video') ? document.querySelector('video').currentTime : 0") or 0
+
+                # Agar allaqachon ko'rilgan bo'lsa
+                if cur >= dur - 2 and dur > 0:
+                    print(f"      [{title}] Allaqachon ko'rilgan ({round(cur)}/{round(dur)}s).")
+                    pg.close()
+                    continue
+
+                # 2.0x tezlikda ovozsiz ijro etish
+                pg.evaluate("""() => {
+                    const v = document.querySelector('video');
+                    if (v) {
+                        try {
+                            v.muted = true;
+                            v.playbackRate = 2.0;
+                            v.play();
+                        } catch(e) {}
+                    }
+                    const playBtn = document.querySelector("button[aria-label*='Play' i], .vjs-big-play-button, .c-video-play-button");
+                    if (playBtn) playBtn.click();
+                }""")
+                tabs.append({"page": pg, "title": title, "dur": dur})
+                print(f"      [{title}] {round(dur)}s — 2.0x tezlikda parallel boshlandi.")
+            except Exception as e:
+                print(f"      [!] Tab ochishda ogohlantirish: {e}")
+
+        if not tabs:
+            continue
+
+        # Parallel monitoring
+        st = time.time()
+        max_batch_wait = max([t["dur"] for t in tabs]) / 2.0 + 15
+        while time.time() - st < max_batch_wait:
+            time.sleep(3.0)
+            all_done = True
+            status_line = []
+            for t in tabs:
+                pg = t["page"]
+                info = pg.evaluate("""() => {
+                    const v = document.querySelector('video');
+                    return v ? { cur: Math.round(v.currentTime), dur: Math.round(v.duration), ended: v.ended, paused: v.paused } : null;
+                }""")
+                if not info:
+                    continue
+                if info.get("paused"):
+                    pg.evaluate("() => document.querySelector('video') && document.querySelector('video').play()")
+                done = info.get("ended") or info.get("cur", 0) >= info.get("dur", 100) - 1.5
+                if not done:
+                    all_done = False
+                status_line.append(f"{t['title'].split(':')[0]}: {info.get('cur')}/{info.get('dur')}s")
+            print("      " + " | ".join(status_line))
+            if all_done:
+                print(f"   >>> Partiya {part_num} muvaffaqiyatli 100% tugadi! <<<")
+                break
+
+        # Next / Mark as completed bosib, tabni yopamiz
+        for t in tabs:
+            try:
+                pg = t["page"]
+                pg.evaluate("""() => {
+                    const btns = Array.from(document.querySelectorAll('button, a'));
+                    const nb = btns.find(b => /next|mark as completed|отметить/i.test(b.innerText || b.getAttribute('aria-label') || ''));
+                    if (nb) nb.click();
+                }""")
+                time.sleep(0.5)
+                pg.close()
+            except Exception:
+                pass
         time.sleep(1.0)
-
-    dur = page.evaluate("() => document.querySelector('video') ? document.querySelector('video').duration : 0")
-    if not dur or dur <= 0:
-        print(f"   [!] Video topilmadi yoki allaqachon ko'rilgan.")
-        return
-
-    # Avval video allaqachon ko'rilganmi tekshiramiz
-    cur_pos = page.evaluate("() => document.querySelector('video') ? document.querySelector('video').currentTime : 0")
-    if cur_pos >= dur - 2:
-        print(f"   [OK] Ushbu video allaqachon to'liq ko'rilgan ({round(cur_pos)}/{round(dur)}s).")
-        return
-
-    print(f"   Davomiyligi: {round(dur)} soniya. Tabiiy 2.0x tezlikda oxirigacha ko'rilmoqda...")
-
-    # 2.0x tezlikda ijro etish
-    page.evaluate("""() => {
-        const v = document.querySelector('video');
-        if (v) {
-            v.muted = true;
-            v.playbackRate = 2.0;
-            v.play();
-        }
-        const playBtn = document.querySelector("button[aria-label*='Play' i], .vjs-big-play-button, .c-video-play-button");
-        if (playBtn) playBtn.click();
-    }""")
-
-    max_wait = int(dur / 2.0) + 12
-    st = time.time()
-    while time.time() - st < max_wait:
-        time.sleep(2.0)
-        info = page.evaluate("""() => {
-            const v = document.querySelector('video');
-            return v ? {
-                cur: Math.round(v.currentTime),
-                dur: Math.round(v.duration),
-                ended: v.ended,
-                paused: v.paused
-            } : null;
-        }""")
-        if not info:
-            break
-        print(f"   Ijro: {info.get('cur')}/{info.get('dur')}s...")
-        if info.get('ended') or info.get('cur', 0) >= info.get('dur', 100) - 1:
-            print(f"   [OK] {title} to'liq ko'rildi!")
-            break
-        if info.get('paused'):
-            page.evaluate("() => document.querySelector('video') && document.querySelector('video').play()")
-
-    time.sleep(2.5)
-
-    # Next yoki Mark as completed bosish
-    page.evaluate("""() => {
-        const btns = Array.from(document.querySelectorAll('button, a'));
-        const next = btns.find(b => {
-            const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-            const txt = (b.innerText || '').toLowerCase();
-            return (aria.includes('next') || txt.includes('next') || txt.includes('mark as completed')) && b.offsetParent !== null;
-        });
-        if (next) next.click();
-    }""")
-    time.sleep(2.0)
-
-def complete_reading(page, url):
-    print(f"\n[-] Reading ochilmoqda...")
-    safe_goto(page, url, wait_sec=2.5)
-    page.evaluate("""() => {
-        const btns = Array.from(document.querySelectorAll('button'));
-        const btn = btns.find(b => /mark as completed|отметить как пройденное/i.test(b.innerText || ''));
-        if (btn) btn.click();
-    }""")
-    print("   [OK] Reading yakunlandi!")
-    time.sleep(2.0)
 
 def solve_quiz(page, url, q_title):
     print(f"\n>>> [{q_title}] TEST TOPILDI VA YECHILMOQDA... <<<")
@@ -273,7 +283,12 @@ def main():
         browser = p.chromium.launch(
             executable_path=r'C:\Program Files\Google\Chrome\Application\chrome.exe',
             headless=False,
-            args=["--disable-blink-features=AutomationControlled"]
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding"
+            ]
         )
         context = browser.new_context(viewport={"width": 1280, "height": 850})
         page = context.new_page()
@@ -283,21 +298,29 @@ def main():
             browser.close()
             return
 
-        print("\n[2/3] Kurs bo'yicha videolar ko'rilmoqda va testlar yechilmoqda...")
-        for item_type, title, url in MODULE_ITEMS:
-            if item_type == "video":
-                play_video_to_end(page, url, title)
-            elif item_type == "reading":
-                complete_reading(page, url)
-            elif item_type == "quiz":
-                solve_quiz(page, url, title)
+        # 1. Barcha videolarni 3 ta parallel tabda rekord darajada tez ko'rib tugatish!
+        watch_videos_in_parallel_batches(context, ALL_VIDEOS, batch_size=3)
 
-        print("\n[3/3] Kurs yakuniy holati tekshirilmoqda...")
+        # 2. Readingni yakunlash
+        print("\n[Reading] Reading yakunlanmoqda...")
+        safe_goto(page, READING_LINK, wait_sec=2.0)
+        page.evaluate("""() => {
+            const btns = Array.from(document.querySelectorAll('button'));
+            const btn = btns.find(b => /mark as completed|отметить как пройденное/i.test(b.innerText || ''));
+            if (btn) btn.click();
+        }""")
+        print("   [OK] Reading yakunlandi!")
+
+        # 3. Quizzlarni ketma-ket 100% yechish
+        print("\n[3/4] Quiz testlari (1-4) 100% yechilmoqda...")
+        for q_title, q_url in QUIZZES:
+            solve_quiz(page, q_url, q_title)
+
+        # 4. Yakuniy tekshiruv va Sertifikat
+        print("\n[4/4] Kurs yakuniy holati va Sertifikat tekshirilmoqda...")
         safe_goto(page, COURSE_HOME, wait_sec=4.0)
-        time.sleep(5.0)
+        time.sleep(3.0)
 
-        # Sertifikat tekshiruvi
-        cert_found = False
         accomplishments_url = "https://www.coursera.org/accomplishments"
         safe_goto(page, accomplishments_url, wait_sec=4.0)
         time.sleep(3.0)
@@ -306,9 +329,8 @@ def main():
             href = cert_link.get_attribute("href")
             full_cert = f"https://www.coursera.org{href}" if href.startswith("/") else href
             print("\n" + "=" * 65)
-            print(f">>> SERTIFIKAT HAVOLASI TOPILDI: {full_cert} <<<")
+            print(f">>> SERTIFIKAT HAVOLASI: {full_cert} <<<")
             print("=" * 65)
-            cert_found = True
 
         print("\n" + "=" * 65)
         print("   JARAYON TO'LIQ YAKUNLANDI! Brauzer 20 soniya ochiq qoladi.")

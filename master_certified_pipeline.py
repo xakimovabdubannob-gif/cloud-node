@@ -960,12 +960,83 @@ def ensure_videos_and_reading_100(page, overview):
         mark_btn.click(force=True)
         time.sleep(1.5)
 
-    # 2. Barcha 9 ta videoni ketma-ket 100% yakunlash
-    print(f"[-] Barcha {len(VIDEO_LINKS)} ta video 100% yakunlanmoqda...")
-    for idx_v, vl in enumerate(VIDEO_LINKS, 1):
-        slug = vl.split("?")[0].rstrip("/").split("/")[-1]
-        print(f"   [Video {idx_v}/{len(VIDEO_LINKS)}] 100% yakunlanmoqda: {slug}...")
-        complete_video_fully(page, vl)
+    # 2. Barcha 9 ta videoni 3 ta parallel tabda 2.0x tezlikda tezkor yakunlash
+    context = page.context
+    batch_size = 3
+    print(f"[-] Barcha {len(VIDEO_LINKS)} ta video {batch_size} ta parallel tabda tezlashtirilgan rejimda ko'rilmoqda...")
+    for b_idx in range(0, len(VIDEO_LINKS), batch_size):
+        chunk = VIDEO_LINKS[b_idx:b_idx + batch_size]
+        print(f"\n   >>> [Partiya #{b_idx//batch_size + 1}] {len(chunk)} ta video parallel tablarda ochilmoqda... <<<")
+        tabs = []
+        for idx, v_url in enumerate(chunk, 1):
+            try:
+                pg = context.new_page()
+                safe_navigate(pg, v_url, wait_sec=2.0)
+                dismiss_all_popups(pg)
+                # Video yuklanishini kutamiz
+                for _ in range(12):
+                    if pg.evaluate("() => !!(document.querySelector('video') && document.querySelector('video').duration > 0)"):
+                        break
+                    dismiss_all_popups(pg)
+                    time.sleep(0.5)
+
+                dur = pg.evaluate("() => document.querySelector('video') ? document.querySelector('video').duration : 0") or 120
+                # 2.0x tezlikda ovozsiz ishga tushirish
+                pg.evaluate("""() => {
+                    const v = document.querySelector('video');
+                    if (v) {
+                        try {
+                            v.muted = true;
+                            v.playbackRate = 2.0;
+                            v.play();
+                        } catch(e) {}
+                    }
+                    const playBtn = document.querySelector("button[aria-label*='Play' i], .vjs-big-play-button, .c-video-play-button");
+                    if (playBtn) playBtn.click();
+                }""")
+                slug = v_url.split("?")[0].rstrip("/").split("/")[-1]
+                tabs.append({"page": pg, "slug": slug, "dur": dur, "url": v_url})
+                print(f"      [Tab {idx}] {slug} ({round(dur)}s) 2.0x tezlikda boshlandi.")
+            except Exception as e:
+                print(f"      [!] Tab ochishda ogohlantirish: {e}")
+
+        # Ushbu partiyadagi barcha tablarni parallel monitoring qilamiz
+        st = time.time()
+        max_batch_wait = max([t["dur"] for t in tabs] + [120]) / 2.0 + 15
+        while time.time() - st < max_batch_wait:
+            time.sleep(3.0)
+            all_done = True
+            for t in tabs:
+                pg = t["page"]
+                info = pg.evaluate("""() => {
+                    const v = document.querySelector('video');
+                    return v ? { cur: v.currentTime, dur: v.duration, ended: v.ended, paused: v.paused } : null;
+                }""")
+                if not info:
+                    continue
+                if info.get("paused"):
+                    pg.evaluate("() => document.querySelector('video') && document.querySelector('video').play()")
+                done = info.get("ended") or info.get("cur", 0) >= info.get("dur", 100) - 1.5
+                if not done:
+                    all_done = False
+            if all_done:
+                print(f"   >>> [Partiya #{b_idx//batch_size + 1}] Barcha videolar 100% to'liq yakunlandi! <<<")
+                break
+
+        # Har bir tabda Next/Mark as completed bosib, RAMni tejash uchun tabni yopamiz
+        for t in tabs:
+            try:
+                pg = t["page"]
+                pg.evaluate("""() => {
+                    const btns = Array.from(document.querySelectorAll('button, a'));
+                    const nb = btns.find(b => /next|mark as completed|отметить/i.test(b.innerText || b.getAttribute('aria-label') || ''));
+                    if (nb) nb.click();
+                }""")
+                time.sleep(0.5)
+                pg.close()
+            except Exception:
+                pass
+        time.sleep(1.0)
 
     # 3. KAFOLATLI TEKSHIRUV: Quiz 1 ochilib, qulfdan to'liq chiqqani tekshiriladi!
     quiz1_url = QUIZZES_INFO[0][1]
