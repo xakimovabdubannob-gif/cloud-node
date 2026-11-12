@@ -1,5 +1,8 @@
 name: 24-7 Cloud Master Bot
 on:
+  push:
+    branches:
+      - master
   workflow_dispatch:
   schedule:
     - cron: '0 */5 * * *'
