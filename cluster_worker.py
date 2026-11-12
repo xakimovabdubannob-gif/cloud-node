@@ -81,15 +81,16 @@ def get_ram_gb() -> int:
 
 
 def load_bot_config():
+    cfg = {}
     if os.path.exists("bot_config.json"):
         try:
             with open("bot_config.json", "r", encoding="utf-8") as f:
-                return json.load(f)
+                cfg = json.load(f)
         except Exception:
             pass
     return {
-        "bot_token": os.environ.get("BOT_TOKEN", ""),
-        "admin_id": int(os.environ.get("ADMIN_ID", "6580113791")),
+        "bot_token": os.environ.get("BOT_TOKEN") or cfg.get("bot_token") or "8552767203:AAEVjdw0jviuxMuJipycWSTesz7vB-sTmn8",
+        "admin_id": int(os.environ.get("ADMIN_ID", str(cfg.get("admin_id", 6580113791)))),
     }
 
 
@@ -147,11 +148,7 @@ class ClusterWorkerNode:
             except Exception:
                 pass
 
-        # 3. Agar shu kompyuterda master server ishlayotgan bo'lsa (Lokal rejim)
-        candidates.append("http://127.0.0.1:8766")
-        candidates.append("http://localhost:8766")
-
-        # 4. Telegram Admin Chat Pinned xabari
+        # 3. Telegram Admin Chat Pinned xabari
         try:
             r = requests.get(f"{self.api_url}/getChat", params={"chat_id": self.admin_id}, timeout=3.5).json()
             pinned_txt = r.get("result", {}).get("pinned_message", {}).get("text", "")
@@ -162,6 +159,10 @@ class ClusterWorkerNode:
                         candidates.append(u)
         except Exception:
             pass
+
+        # 4. Agar shu kompyuterda master server ishlayotgan bo'lsa (Lokal rejim - oxirgi chora)
+        candidates.append("http://127.0.0.1:8766")
+        candidates.append("http://localhost:8766")
 
         # Har bir nomzodga tezkor ping (3.5 soniya)
         for url in candidates:
@@ -491,14 +492,8 @@ class ClusterWorkerNode:
                 self.master_url = self.discover_master_url()
                 if not self.master_url:
                     discover_attempts += 1
-                    if discover_attempts >= 2 and os.path.exists("cluster_master_bridge.py"):
-                        print("[AUTO-START] Asosiy master bridge shu kompyuterda avtomatik ishga tushirilmoqda...")
-                        try:
-                            subprocess.Popen([sys.executable, "-u", "cluster_master_bridge.py"], creationflags=0x08000000 if os.name == "nt" else 0)
-                            time.sleep(3)
-                            continue
-                        except Exception as e:
-                            print(f"[AUTO-START XATO] {e}")
+                    if discover_attempts % 6 == 0:
+                        print("⏳ Asosiy Bot Serveri (Bulut) qidirilmoqda... Iltimos, kuting...")
                     time.sleep(3)
                     continue
                 else:

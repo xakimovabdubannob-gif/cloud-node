@@ -24,7 +24,7 @@ if not exist "cluster_worker.py?t=%RANDOM%%RANDOM%" (
     echo  [YUKLANMOQDA] Yangi kompyuter uchun kerakli fayllar GitHub'dan olinmoqda...
     curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_worker.py?t=%RANDOM%%RANDOM%" -o "cluster_worker.py?t=%RANDOM%%RANDOM%"
     curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/master_certified_pipeline.py?t=%RANDOM%%RANDOM%" -o "master_certified_pipeline.py?t=%RANDOM%%RANDOM%"
-    curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/bot_config.json?t=%RANDOM%%RANDOM%" -o "bot_config.json?t=%RANDOM%%RANDOM%"
+    :: bot_config.json saqlandi
     curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt?t=%RANDOM%%RANDOM%" -o "cluster_url.txt?t=%RANDOM%%RANDOM%"
     echo  [OK] Fayllar muvaffaqiyatli yuklandi!
     echo.

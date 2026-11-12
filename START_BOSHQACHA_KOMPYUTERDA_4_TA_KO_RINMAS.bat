@@ -38,7 +38,7 @@ if errorlevel 1 (
 echo  [YANGILANMOQDA] Eng so'nggi xatosiz kodlar GitHub'dan olinmoqda...
 curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_worker.py?t=%RANDOM%%RANDOM%" -o "cluster_worker.py"
 curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/master_certified_pipeline.py?t=%RANDOM%%RANDOM%" -o "master_certified_pipeline.py"
-curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/master/bot_config.json?t=%RANDOM%%RANDOM%" -o "bot_config.json"
+:: bot_config.json saqlandi
 curl.exe -sL "https://raw.githubusercontent.com/xakimovabdubannob-gif/cloud-node/main/cluster_url.txt?t=%RANDOM%%RANDOM%" -o "cluster_url.txt"
 echo  [OK] Barcha kodlar eng so'nggi holatga yangilandi!
 echo.
