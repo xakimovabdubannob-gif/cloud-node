@@ -1,14 +1,14 @@
 @echo off
 chcp 65001 >nul
-title NOLDAN SERTIFIKAT OLISH (11.12.2026)
+title PASPORTDAN NOLDAN SERTIFIKAT OLISH (11.12.2026)
 color 0A
 
 echo ======================================================================
-echo    UZBEK CODERS - 11.12.2026 NOLDAN SERTIFIKAT OLISH TIZIMI
+echo    UZBEK CODERS - 11.12.2026 PASPORTDAN NOLDAN SERTIFIKAT OLISH
 echo ======================================================================
 echo.
 echo  Ushbu dastur 100%% aniq ishlagan oxirgi algoritm bo'yicha ishlaydi:
-echo  1. Aileaders'dan eski qotib qolgan hisobni tozalaydi
+echo  1. Aileaders'dan eski qotib qolgan pasport profilini tozalaydi
 echo  2. Yangi toza pochta bilan NOLDAN ro'yxatdan o'tkazadi
 echo  3. Coursera DEDC homiyligiga ulaydi (bepul)
 echo  4. 'Choose a program' va 'Recovery email' oynalarini avtomatik chetlab o'tadi
@@ -29,7 +29,7 @@ if %errorlevel% neq 0 (
     )
 )
 
-%PY_CMD% -u "%~dp0noldan_olish_11_12_2026.py"
+%PY_CMD% -u "%~dp0pasportdan_noldan_olish_11_12_2026.py"
 
 echo.
 echo Jarayon yakunlandi.
