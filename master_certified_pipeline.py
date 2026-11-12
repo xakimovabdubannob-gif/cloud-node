@@ -602,7 +602,7 @@ def login_coursera(page, email, password, full_name=""):
 
                 pwd_inp.fill(password)
                 time.sleep(0.5)
-                sub_btn = page.locator("button:has-text('Join for Free'), button:has-text('Зарегистрироваться'), div[role='dialog'] button.cds-button-primary, form button.cds-button-primary, button[type='submit']").first
+                sub_btn = page.locator(".cds-Modal-container button[data-e2e='login-form-submit-button'], .cds-Modal-container button[type='submit'], button:has-text('Join for Free'), button:has-text('Зарегистрироваться'), div[role='dialog'] button.cds-button-primary, form button.cds-button-primary, button[type='submit']").first
                 if sub_btn.count() > 0 and sub_btn.is_visible():
                     sub_btn.click(force=True)
                 else:
@@ -916,20 +916,22 @@ def complete_video_fully(page, v_url):
                 }
             }""")
 
-            # 2.0x tezlikda 85% ga yetguncha kutamiz (Coursera anti-skip me'yori)
-            target_time = max(10, dur * 0.85)
+            # 2.0x tezlikda video oxirigacha (dur - 1.5s yoki ended) kutamiz
+            target_time = max(10, dur - 1.5)
             max_wait = int(dur / 2.0) + 12
             st = time.time()
             while time.time() - st < max_wait:
                 time.sleep(2)
                 cur_info = page.evaluate("""() => {
                     const v = document.querySelector('video');
-                    return v ? { cur: v.currentTime, ended: v.ended, dur: v.duration } : null;
+                    return v ? { cur: v.currentTime, ended: v.ended, dur: v.duration, paused: v.paused } : null;
                 }""")
                 if not cur_info:
                     break
+                if cur_info.get("paused"):
+                    page.evaluate("() => document.querySelector('video') && document.querySelector('video').play()")
                 if cur_info.get("ended") or cur_info.get("cur", 0) >= target_time:
-                    print(f"      [Video] {round(cur_info.get('cur', 0))}/{round(dur)}s (>=85%) muvaffaqiyatli bajarildi!")
+                    print(f"      [Video] {round(cur_info.get('cur', 0))}/{round(dur)}s (100% to'liq) muvaffaqiyatli yakunlandi!")
                     break
 
             time.sleep(1.5)
