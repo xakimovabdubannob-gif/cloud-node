@@ -1008,6 +1008,10 @@ def ensure_videos_and_reading_100(page, overview):
             all_done = True
             for t in tabs:
                 pg = t["page"]
+                try:
+                    dismiss_all_popups(pg)
+                except Exception:
+                    pass
                 info = pg.evaluate("""() => {
                     const v = document.querySelector('video');
                     return v ? { cur: v.currentTime, dur: v.duration, ended: v.ended, paused: v.paused } : null;
