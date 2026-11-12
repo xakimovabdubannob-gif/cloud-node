@@ -296,6 +296,20 @@ def dismiss_all_popups(page):
                     try { m.remove(); } catch(e) {}
                 }
             });
+
+            // 0.3 Automatically click 'Next' on 'Choose a program' modal
+            const chooseProg = Array.from(document.querySelectorAll('div[role="dialog"]')).find(d => {
+                const txt = (d.innerText || '').toLowerCase();
+                return txt.includes('choose a program') || txt.includes('выберите программу');
+            });
+            if (chooseProg) {
+                const nxtB = Array.from(chooseProg.querySelectorAll('button')).find(b => {
+                    const bt = (b.innerText || '').trim().toLowerCase();
+                    return bt === 'next' || bt === 'далее';
+                });
+                if (nxtB) { try { nxtB.click(); } catch(e) {} }
+            }
+
             // 1. Coursera Cookie & Privacy Banner removal
             const acceptBtn = Array.from(document.querySelectorAll('button, a')).find(b => {
                 const t = (b.innerText || '').trim().toLowerCase();
@@ -663,7 +677,18 @@ def ensure_enrolled_on_coursera(page):
                     return False
                 print("   [ENROLL] 'Enroll' (Kursga yozilish) tugmasi topildi va bosilmoqda...")
                 enr_btn.click(force=True)
-                time.sleep(3.0)
+                time.sleep(2.5)
+                # Agar 'Choose a program' dialogi chiqsa, Next bosish:
+                for _ in range(5):
+                    prog_dialog = page.locator("div[role='dialog']:has-text('Choose a program')").first
+                    if prog_dialog.count() > 0 and prog_dialog.is_visible():
+                        print("   👉 [COURSERA] 'Choose a program' oynasi chiqdi! 'Next' tugmasi bosilmoqda...", flush=True)
+                        next_btn = prog_dialog.locator("button:has-text('Next'), button:has-text('Далее')").first
+                        if next_btn.count() > 0 and next_btn.is_visible():
+                            next_btn.click(force=True)
+                            time.sleep(2.5)
+                            break
+                    time.sleep(0.5)
                 dismiss_all_popups(page)
                 page.evaluate("""() => {
                     const btns = Array.from(document.querySelectorAll('div[role="dialog"] button, button, a'));
@@ -979,6 +1004,18 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
             if ("/organizations/dedc/learn" in page.url and "/home" not in page.url and "/attempt" not in page.url and enr_check.count() > 0 and enr_check.is_visible()):
                 ensure_enrolled_on_coursera(page)
                 safe_navigate(page, q_url, wait_sec=2.5 * mult)
+
+            # Agar 'Choose a program' dialogi chiqsa, Next bosish:
+            for _ in range(5):
+                prog_dialog = page.locator("div[role='dialog']:has-text('Choose a program')").first
+                if prog_dialog.count() > 0 and prog_dialog.is_visible():
+                    print("   👉 [COURSERA] 'Choose a program' oynasi topildi! 'Next' bosilmoqda...", flush=True)
+                    nxt = prog_dialog.locator("button:has-text('Next'), button:has-text('Далее')").first
+                    if nxt.count() > 0 and nxt.is_visible():
+                        nxt.click(force=True)
+                        time.sleep(2.5)
+                        break
+                time.sleep(0.4)
 
             # Tugma ('Start assignment' / 'Resume' / 'Try again') yoki 'You passed!' chiqishini sabr bilan kutamiz!
             act_selector = (
@@ -2432,7 +2469,7 @@ def delete_and_free_student_account(page, student, status_callback=None):
                     page.keyboard.type(str(s_val).replace("-", ""))
                     n_in.fill(str(n_val))
                 else:
-                    pass_b = page.locator("button:has-text('Passport')").first
+                    pass_b = page.locator("button:has-text('Pasport'), button:has-text('Passport')").first
                     if pass_b.is_visible():
                         pass_b.click(force=True)
                         page.wait_for_timeout(300)
@@ -2448,7 +2485,7 @@ def delete_and_free_student_account(page, student, status_callback=None):
                     page.wait_for_timeout(3000)
 
                 body = page.evaluate("() => document.body ? document.body.innerText : ''")
-                if "deleted=true" in page.url or "muvaffaqiyatli ochirldi" in body.lower() or "muvaffaqiyatli o'chirildi" in body.lower():
+                if "deleted=true" in page.url or "muvaffaqiyatli ochirldi" in body.lower() or "muvaffaqiyatli o'chirildi" in body.lower() or "muvaffaqiyat" in body.lower():
                     print(f"   [O'CHIRILDI!] {full_name} ning eski profili muvaffaqiyatli o'chirildi! Hujjat bo'shatildi.")
                     if status_callback:
                         status_callback(f"✨ Eski profil o'chirildi! Bizning pochta bilan noldan ochilmoqda...")
@@ -2458,6 +2495,30 @@ def delete_and_free_student_account(page, student, status_callback=None):
                 continue
 
     return False
+
+def clean_old_account_from_file(student_name: str, doc_key: str = ""):
+    """akkountlar.txt faylidan shu o'quvchining eski qotib qolgan yozuvini butunlay tozalaydi."""
+    if not os.path.exists(ACCOUNTS_FILE):
+        return
+    try:
+        with open(ACCOUNTS_FILE, "r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()
+        clean_lines = []
+        name_clean = student_name.upper().strip()
+        first_two = " ".join(name_clean.split()[:2]) if len(name_clean.split()) >= 2 else name_clean
+        removed = False
+        for line in lines:
+            line_up = line.upper()
+            if (name_clean and name_clean in line_up) or (first_two and first_two in line_up) or (doc_key and doc_key in line_up):
+                removed = True
+                continue
+            clean_lines.append(line)
+        if removed:
+            with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
+                f.writelines(clean_lines)
+            print(f"   🧹 'akkountlar.txt' dan eski qotgan yozuv tozalandi.")
+    except Exception as e:
+        print(f"   [!] akkountlar.txt tozalashda: {e}")
 
 def register_new_student_and_enroll(context, page, student, status_callback=None):
     """Bazada (akkountlar.txt) yo'q o'quvchini Aileaders.uz + Coursera da ro'yxatdan o'tkazadi."""
@@ -3128,6 +3189,40 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                     print(f"{tag}[!] DEDC taklifnomasi tekshirishda: {_e}")
 
                 ensure_enrolled_on_coursera(page)
+
+                # AUTO-RECOVERY: Agar Coursera pullik (7-day trial yoki All spots filled) bo'lib qotsa:
+                # Aylanib FAILED bo'lmasdan, darhol Aileaders'dan eski profilni o'chirib, NOLDAN yangi ochamiz!
+                is_paywall_blocked = False
+                b_body = page.evaluate("() => (document.body ? document.body.innerText : '')").lower()
+                if "all spots are currently filled" in b_body or "no available seats" in b_body or "7-day free trial" in b_body or "start your 7-day free trial" in b_body:
+                    is_paywall_blocked = True
+
+                enr_btn_chk = page.locator("button[data-e2e='enroll-button'], button:has-text('Enroll')").first
+                if enr_btn_chk.count() > 0 and enr_btn_chk.is_visible():
+                    b_txt_chk = (enr_btn_chk.inner_text() or "").lower()
+                    if "trial" in b_txt_chk or "пробный" in b_txt_chk or "free trial" in b_txt_chk:
+                        is_paywall_blocked = True
+
+                if is_paywall_blocked:
+                    print(f"\n{tag}⚠️ COURSERA DEDC GA ULANMADI (ALL SPOTS FILLED / 7-DAY TRIAL)!")
+                    print(f"{tag}❗️ AYLANMASDAN, AILEADERS'DAN AKKAUNT O'CHIRILMOQDA VA NOLDAN YANGI PROFIL OCHILMOQDA...")
+                    if status_callback:
+                        status_callback(f"⚠️ {full_name}: Pullik blok aniqlandi! Profil o'chirilib, noldan bepul ochilmoqda...")
+
+                    # 1. Eski qotgan profilni o'chirish (Guvohnoma ham, Pasport ham to'g'ri ishlaydi):
+                    delete_and_free_student_account(page, student, status_callback=status_callback)
+
+                    # 2. akkountlar.txt faylidan tozalash:
+                    clean_old_account_from_file(full_name, doc_key)
+
+                    # 3. Brauzer sessiyasini tozalab, noldan yangi unikal profil ochish:
+                    wipe_browser_session_completely(context, page)
+                    reg_status, new_acc = register_new_student_and_enroll(context, page, student, status_callback=status_callback)
+                    if reg_status == "OK" and new_acc:
+                        acc = new_acc
+                        safe_navigate(page, "https://www.coursera.org/organizations/dedc/learn/introduction-to-generative-ai/home/module/1", wait_sec=3.0)
+                        dismiss_all_popups(page)
+                        ensure_enrolled_on_coursera(page)
 
             cert_url = None
 
