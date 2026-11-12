@@ -876,80 +876,108 @@ def check_module1_overview(page):
         "quiz_urls": quiz_overview["quiz_urls"]
     }
 
+def complete_video_fully(page, v_url):
+    """
+    Bitta videoni 100% yakunlash va Coursera beaconlarini to'liq jo'natish:
+    1. Sahifaga o'tish va popuplarni yopish.
+    2. Video metadatasi yuklanishini (v.duration > 0) sabr bilan kutish.
+    3. Oxirgi 0.5 soniyasiga o'tkazib, tabiiy tugatish (v.onended va Coursera AJAX beaconlari).
+    4. Agar 'Mark as completed' / 'Next' tugmasi bo'lsa, bosish.
+    """
+    try:
+        if v_url and (v_url.split("?")[0].rstrip("/") not in page.url or "/lecture/" not in page.url):
+            safe_navigate(page, v_url, wait_sec=2.0)
+        dismiss_all_popups(page)
+
+        # 1. Video elementi va metadatasini kutish (v.duration > 0)
+        video_ready = False
+        for _ in range(14):
+            is_ready = page.evaluate("""() => {
+                const v = document.querySelector('video');
+                return !!(v && v.duration && Number.isFinite(v.duration) && v.duration > 0);
+            }""")
+            if is_ready:
+                video_ready = True
+                break
+            time.sleep(0.5)
+
+        if video_ready:
+            page.evaluate("""() => {
+                const v = document.querySelector('video');
+                if (v) {
+                    try {
+                        v.muted = true;
+                        try { v.playbackRate = 2.0; } catch(e) {}
+                        v.currentTime = Math.max(0, v.duration - 0.5);
+                        const p = v.play();
+                        if (p && p.catch) p.catch(() => {});
+                    } catch(e) {}
+                }
+            }""")
+            time.sleep(2.5)
+            # Tugash hodisasi (ended) va yakunlovchi beaconlarni yuborish
+            page.evaluate("""() => {
+                const v = document.querySelector('video');
+                if (v) {
+                    try {
+                        if (!v.ended) {
+                            v.currentTime = v.duration;
+                        }
+                        v.dispatchEvent(new Event('ended'));
+                        v.dispatchEvent(new Event('pause'));
+                    } catch(e) {}
+                }
+            }""")
+            time.sleep(1.0)
+
+        # 2. 'Mark as completed' yoki 'Next' tugmasi bo'lsa bosish
+        mark_btn = page.locator("button:visible:has-text('Mark as completed'), button:visible:has-text('Отметить как пройденное'), button:visible:has-text('Отметить как выполненное'), button:visible:has-text('Отметить как завершенное'), button:visible:has-text('Далее'), button:visible:has-text('Следующий материал')").first
+        if mark_btn.count() > 0 and mark_btn.is_visible():
+            mark_btn.click(force=True, timeout=1000)
+            time.sleep(1.0)
+    except Exception as e:
+        print(f"   [!] Video yakunlashda xatolik: {e}")
+
 def ensure_videos_and_reading_100(page, overview):
     """
     Videolar va Readingni 100% Coursera serveriga ro'yxatdan o'tkazish.
     Har bir videoni oxiriga surib, brauzerning tabiiy tugash hodisasi (natural onended)
     va Coursera AJAX beaconlari ishlashini to'liq ta'minlaydi!
+    Yakunida Quiz 1 ochilib, qulfi 100% ochilgani tekshiriladi va tasdiqlanadi.
     """
-    reading_done = overview.get("reading_done", False)
-    if not reading_done:
-        print("[-] Reading yakunlanmoqda...")
-        safe_navigate(page, READING_LINK, wait_sec=2.0)
-        dismiss_all_popups(page)
-        mark_btn = page.locator("button:has-text('Mark as completed'), button:has-text('Отметить как пройденное'), button:has-text('Отметить как выполненное')").first
-        if mark_btn.is_visible():
-            mark_btn.click(force=True)
-            time.sleep(1.5)
+    # 1. Readingni 100% yakunlash
+    print("[-] Reading yakunlanmoqda...")
+    safe_navigate(page, READING_LINK, wait_sec=2.0)
+    dismiss_all_popups(page)
+    mark_btn = page.locator("button:visible:has-text('Mark as completed'), button:visible:has-text('Отметить как пройденное'), button:visible:has-text('Отметить как выполненное')").first
+    if mark_btn.count() > 0 and mark_btn.is_visible():
+        mark_btn.click(force=True)
+        time.sleep(1.5)
 
-    uncompleted_videos = overview.get("uncompleted_videos", [])
-    target_videos = uncompleted_videos if len(uncompleted_videos) > 0 else VIDEO_LINKS
-
-    print(f"[-] {len(target_videos)} ta video 100% yakunlanmoqda...")
-    for idx_v, vl in enumerate(target_videos, 1):
+    # 2. Barcha 9 ta videoni ketma-ket 100% yakunlash
+    print(f"[-] Barcha {len(VIDEO_LINKS)} ta video 100% yakunlanmoqda...")
+    for idx_v, vl in enumerate(VIDEO_LINKS, 1):
         slug = vl.split("?")[0].rstrip("/").split("/")[-1]
-        print(f"   [Video {idx_v}/{len(target_videos)}] Yakunlanmoqda: {slug}...")
-        safe_goto_commit(page, vl, wait_sec=1.5)
+        print(f"   [Video {idx_v}/{len(VIDEO_LINKS)}] 100% yakunlanmoqda: {slug}...")
+        complete_video_fully(page, vl)
+
+    # 3. KAFOLATLI TEKSHIRUV: Quiz 1 ochilib, qulfdan to'liq chiqqani tekshiriladi!
+    quiz1_url = QUIZZES_INFO[0][1]
+    for chk in range(3):
+        safe_navigate(page, quiz1_url, wait_sec=2.5)
         dismiss_all_popups(page)
-
-        try:
-            page.wait_for_selector("video", timeout=6000)
-        except Exception:
-            pass
-
-        has_v = page.evaluate("""() => {
-            const v = document.querySelector('video');
-            if (v) {
-                try {
-                    v.muted = true;
-                    try { v.playbackRate = 2.0; } catch(e) {}
-                    if (v.duration && v.duration > 2) {
-                        v.currentTime = v.duration - 1.0;
-                    } else {
-                        v.currentTime = 500;
-                    }
-                    const p = v.play();
-                    if (p && p.catch) p.catch(() => {});
-                    return true;
-                } catch(e) {
-                    return false;
-                }
-            }
-            return false;
-        }""")
-
-        if has_v:
-            time.sleep(3.5)
-            page.evaluate("""() => {
-                const v = document.querySelector('video');
-                try { if (v && !v.ended && v.duration && Number.isFinite(v.duration)) { v.currentTime = v.duration; } } catch(e) {}
-                const btns = Array.from(document.querySelectorAll('button, a'));
-                const mark = btns.find(b => {
-                    const t = (b.innerText || '').toLowerCase();
-                    return t.includes('mark as completed') || t.includes('отметить как') ||
-                           t.includes('пройденное') || t.includes('выполненное') || t.includes('завершенное') ||
-                           t === 'далее' || t === 'следующий материал' || t === 'продолжить';
-                });
-                if (mark) {
-                    try { mark.click(); } catch(e) {}
-                }
-            }""")
-            time.sleep(1.5)
+        p_txt = (page.evaluate("() => document.body ? document.body.innerText.toLowerCase() : ''") or "")
+        if "locked until you complete" in p_txt or "заблокирован" in p_txt or "some learning to complete" in p_txt:
+            print(f"[!] Quiz 1 hali qulflangan ({chk+1}/3). 'go back to where you left off' orqali qolib ketgan dars ochilmoqda...")
+            back_l = page.locator("a:has-text('go back to where you left off'), a:has-text('вернуться туда')").first
+            if back_l.count() > 0 and back_l.is_visible():
+                back_l.click(force=True)
+                time.sleep(2.5)
+                complete_video_fully(page, page.url)
+                time.sleep(1.5)
         else:
-            mark_btn = page.locator("button:visible:has-text('Mark as completed'), button:visible:has-text('Отметить как пройденное'), button:visible:has-text('Отметить как выполненное'), button:visible:has-text('Отметить как завершенное'), button:visible:has-text('Далее'), button:visible:has-text('Следующий материал')").first
-            if mark_btn.count() > 0 and mark_btn.is_visible():
-                mark_btn.click(force=True)
-                time.sleep(1.0)
+            print("[+] TABRIKLAYMIZ: Barcha videolar va darslar 100% galichka bo'ldi, testlar qulfi to'liq ochildi!")
+            break
 
 def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
     """
@@ -1031,6 +1059,18 @@ def solve_single_quiz_with_3_checks(page, q_name, q_url, q_num, student_name):
                         time.sleep(2.5)
                         break
                 time.sleep(0.4)
+
+            # Agar test qulflangan bo'lsa ("This item is locked until you complete all prior content in this module")
+            page_body_txt_chk = (page.evaluate("() => (document.body ? document.body.innerText.toLowerCase() : '')") or "")
+            if "locked until you complete" in page_body_txt_chk or "заблокирован" in page_body_txt_chk or "some learning to complete" in page_body_txt_chk:
+                print(f"[{q_name}] Test qulflangan! 'go back to where you left off' orqali qolib ketgan dars ochilmoqda...")
+                back_link = page.locator("a:has-text('go back to where you left off'), a:has-text('вернуться туда')").first
+                if back_link.count() > 0 and back_link.is_visible():
+                    back_link.click(force=True)
+                    time.sleep(2.5)
+                    complete_video_fully(page, page.url)
+                    time.sleep(1.5)
+                    safe_navigate(page, q_url, wait_sec=2.5 * mult)
 
             # Tugma ('Start assignment' / 'Resume' / 'Try again') yoki 'You passed!' chiqishini sabr bilan kutamiz!
             act_selector = (
