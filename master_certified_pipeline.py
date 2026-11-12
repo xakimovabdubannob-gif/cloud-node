@@ -3087,6 +3087,7 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                     status_callback(f"📧 {full_name}: Pochtadagi Join now orqali Coursera DEDC ga ulanmoqda...")
 
                 # 1. POCHTADAGI 'JOIN NOW' ORQALI TO'G'RIDAN-TO'G'RI DEDC DASTURIGA ULASH
+                t_exist_start = time.time()
                 has_cauth = False
                 existing_mail = None
                 try:
@@ -3098,6 +3099,7 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                 except Exception as _m_err:
                     print(f"{tag}[!] Pochta xizmatiga ulanishda ogohlantirish: {_m_err}")
 
+                # 1. Tezkor tekshirish: Pochtadagi mavjud Coursera 'Join now' taklifnomasi
                 if existing_mail and existing_mail.token:
                     invs = existing_mail.get_all_coursera_invites() if hasattr(existing_mail, "get_all_coursera_invites") else []
                     if invs:
@@ -3106,57 +3108,40 @@ def process_student(student, status_callback=None, headless=False, worker_id=0):
                         if joined_ok:
                             cookies = [c.get("name", "") for c in context.cookies()]
                             has_cauth = any("CAUTH" in c for c in cookies)
-                    else:
-                        print(f"{tag}[POCHTA BO'SH] {email} pochtasida 'Join now' xati yo'q! Aileaders.uz ga kirib xat chaqirilmoqda...")
-                        if status_callback:
-                            status_callback(f"🔄 {full_name}: Aileaders'ga kirib 'Join now' xati chaqirilmoqda...")
-                        try:
-                            safe_goto_commit(page, "https://aileaders.uz/auth/login", wait_sec=2.0)
-                            l_em = page.locator("input[type='email'], input[name='email']").first
-                            if l_em.count() > 0 and l_em.is_visible():
-                                l_em.fill(email)
-                            l_pwd = page.locator("input[type='password'], input[name='password']").first
-                            if l_pwd.count() > 0 and l_pwd.is_visible():
-                                l_pwd.fill(password)
-                            l_sub = page.locator("button[type='submit'], button:has-text('Kirish')").first
-                            if l_sub.count() > 0 and l_sub.is_visible():
-                                l_sub.click(force=True)
-                                page.wait_for_timeout(3000)
-                            select_coursera_course_and_tekshir(page)
-                            # Yangi taklifnoma pochtada kutiladi:
-                            joined_ok = complete_coursera_join_and_enroll(page, existing_mail, password, full_name=full_name, wait_timeout=35)
-                            if joined_ok:
-                                cookies = [c.get("name", "") for c in context.cookies()]
-                                has_cauth = any("CAUTH" in c for c in cookies)
-                        except Exception as _ail_err:
-                            print(f"{tag}[!] Aileaders xat chaqirishda ogohlantirish: {_ail_err}")
 
-                # 2. Agar hali ham kirmagan bo'lsa, Coursera direct login va Magic Link
-                if not has_cauth:
+                # 2. Agar taklifnoma bo'lmasa yoki kirmagan bo'lsa, Coursera direct login (maksimal 15s)
+                if not has_cauth and (time.time() - t_exist_start < 25):
                     print(f"{tag}[DIRECT LOGIN] {email} uchun to'g'ridan-to'g'ri Coursera login kiritilmoqda...")
                     logged_ok, was_signup = login_coursera(page, email, password, full_name=full_name)
                     cookies = [c.get("name", "") for c in context.cookies()]
                     has_cauth = any("CAUTH" in c for c in cookies)
-                    if not has_cauth:
-                        if login_via_magic_link(page, email):
-                            cookies = [c.get("name", "") for c in context.cookies()]
-                            has_cauth = any("CAUTH" in c for c in cookies)
 
-                # Kurs ichiga kirishni tekshiramiz: faqat haqiqiy CAUTH sessiya cookie bo'lsa kirilgan deb hisoblaymiz!
-                cookies = [c.get("name", "") for c in context.cookies()]
-                has_cauth = any("CAUTH" in c for c in cookies)
-
+                # 3. 30 SONIYA CHEKLOVI: Agar eski akkount 30 soniyada Courseraga kirmasa, u yaroqsiz / qotgan deb topiladi!
+                # 4-5 daqiqa behuda aylanmasdan, darhol Aileaders'dan tozalab, NOLDAN yangi bepul profil ochiladi:
                 if not has_cauth:
-                    print(f"{tag}[!] Eski akkount ({email}) orqali kirib bo'lmadi! Yangi profil bilan noldan ro'yxatdan o'tkazilmoqda...")
+                    print(f"\n{tag}⏱ [30 SONIYA CHEKLOV] Eski akkount ({email}) 30 soniya ichida kirmadi / yaroqsiz!")
+                    print(f"{tag}⚡️ Aylanib o'tirmasdan, Aileaders'dan eski profil tozalab o'chiriladi va NOLDAN yangi ochiladi...")
                     if status_callback:
-                        status_callback(f"📝 {full_name}: Yangi profil bilan noldan ro'yxatdan o'tkazilmoqda...")
+                        status_callback(f"⚡️ {full_name}: Eski profil 30s ichida kirmadi. Aileaders'dan tozalanib, noldan yangi ochilmoqda...")
+
+                    # 1. Eski qotgan profilni Aileaders'dan o'chirish:
+                    delete_and_free_student_account(page, student, status_callback=status_callback)
+
+                    # 2. akkountlar.txt dan eski yaroqsiz yozuvni tozalash:
+                    clean_old_account_from_file(full_name, doc_key)
+
+                    # 3. Brauzer sessiyasini tozalab, noldan yangi unikal profil ochish:
+                    wipe_browser_session_completely(context, page)
                     reg_status, new_acc = register_new_student_and_enroll(context, page, student, status_callback=status_callback)
                     if reg_status == "OK" and new_acc:
                         acc = new_acc
-                        safe_navigate(page, "https://www.coursera.org/learn/introduction-to-generative-ai/home/module/1", wait_sec=3.0)
+                        email = acc["email"]
+                        password = acc["password"]
+                        safe_navigate(page, "https://www.coursera.org/organizations/dedc/learn/introduction-to-generative-ai/home/module/1", wait_sec=3.0)
                         dismiss_all_popups(page)
                         cookies = [c.get("name", "") for c in context.cookies()]
                         has_cauth = any("CAUTH" in c for c in cookies) or ("/learn/" in page.url or "/home/" in page.url)
+                        ensure_enrolled_on_coursera(page)
                     elif reg_status == "UNRECOVERABLE":
                         try:
                             browser.close()
