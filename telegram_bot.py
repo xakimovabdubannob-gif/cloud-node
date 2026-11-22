@@ -979,6 +979,9 @@ class TelegramBotServer:
         self.shared_orders = []
         self.active_worker_status = {}
         self.is_paused = False
+        # Server Holati: False = 🔒 Faqat Admin (Barchaga yopiq), True = 🔓 Barchaga Ochiq
+        # Bot har safar qayta o'chib yonganda (restart) har doim avtomatik Faqat Admin (yopiq) holatida ishga tushadi!
+        self.server_public_open = False
         self.hourly_stats = {
             "window_start": time.strftime("%H:%M"),
             "orders_submitted": 0,
@@ -1728,6 +1731,15 @@ class TelegramBotServer:
         self.send_message(chat_id, "\n".join(lines), reply_markup={"inline_keyboard": inline_rows})
 
     def handle_students_submission(self, chat_id, user_name, username, students, orig_fname: str = "Buyurtma"):
+        # Agar Server holati Faqat Admin (yopiq) bo'lsa va yuboruvchi Admin bo'lmasa — qabul qilinmaydi:
+        if self.admin_id and chat_id != self.admin_id and not getattr(self, "server_public_open", False):
+            self.send_message(
+                chat_id,
+                "⚠️ <b>Server hozirda texnik xizmatda / band.</b> Iltimos, keyinroq urinib ko'ring yoki Adminga yozing.",
+                reply_markup=self.get_reply_keyboard(chat_id),
+            )
+            return
+
         if not students:
             self.send_message(
                 chat_id,
@@ -2498,8 +2510,10 @@ class TelegramBotServer:
 
     def get_reply_keyboard(self, chat_id: int):
         if self.admin_id and chat_id == self.admin_id:
+            server_btn = "🔓 Server: Barchaga Ochiq" if getattr(self, "server_public_open", False) else "🔒 Server: Faqat Admin (Barchaga yopiq)"
             return {
                 "keyboard": [
+                    [{"text": server_btn}],
                     [{"text": "📑 Navbatni Boshqarish"}, {"text": "📊 Tahlil va Jarayon"}],
                     [{"text": "🛑 Bekor qilish (Otmen)"}, {"text": "🔄 Serverni qayta yoqish (Reboot)"}],
                     [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
@@ -3547,6 +3561,31 @@ class TelegramBotServer:
                         )
                 return
 
+        # Administrator uchun Server Holati Toggle tugmasi (Faqat Admin / Barchaga Ochiq)
+        if self.admin_id and chat_id == self.admin_id and (
+            text in ("🔒 Server: Faqat Admin (Barchaga yopiq)", "🔓 Server: Barchaga Ochiq", "🔒 Server: Faqat Admin")
+            or text.startswith("🔒 Server:") or text.startswith("🔓 Server:")
+            or text in ("/server_mode", "/server_status", "/holat")
+        ):
+            admin_input_state.pop(chat_id, None)
+            self.server_public_open = not getattr(self, "server_public_open", False)
+            if self.server_public_open:
+                msg_txt = (
+                    "🔓 <b>SERVER HOLATI O'ZGARTIRILDI: BARCHAGA OCHIQ!</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "✅ Endi barcha foydalanuvchilar to'siqsiz fayl va buyurtma yuborishlari mumkin.\n\n"
+                    "🔒 <i>Yopish uchun tugmani qayta bosing.</i>"
+                )
+            else:
+                msg_txt = (
+                    "🔒 <b>SERVER HOLATI O'ZGARTIRILDI: FAQAT ADMIN (BARCHAGA YOPIQ)!</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "⚠️ Begona foydalanuvchilar buyurtma yoki fayl yuborishsa, ularga: <i>«⚠️ Server hozirda texnik xizmatda / band. Iltimos, keyinroq urinib ko'ring yoki Adminga yozing»</i> deb fayli qabul qilinmaydi.\n\n"
+                    "👑 <b>Faqat siz (Admin)</b> bemalol fayl tashlab buyurtma bera olasiz."
+                )
+            self.send_message(chat_id, msg_txt, reply_markup=self.get_reply_keyboard(chat_id))
+            return
+
         if text in ("📸 Kompyuterdan Skrinshot", "/screen", "/skrin"):
             import socket
             pc1_name = socket.gethostname()
@@ -4026,6 +4065,13 @@ class TelegramBotServer:
 
         # Excel yoki matn fayl kelganda:
         if "document" in msg:
+            if self.admin_id and chat_id != self.admin_id and not getattr(self, "server_public_open", False):
+                self.send_message(
+                    chat_id,
+                    "⚠️ <b>Server hozirda texnik xizmatda / band.</b> Iltimos, keyinroq urinib ko'ring yoki Adminga yozing.",
+                    reply_markup=self.get_reply_keyboard(chat_id),
+                )
+                return
             doc = msg["document"]
             orig_fname = (doc.get("file_name") or "").strip()
             clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
@@ -4068,6 +4114,13 @@ class TelegramBotServer:
                 return
             students = parse_students_from_text(text)
             if students:
+                if self.admin_id and chat_id != self.admin_id and not getattr(self, "server_public_open", False):
+                    self.send_message(
+                        chat_id,
+                        "⚠️ <b>Server hozirda texnik xizmatda / band.</b> Iltimos, keyinroq urinib ko'ring yoki Adminga yozing.",
+                        reply_markup=self.get_reply_keyboard(chat_id),
+                    )
+                    return
                 pref = "in_" if (len(students) == 1 and chat_id not in load_users_db().get("free_trial_used", [])) else "pending_"
                 save_students_to_excel(students, os.path.join(ORDERS_DIR, f"{pref}{chat_id}_{int(time.time())}_Matn_Buyurtma.xlsx"))
                 self.handle_students_submission(chat_id, user_name, username, students, orig_fname="Matn_Buyurtma")
